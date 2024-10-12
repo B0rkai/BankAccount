@@ -1,4 +1,5 @@
 #include <sstream>
+#include <algorithm>
 #include "AccountManager.h"
 #include "CommonTypes.h"
 #include "CSVLoader.h"
@@ -16,19 +17,31 @@ void AccountManager::AddTransaction(const uint8_t acc_id, const uint16_t date, c
 	acc->AddTransaction(date, type_id, amount, client_id, cat_id, memo, desc);
 }
 
-uint8_t AccountManager::GetTransactionTypeId(const char* type)
+uint8_t AccountManager::GetTransactionTypeId(const char* type) const {
+	if(strlen(type) == 0) {
+		return INVALID_TYPE_ID;
+	}
+	size_t size = m_transaction_types.size();
+	for(int i = 0; i < size; ++i) {
+		if(strcmp(type, m_transaction_types[i].data()) == 0) {
+			return i;
+		}
+	}
+	return INVALID_TYPE_ID;
+}
+
+uint8_t AccountManager::CreateOrGetTransactionTypeId(const char* type)
 {
 	if (m_transaction_types.empty()) {
 		m_transaction_types.emplace_back(type);
 		return 0;
 	}
-	size_t size = m_transaction_types.size();
-	for (int i = 0; i < size; ++i) {
-		if (strcmp(type, m_transaction_types[i].data()) == 0) {
-			return i;
-		}
+	uint8_t id = GetTransactionTypeId(type);
+	if(id != INVALID_TYPE_ID) {
+		return id;
 	}
-	if (size == UCHAR_MAX) {
+	size_t size = m_transaction_types.size();
+	if (size + 1 == INVALID_TYPE_ID) {
 		// BAD
 		throw "too many transaction types";
 	}
@@ -36,7 +49,7 @@ uint8_t AccountManager::GetTransactionTypeId(const char* type)
 	return size;
 }
 
-uint8_t AccountManager::GetAccountId(const char* bank_name, const char* account_number, const CurrencyType curr, const char* account_name)
+uint8_t AccountManager::CreateOrGetAccountId(const char* bank_name, const char* account_number, const CurrencyType curr, const char* account_name)
 {
 	if (m_accounts.empty()) {
 		m_accounts.push_back(new Account(bank_name, account_number, account_name, curr));
@@ -48,7 +61,7 @@ uint8_t AccountManager::GetAccountId(const char* bank_name, const char* account_
 			return i;
 		}
 	}
-	if (size == UCHAR_MAX) {
+	if (size + 1 == INVALID_ACCOUNT_ID) {
 		// BAD
 		throw "too many accounts";
 	}
@@ -56,14 +69,36 @@ uint8_t AccountManager::GetAccountId(const char* bank_name, const char* account_
 	return size;
 }
 
-uint16_t AccountManager::GetClientId(const char* client_name, const char* client_account_number) {
+std::vector<uint16_t> AccountManager::GetClientId(const char* client_name) const {
+	if (strlen(client_name) == 0) {
+		return {0};
+	}
+	auto it = m_client_map.find(client_name);
+	if (it != m_client_map.end()) {
+		return {it->second->GetId()};
+	}
+	// make linear search string contains
+	std::vector<uint16_t> results;
+	for (auto client : m_clients) {
+		if (client->CheckNameContains(client_name)) {
+			results.push_back(client->GetId());
+		}
+	}
+	return results;
+}
+
+uint8_t AccountManager::GetCategoryId(const char* subcat) const {
+	return m_category_system.GetCategoryId(subcat);
+}
+
+uint16_t AccountManager::CreateOrGetClientId(const char* client_name, const char* client_account_number) {
 	if (strlen(client_name) == 0) {
 		return 0;
 	}
 	auto it = m_client_map.find(client_name);
 	if (it == m_client_map.end()) {
 		size_t size = m_clients.size();
-		if (size == USHRT_MAX) {
+		if (size + 1 == INVALID_CLIENT_ID) {
 			throw "too many clients";
 		}
 		Client* new_client = new Client((uint16_t)size, client_name);
@@ -74,7 +109,29 @@ uint16_t AccountManager::GetClientId(const char* client_name, const char* client
 		m_client_map.emplace(client_name, new_client);
 		return size;
 	}
+	it->second->AddAccountNumber(client_account_number);
 	return it->second->GetId();
+}
+
+std::string AccountManager::GetCategoryName(const uint8_t id) const {
+	if(const Category* cat = m_category_system.GetCategory(id)) {
+		return cat->PrintDebug();
+	}
+	return "INVALID_CATEGORY";
+}
+
+const char* AccountManager::GetTransactionType(const uint8_t id) const {
+	if(id < m_transaction_types.size()) {
+		return m_transaction_types[id].c_str();
+	}
+	return "INVALID_TYPE";
+}
+
+const char* AccountManager::GetClientName(const uint16_t id) const {
+	if(id < m_clients.size()) {
+		return m_clients[id]->GetName();
+	}
+	return "INVALID_CLIENT";
 }
 
 AccountManager::AccountManager() {}
@@ -89,6 +146,9 @@ void AccountManager::Init() {
 	if (m_clients.empty()) {
 		m_clients.push_back(new Client(0, "")); // the default 'empty' client
 	}
+	// adding my EUR account prior loading CSV
+	//m_accounts.push_back(new Account("Gránit Bank", "12100011-19018713", "Deviza", EUR));
+
 	loader.LoadFileToDB(*this, FILENAME);
 }
 
@@ -109,33 +169,69 @@ size_t AccountManager::CountTransactions() {
 }
 
 std::string AccountManager::GetClientInfoOfId(const uint16_t id) {
-	std::string res;
+	std::string res = "ERROR";
 	size_t size = m_clients.size();
 	if (size <= id) {
 		res = "Invalid client id";
 		return res;
 	}
 	Client* client = m_clients[id];
-	std::stringstream str;
-	str << "Name: " << client->GetName();
-	auto& accs = client->GetAccountNumbers();
-	size_t accnsize = accs.size();
-	if (!accnsize) {
-		return str.str();
+	if (client) {
+		return client->PrintDebug();
 	}
-	str << " Account number";
-	if (accnsize > 1) {
-		str << "s";
-	}
-	str << ": (";
-	bool first = true;
-	for (auto& n : accs) {
-		if (!first) {
-			str << ", ";
-		}
-		str << n;
-		first = false;
-	}
-	str << ")";
-	return str.str();
+	return res;
 }
+
+std::string AccountManager::GetClientInfoOfName(const char* name) {
+	auto results = GetClientId(name);
+	if (results.empty()) {
+		return "No client found";
+	}
+	std::stringstream ss;
+	ss << results.size() << " client";
+	if (results.size() > 1) {
+		ss << "s";
+	}
+	ss << " found\n";
+	for (auto id : results) {
+		ss << m_clients[id]->PrintDebug();
+		ss << "\n";
+	}
+	return ss.str();
+}
+
+std::string AccountManager::MakeQuery(std::vector<Query*>& queries) {
+	for(auto& q : queries) {
+		q->Resolve(this);
+	}
+	std::vector<const Transaction*> transactions;
+	for(auto& acc : m_accounts) {
+		std::vector<const Transaction*> sub = acc->MakeQuery(queries);
+		transactions.insert(transactions.begin(), sub.begin(), sub.end());
+	}
+	std::sort(transactions.begin(), transactions.end(), [] (const Transaction* t1, const Transaction* t2) {
+		return (t1->GetDate() < t2->GetDate());
+	});
+	std::stringstream ss;
+	Currency* huf = MakeCurrency(HUF);
+	int64_t hufsum = 0;
+	int64_t eursum = 0;
+	for (auto tr : transactions) {
+		if (tr->GetCurrencyType() == HUF) {
+			hufsum += tr->GetAmount();
+		} else {
+			eursum += tr->GetAmount();
+		}
+	}
+	ss << transactions.size() << " transactions found, a sum of ";
+	ss << huf->PrettyPrint(hufsum) ;
+	if (eursum) {
+		ss << " and " << MakeCurrency(EUR)->PrettyPrint(eursum) << "\n";
+	}
+	for(auto tr : transactions) {
+		ss << "\n" << tr->PrintDebug(this);
+	}
+			
+	return ss.str();
+}
+

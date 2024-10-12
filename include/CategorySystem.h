@@ -10,6 +10,7 @@ class CategorySystem {
 public:
 	CategorySystem();
 	~CategorySystem();
-	uint8_t GetCategoryId(const char* subcat);
+	uint8_t GetCategoryId(const char* subcat) const;
+	const Category* GetCategory(const uint8_t id) const;
 };
 

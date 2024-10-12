@@ -8,3 +8,9 @@ Category::Category(const uint8_t id, const char* cat_name, const char* subcat_na
 void Category::AddNewKeyword(const char* key) {
 	m_keywords.emplace(key);
 }
+
+std::string Category::PrintDebug() const {
+	std::string res = m_category_name;
+	res.append(":").append(m_subcategory_name);
+	return res;
+}

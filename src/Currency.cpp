@@ -3,7 +3,7 @@
 
 #include "Currency.h"
 
-void Currency::RecursiveDigits(std::basic_ostream<char>& str, uint32_t num) const {
+void Currency::RecursiveDigits(std::stringstream& str, uint32_t num) const {
 	static int depth = 0;
 	uint32_t div = num / 1000u;
 	uint16_t mod = num % 1000u;
@@ -24,7 +24,8 @@ void Currency::RecursiveDigits(std::basic_ostream<char>& str, uint32_t num) cons
 	--depth;
 }
 
-void Currency::PrettyPrint(std::basic_ostream<char>& str, const int32_t val) const {
+std::string Currency::PrettyPrint(const int32_t val) const {
+	std::stringstream str;
 	if (val < 0) {
 		str << '-';
 	}
@@ -49,54 +50,134 @@ void Currency::PrettyPrint(std::basic_ostream<char>& str, const int32_t val) con
 	if (!m_sign_prefix) {
 		str << ' ' << m_sign;
 	}
+	return str.str();
+}
+
+int32_t Currency::ParseAmount(const char* amount) const {
+	if (!m_cents) {
+		return std::stoll(amount);
+	}
+	std::string samount(amount);
+	size_t pos = samount.find(",");
+	if (pos != std::string::npos) {
+		samount[pos] = '\0';
+		return std::stoll(samount.c_str()) * 100 + std::stoll(&samount[pos+1]);
+	}
+	return std::stoll(samount.c_str()) * 100;
 }
 
 class Euro : public Currency {
+	static Euro* s_object;
 public:
 	Euro()
 		: Currency("€", "Euro", '.', ',', true, false) {}
+	static Euro* GetObject();
+	virtual CurrencyType Type() const { return EUR; }
 };
 
 class Forint : public Currency {
+	static Forint* s_object;
 public:
 	Forint()
 		: Currency("Ft", "Forint", ',', ' ', false, false) {}
+	static Forint* GetObject();
+	virtual CurrencyType Type() const { return HUF; }
 };
 
 class USDollar : public Currency {
+	static USDollar* s_object;
 public:
 	USDollar()
 		: Currency("$", "US dollar", '.', ',', true, true) {}
+	static USDollar* GetObject();
+	virtual CurrencyType Type() const { return USD; }
 };
 
 class GBPound : public Currency {
+	static GBPound* s_object;
 public:
 	GBPound()
 		: Currency("£", "Pound sterling", '.', ',', true, true) {}
+	static GBPound* GetObject();
+	virtual CurrencyType Type() const { return GBP; }
 };
 
 class SwissFranc : public Currency {
+	static SwissFranc* s_object;
 public:
 	SwissFranc()
 		: Currency("Fr.", "Swiss franc", '.', ' ', true, true) {}
+	static SwissFranc* GetObject();
+	virtual CurrencyType Type() const { return CHF; }
 };
 
 Currency* MakeCurrency(const CurrencyType type) {
 	switch (type)
 	{
 	case EUR:
-		return new Euro;
+		return Euro::GetObject();
 	case USD:
-		return new USDollar;
+		return USDollar::GetObject();
 	case HUF:
-		return new Forint;
+		return Forint::GetObject();
 	case GBP:
-		return new GBPound;
+		return GBPound::GetObject();
 	case CHF:
-		return new SwissFranc;
+		return SwissFranc::GetObject();
 	default:
-		// error
-		break;
+		return Forint::GetObject();
 	}
-	return new Euro;
 }
+
+Currency* MakeCurrency(const char* type) {
+	if (!strcmp(type,"EUR")) {
+		return Euro::GetObject();
+	} else if (!strcmp(type,"USD")) {
+		return USDollar::GetObject();
+	} else if (!strcmp(type,"HUF")) {
+		return Forint::GetObject();
+	} else if (!strcmp(type,"GBP")) {
+		return GBPound::GetObject();
+	} else if (!strcmp(type,"CHF")) {
+		return SwissFranc::GetObject();
+	}
+	return Forint::GetObject();
+}
+
+Euro* Euro::s_object = nullptr;
+Forint* Forint::s_object = nullptr;
+USDollar* USDollar::s_object = nullptr;
+GBPound* GBPound::s_object = nullptr;
+SwissFranc* SwissFranc::s_object = nullptr;
+
+Euro* Euro::GetObject() {
+	if (!s_object) {
+		s_object = new Euro;
+	}
+	return s_object;
+}
+Forint * Forint::GetObject() {
+	if (!s_object) {
+		s_object = new Forint;
+	}
+	return s_object;
+}
+USDollar * USDollar::GetObject() {
+	if (!s_object) {
+		s_object = new USDollar;
+	}
+	return s_object;
+}
+GBPound * GBPound::GetObject() {
+	if (!s_object) {
+		s_object = new GBPound;
+	}
+	return s_object;
+}
+SwissFranc * SwissFranc::GetObject() {
+	if (!s_object) {
+		s_object = new SwissFranc;
+	}
+	return s_object;
+}
+

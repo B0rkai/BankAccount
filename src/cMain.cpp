@@ -1,9 +1,10 @@
 
+#include <sstream>
 #include "wx/wx.h"
 #include "wx/windowid.h"
 #include "cMain.h"
 #include "Currency.h"
-#include <sstream>
+#include "Query.h"
 #include "AccountManager.h"
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
@@ -13,12 +14,13 @@ wxEND_EVENT_TABLE()
 
 cMain::cMain()
 : wxFrame(nullptr, wxID_ANY, "Kaki", wxPoint(100, 100), wxSize(800, 600)) {
-	m_butt = new wxButton(this, 10001, "Click me!", wxPoint(30, 30), wxSize(150, 30));
-	m_butt2 = new wxButton(this, 10002, "Init DB", wxPoint(230, 30), wxSize(150, 30));
-	m_stext = new wxStaticText(this, wxID_ANY, "welcome", wxPoint(30, 60), wxSize(500, 30));
-	m_text = new wxTextCtrl(this, wxID_ANY, "", wxPoint(30, 100), wxSize(150, 30));
-	wxString choices[5] = { "EUR", "USD", "GBP", "CHF", "HUF" };
-	m_combo = new wxComboBox(this, wxID_ANY, "EUR", wxPoint(30, 140), wxSize(150, 30), wxArrayString(5, choices));
+	m_butt2 = new wxButton(this, 10002, "Init database", wxPoint(30, 30), wxSize(150, 30));
+	m_text = new wxTextCtrl(this, wxID_ANY, "<Name or ID>", wxPoint(30, 70), wxSize(150, 30));
+	m_butt = new wxButton(this, 10001, "Search", wxPoint(30, 110), wxSize(150, 30));
+	m_search_result_text = new wxStaticText(this, wxID_ANY, "Standby", wxPoint(30, 150), wxSize(500, 350));
+	m_status_text = new wxStaticText(this, wxID_ANY, "Database empty - please initialize!", wxPoint(30, 10), wxSize(300, 18));
+	//wxString choices[5] = { "EUR", "USD", "GBP", "CHF", "HUF" };
+	//m_combo = new wxComboBox(this, wxID_ANY, "EUR", wxPoint(30, 140), wxSize(150, 30), wxArrayString(5, choices));
 
 	m_acc_manager = new AccountManager;
 }
@@ -35,25 +37,24 @@ void cMain::InitDB(wxCommandEvent& evt) {
 	char buf[120];
 	str.getline(buf, 120);
 	std::string name(buf);
-	m_stext->SetLabel(name);
+	m_status_text->SetLabel(name);
 	evt.Skip();
 }
 
 void cMain::OnButtonClicked(wxCommandEvent& evt) {
-	/*Currency* curr = MakeCurrency((CurrencyType)m_combo->GetSelection());
-	std::stringstream str1;
-	std::stringstream str2;
-	str1 << m_text->GetValue();
-	int32_t num;
-	str1 >> num;
-	curr->PrettyPrint(str2, num);
-	char buf[15];
-	str2.getline(buf,15);
-	std::string name(buf);
-	m_stext->SetLabel(name);*/
-	// get something
-	wxString val = m_text->GetValue();
-	int id = std::stoi(static_cast<std::string>(val));
-	m_stext->SetLabel(m_acc_manager->GetClientInfoOfId(id));
 	evt.Skip();
+	std::string result;
+	wxString val = m_text->GetValue();
+	QueryClient q;
+	if (val.IsNumber()) {
+		int id = std::stoi(static_cast<std::string>(val));
+		q.AddId(id);
+		result = m_acc_manager->GetClientInfoOfId(id);
+	} else {
+		result = m_acc_manager->GetClientInfoOfName(val);
+		q.AddName(val);
+	}
+	std::vector<Query*> v{&q};
+	result.append("\n\n").append(m_acc_manager->MakeQuery(v));
+	m_search_result_text->SetLabel(result);
 }

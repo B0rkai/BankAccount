@@ -11,5 +11,6 @@ public:
 	Category(const uint8_t id, const char* cat_name, const char* subcat_name);
 	uint8_t GetId() const { return m_id; }
 	void AddNewKeyword(const char* key);
-	bool CheckKeywords(const char* str);
+	bool CheckKeywords(const char* str) const;
+	std::string PrintDebug() const;
 };

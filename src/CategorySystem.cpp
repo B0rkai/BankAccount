@@ -66,7 +66,7 @@ CategorySystem::~CategorySystem() {
 	DeletePointers(m_categories);
 }
 
-uint8_t CategorySystem::GetCategoryId(const char* subcat) {
+uint8_t CategorySystem::GetCategoryId(const char* subcat) const {
 	if (strlen(subcat) == 0) {
 		return 0;
 	}
@@ -74,6 +74,12 @@ uint8_t CategorySystem::GetCategoryId(const char* subcat) {
 	if (it != m_category_map.end()) {
 		return it->second->GetId();
 	}
-	// no category creation now
-	return 0;
+	return INVALID_CATEGORY_ID;
+}
+
+const Category* CategorySystem::GetCategory(const uint8_t id) const {
+	if(id > m_categories.size()) {
+		return nullptr;
+	}
+	return m_categories[id];
 }
