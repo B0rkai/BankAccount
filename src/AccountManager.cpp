@@ -1,5 +1,6 @@
 #include <sstream>
 #include <algorithm>
+#include <iomanip>
 #include "AccountManager.h"
 #include "CommonTypes.h"
 #include "CSVLoader.h"
@@ -13,8 +14,11 @@ void AccountManager::AddTransaction(const uint8_t acc_id, const uint16_t date, c
 		throw "invalid account id";
 	}
 	Account* acc = m_accounts[acc_id];
-	uint8_t cat_id = m_category_system.GetCategoryId(category);
-	acc->AddTransaction(date, type_id, amount, client_id, cat_id, memo, desc);
+	std::vector<uint8_t> cat_id = m_category_system.GetCategoryId(category);
+	if (cat_id.empty() && cat_id.size() > 1) {
+		throw "invalid category name";
+	}
+	acc->AddTransaction(date, type_id, amount, client_id, cat_id.front(), memo, desc);
 }
 
 uint8_t AccountManager::GetTransactionTypeId(const char* type) const {
@@ -87,7 +91,7 @@ std::vector<uint16_t> AccountManager::GetClientId(const char* client_name) const
 	return results;
 }
 
-uint8_t AccountManager::GetCategoryId(const char* subcat) const {
+std::vector <uint8_t> AccountManager::GetCategoryId(const char* subcat) const {
 	return m_category_system.GetCategoryId(subcat);
 }
 
@@ -168,8 +172,8 @@ size_t AccountManager::CountTransactions() {
 	return res;
 }
 
-std::string AccountManager::GetClientInfoOfId(const uint16_t id) {
-	std::string res = "ERROR";
+std::string AccountManager::GetClientInfo(const uint16_t id) const {
+	std::string res;
 	size_t size = m_clients.size();
 	if (size <= id) {
 		res = "Invalid client id";
@@ -180,6 +184,14 @@ std::string AccountManager::GetClientInfoOfId(const uint16_t id) {
 		return client->PrintDebug();
 	}
 	return res;
+}
+
+std::string AccountManager::GetCategoryInfo(const uint8_t id) const {
+	const Category* cat = m_category_system.GetCategory(id);
+	if (!cat) {
+		return "Invalid category id";
+	}
+	return cat->PrintDebug();
 }
 
 std::string AccountManager::GetClientInfoOfName(const char* name) {
@@ -200,36 +212,44 @@ std::string AccountManager::GetClientInfoOfName(const char* name) {
 	return ss.str();
 }
 
-std::string AccountManager::MakeQuery(std::vector<Query*>& queries) {
-	for(auto& q : queries) {
-		q->Resolve(this);
+std::string AccountManager::MakeQuery(Query& query) {
+	for(auto& qe : query) {
+		qe->Resolve(this);
 	}
-	std::vector<const Transaction*> transactions;
 	for(auto& acc : m_accounts) {
-		std::vector<const Transaction*> sub = acc->MakeQuery(queries);
-		transactions.insert(transactions.begin(), sub.begin(), sub.end());
+		acc->MakeQuery(query);
 	}
-	std::sort(transactions.begin(), transactions.end(), [] (const Transaction* t1, const Transaction* t2) {
+	std::sort(query.GetResult().begin(), query.GetResult().end(), [](const Transaction* t1, const Transaction* t2) {
 		return (t1->GetDate() < t2->GetDate());
 	});
+	if (!query.ReturnList()) {
+		return "";
+	}
 	std::stringstream ss;
-	Currency* huf = MakeCurrency(HUF);
-	int64_t hufsum = 0;
-	int64_t eursum = 0;
-	for (auto tr : transactions) {
-		if (tr->GetCurrencyType() == HUF) {
-			hufsum += tr->GetAmount();
-		} else {
-			eursum += tr->GetAmount();
+	ss << query.GetResult().size() << " transactions found: \n";
+	int cnt = 0;
+	std::vector<std::vector<std::string>> table;
+	for(auto tr : query.GetResult()) {
+		++cnt;
+		table.push_back(tr->PrintDebug(this));
+		if (cnt == 85) {
+			//ss << "\n...";
+			break;
 		}
 	}
-	ss << transactions.size() << " transactions found, a sum of ";
-	ss << huf->PrettyPrint(hufsum) ;
-	if (eursum) {
-		ss << " and " << MakeCurrency(EUR)->PrettyPrint(eursum) << "\n";
+	size_t widths[7] = {0};
+	for (int i = 0; i < 7; ++i) {
+		for (auto row : table) {
+			if (row[i].length() > widths[i]) {
+				widths[i] = row[i].length();
+			}
+		}
 	}
-	for(auto tr : transactions) {
-		ss << "\n" << tr->PrintDebug(this);
+	for (auto row : table) {
+		for (int i = 0; i < 7; ++i) {
+			ss << std::setw(widths[i]) << row[i] << " ";
+		}
+		ss << "\n";
 	}
 			
 	return ss.str();

@@ -5,6 +5,9 @@ Client::Client(const uint16_t id, const char* name)
 : m_id(id), m_name(name) {}
 
 void Client::AddAccountNumber(const char* acc) {
+	if (!strlen(acc)) {
+		return;
+	}
 	(void) m_account_numbers.insert(acc);
 }
 
@@ -18,7 +21,7 @@ bool Client::CheckNameContains(const char* name) const {
 
 std::string Client::PrintDebug() {
 	std::stringstream str;
-	str << m_id << ", Name: " << m_name;
+	str << "ID: " << m_id << ", Name: " << m_name;
 	size_t accnsize = m_account_numbers.size();
 	if (!accnsize) {
 		return str.str();

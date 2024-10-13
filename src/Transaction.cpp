@@ -1,4 +1,5 @@
 #include <sstream>
+#include <vector>
 #include <iomanip>
 #include "Transaction.h"
 #include "IIdResolve.h"
@@ -34,17 +35,24 @@ void Transaction::SetCategoryId(const uint8_t cat_id) {
 	m_category_id = cat_id;
 }
 
-std::string Transaction::PrintDebug(const IIdResolve* resif) const {
-	std::stringstream ss;
-    ss << GetDateFormat(m_date) << " " << resif->GetTransactionType(m_type_id) << " " << m_parent->GetCurrency()->PrettyPrint(m_amount) << " " << resif->GetClientName(m_client_id) << " ";
+std::vector<std::string> Transaction::PrintDebug(const IIdResolve* resif) const {
+    std::vector<std::string> res;
+    res.push_back(GetDateFormat(m_date));
+    res.emplace_back(resif->GetTransactionType(m_type_id));
+    res.push_back(m_parent->GetCurrency()->PrettyPrint(m_amount));
+    res.emplace_back(resif->GetClientName(m_client_id));
     if (m_memo_ptr) {
-        ss << *m_memo_ptr << " ";
+        res.emplace_back(*m_memo_ptr);
+    } else {
+        res.emplace_back();
     }
     if (m_desc_ptr) {
-        ss << *m_desc_ptr << " ";
+        res.emplace_back(*m_desc_ptr);
+    } else {
+        res.emplace_back();
     }
-    ss << resif->GetCategoryName(m_category_id);
-	return ss.str();
+    res.push_back(resif->GetCategoryName(m_category_id));
+	return res;
 }
 
 CurrencyType Transaction::GetCurrencyType() const {

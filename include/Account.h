@@ -25,7 +25,7 @@ public:
 	const char* GetAccNumber() const { return m_acc_number.data(); }
 	size_t Size();
 	void AddTransaction(const uint16_t date, const uint8_t type_id, const int32_t amount, const uint16_t client_id, const uint8_t category_id, const char* memo, const char* desc);
-	std::vector<const Transaction*> MakeQuery(std::vector<Query*>& queries);
+	void MakeQuery(Query& query);
 	inline virtual const Currency* GetCurrency() const override { return m_curr; }
 };
 

@@ -23,19 +23,17 @@ void Account::AddTransaction(const uint16_t date, const uint8_t type_id, const i
 	new_tra.SetCategoryId(category_id);
 }
 
-std::vector<const Transaction*> Account::MakeQuery(std::vector<Query*>& queries) {
-	std::vector<const Transaction*> results;
+void Account::MakeQuery(Query& query) {
 	for(auto& tr : m_transactions) {
 		bool match = true;
-		for(auto& q : queries) {
-			match &= q->CheckTransaction(&tr);
+		for(auto& qe : query) {
+			match &= qe->CheckTransaction(&tr);
 			if (!match) {
 				break;
 			}
 		}
-		if(match) {
-			results.push_back(&tr);
+		if(match && query.ReturnList()) {
+			query.GetResult().push_back(&tr);
 		}
 	}
-	return results;
 }

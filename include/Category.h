@@ -9,8 +9,11 @@ class Category {
 	std::set<std::string> m_keywords;
 public:
 	Category(const uint8_t id, const char* cat_name, const char* subcat_name);
-	uint8_t GetId() const { return m_id; }
+	inline uint8_t GetId() const { return m_id; }
+	inline const char* GetCategoryName() { return m_category_name.c_str(); }
+	inline const char* GetSubCategoryName() { return m_subcategory_name.c_str(); }
 	void AddNewKeyword(const char* key);
+	bool CheckName(const char* name) const;
 	bool CheckKeywords(const char* str) const;
 	std::string PrintDebug() const;
 };

@@ -66,15 +66,22 @@ CategorySystem::~CategorySystem() {
 	DeletePointers(m_categories);
 }
 
-uint8_t CategorySystem::GetCategoryId(const char* subcat) const {
-	if (strlen(subcat) == 0) {
-		return 0;
+std::vector<uint8_t> CategorySystem::GetCategoryId(const char* name) const {
+	if (strlen(name) == 0) {
+		return {0};
 	}
-	auto it = m_category_map.find(subcat);
+	auto it = m_category_map.find(name);
 	if (it != m_category_map.end()) {
-		return it->second->GetId();
+		return {it->second->GetId()};
 	}
-	return INVALID_CATEGORY_ID;
+	// make linear search string contains
+	std::vector<uint8_t> results;
+	for (auto cat : m_categories) {
+		if (cat->CheckName(name)) {
+			results.push_back(cat->GetId());
+		}
+	}
+	return results;
 }
 
 const Category* CategorySystem::GetCategory(const uint8_t id) const {

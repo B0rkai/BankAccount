@@ -28,7 +28,9 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve 
 
 	virtual uint8_t GetTransactionTypeId(const char* type) const override;
 	virtual std::vector<uint16_t> GetClientId(const char* client_name) const override;
-	virtual uint8_t GetCategoryId(const char* subcat) const override;
+	virtual std::vector <uint8_t> GetCategoryId(const char* subcat) const override;
+	virtual std::string GetClientInfo(const uint16_t id) const override;
+	virtual std::string GetCategoryInfo(const uint8_t id) const override;
 
 public:
 	AccountManager();
@@ -38,8 +40,7 @@ public:
 	size_t CountClients();
 	size_t CountTransactions();
 
-	std::string GetClientInfoOfId(const uint16_t id);
 	std::string GetClientInfoOfName(const char* name);
 
-	std::string MakeQuery(std::vector<Query*>& queries);
+	std::string MakeQuery(Query& query);
 };
