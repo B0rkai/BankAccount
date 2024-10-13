@@ -7,16 +7,18 @@
 
 // CLIENT
 
-void QueryClient::Resolve(INameResolve* resolveif) {
+INameResolve* QueryElement::s_resolve_if = nullptr;
+
+void QueryClient::PreResolve() {
 	for(auto& name : m_names) {
-		std::vector<uint16_t> ids = resolveif->GetClientId(name.c_str());
+		std::vector<uint16_t> ids = s_resolve_if->GetClientId(name.c_str());
 		for (auto id : ids) {
 			if(id == INVALID_CLIENT_ID) {
 				// error
 				continue;
 			}
 			AddId(id);
-			m_result.append("\n").append(resolveif->GetClientInfo(id));
+			m_result.append("\n").append(s_resolve_if->GetClientInfo(id));
 		}
 	}
 	m_names.clear();
@@ -63,7 +65,7 @@ bool QueryClient::CheckTransaction(const Transaction* tr) {
     return false;
 }
 
-bool QuerySum::CheckTransaction(const Transaction* tr) {
+bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
 	Result& res = m_results[tr->GetCurrencyType()];
 	int32_t am = tr->GetAmount();
 	if (am > 0) {
@@ -75,28 +77,88 @@ bool QuerySum::CheckTransaction(const Transaction* tr) {
 	return true;
 }
 
-std::string QuerySum::PrintResult() {
+bool QueryCategorySum::CheckTransaction(const Transaction* tr) {
+	uint8_t id = tr->GetCategoryId();
+	QueryElement& res = m_subqueries[id];
+	if (!m_category_names.count(id)) {
+		m_category_names[id] = s_resolve_if->GetCategoryInfo(id);
+	}
+	return res.CheckTransaction(tr);
+}
+
+std::string QueryCategorySum::PrintResult() {
+	std::string res = "\n";
+	for (auto& pair : m_subqueries) {
+		res.append(m_category_names[pair.first]).append(": ");
+		res.append(pair.second.PrintResult());
+	}
+	return res;
+}
+
+StringTable QueryCategorySum::GetResult() const {
+	StringTable table;
+	table.push_back({"Category", "Currency", "Income", "Expense", "Sum"});
+	for (auto& pair : m_subqueries) {
+		auto subtable = pair.second.GetResult();
+		bool first = true;
+		for (auto& subrow : subtable) {
+			if (first) {
+				first = false;
+				continue;
+			}
+			auto& row = table.emplace_back();
+			row.push_back(m_category_names.at(pair.first));
+			row.insert(row.end(), subrow.begin(), subrow.end());
+		}
+	}
+	return table;
+}
+
+std::string QuerySum::PrintResultLine(const Result& res, const Currency* curr) const {
+	std::string ret;
+	int cnt = 0;
+	if (res.m_inc) {
+		ret.append(curr->PrettyPrint(res.m_inc)).append(" income ");
+		++cnt;
+	}
+	if (res.m_exp) {
+		ret.append(curr->PrettyPrint(res.m_exp)).append(" expense ");
+		++cnt;
+	}
+	if ((res.m_sum == 0) && (cnt != 1)) {
+		ret.append("a zero sum");
+	} else if (cnt == 2) {
+		ret.append("a sum of ").append(curr->PrettyPrint(res.m_sum));
+	}
+	return ret;
+}
+
+StringVector QuerySum::GetResultLine(const Result& res, const Currency* curr) const {
+	return {curr->PrettyPrint(res.m_inc), curr->PrettyPrint(res.m_exp), curr->PrettyPrint(res.m_sum)};
+}
+
+std::string QueryCurrencySum::PrintResult() {
 	std::stringstream ss;
 	for (auto& pair : m_results) {
 		Currency* curr = MakeCurrency(pair.first);
 		ss << "\n" << curr->GetName() << ": ";
-		int cnt = 0;
-		if (pair.second.m_inc) {
-			ss << curr->PrettyPrint(pair.second.m_inc) << " income ";
-			++cnt;
-		}
-		if (pair.second.m_exp) {
-			ss << curr->PrettyPrint(pair.second.m_exp) << " expense ";
-			++cnt;
-		}
-		if ((pair.second.m_sum == 0) && (cnt != 1)) {
-			ss << "a zero sum";
-		} else if (cnt == 2) {
-			ss << "a sum of " << curr->PrettyPrint(pair.second.m_sum);
-		}
+		ss << PrintResultLine(pair.second, curr);
 	}
 	ss << "\n";
 	return ss.str();
+}
+
+StringTable QueryCurrencySum::GetResult() const {
+	StringTable table;
+	table.push_back({"Currency", "Income", "Expense", "Sum"});
+	for (auto& pair : m_results) {
+		auto& row = table.emplace_back();
+		Currency* curr = MakeCurrency(pair.first);
+		row.push_back(curr->GetName());
+		auto resline = GetResultLine(pair.second, curr);
+		row.insert(row.end(), resline.begin(), resline.end());
+	}
+	return table;
 }
 
 std::string QueryElement::PrintDebug() {
@@ -125,12 +187,12 @@ bool QueryCategory::CheckTransaction(const Transaction* tr) {
 	return false;
 }
 
-void QueryCategory::Resolve(INameResolve* resolveif) {
+void QueryCategory::PreResolve() {
 	for (auto& name : m_names) {
-		std::vector<uint8_t> ids = resolveif->GetCategoryId(name.c_str());
+		std::vector<uint8_t> ids = s_resolve_if->GetCategoryId(name.c_str());
 		for (auto id : ids) {
 			AddId(id);
-			m_result.append("\n").append(resolveif->GetCategoryInfo(id));
+			m_result.append("\n").append(s_resolve_if->GetCategoryInfo(id));
 		}
 	}
 	m_names.clear();
@@ -143,23 +205,22 @@ std::string QueryCategory::PrintResult() {
 	return m_result;
 }
 
-bool QueryAmount::CheckTransaction(const Transaction* tr) {
-	const int32_t am = tr->GetAmount();
+bool QueryByNumber::Check(const int32_t val) const {
 	switch (m_type) {
 	case QueryAmount::EQUAL:
-		return (am == m_target);
+		return (val == m_target);
 	case QueryAmount::GREATER:
-		return (am > m_min);
+		return (val >= m_min);
 	case QueryAmount::LESS:
-		return (am < m_max);
+		return (val <= m_max);
 	case QueryAmount::RANGE:
-		return ((am > m_min) && (am < m_max));
+		return ((val >= m_min) && (val <= m_max));
 	default:
 		return false;
 	}
 }
 
-void QueryAmount::SetMax(int32_t max) {
+void QueryByNumber::SetMax(int32_t max) {
 	m_max = max;
 	if (m_type == EQUAL) {
 		m_type = LESS;
@@ -168,11 +229,23 @@ void QueryAmount::SetMax(int32_t max) {
 	}
 }
 
-void QueryAmount::SetMin(int32_t min) {
+void QueryByNumber::SetMin(int32_t min) {
 	m_min = min;
 	if (m_type == EQUAL) {
 		m_type = GREATER;
 	} else if (m_type == LESS) {
 		m_type = RANGE;
 	}
+}
+
+bool QueryAmount::CheckTransaction(const Transaction* tr) {
+	return Check(tr->GetAmount());
+}
+
+bool QueryDate::CheckTransaction(const Transaction* tr) {
+	return Check(tr->GetDate());
+}
+
+Query::~Query() {
+	DeletePointers(m_elements);
 }

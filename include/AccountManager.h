@@ -42,5 +42,5 @@ public:
 
 	std::string GetClientInfoOfName(const char* name);
 
-	std::string MakeQuery(Query& query);
+	StringTable MakeQuery(Query& query);
 };

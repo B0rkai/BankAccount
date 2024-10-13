@@ -1,6 +1,5 @@
 #include <sstream>
 #include <algorithm>
-#include <iomanip>
 #include "AccountManager.h"
 #include "CommonTypes.h"
 #include "CSVLoader.h"
@@ -150,8 +149,6 @@ void AccountManager::Init() {
 	if (m_clients.empty()) {
 		m_clients.push_back(new Client(0, "")); // the default 'empty' client
 	}
-	// adding my EUR account prior loading CSV
-	//m_accounts.push_back(new Account("Gránit Bank", "12100011-19018713", "Deviza", EUR));
 
 	loader.LoadFileToDB(*this, FILENAME);
 }
@@ -212,46 +209,29 @@ std::string AccountManager::GetClientInfoOfName(const char* name) {
 	return ss.str();
 }
 
-std::string AccountManager::MakeQuery(Query& query) {
+StringTable AccountManager::MakeQuery(Query& query) {
+	QueryElement::SetResolveIf(this);
 	for(auto& qe : query) {
-		qe->Resolve(this);
+		qe->PreResolve();
 	}
 	for(auto& acc : m_accounts) {
 		acc->MakeQuery(query);
 	}
+	if (!query.ReturnList()) {
+		return {};
+	}
 	std::sort(query.GetResult().begin(), query.GetResult().end(), [](const Transaction* t1, const Transaction* t2) {
 		return (t1->GetDate() < t2->GetDate());
 	});
-	if (!query.ReturnList()) {
-		return "";
-	}
+	QueryElement::SetResolveIf(nullptr);
 	std::stringstream ss;
 	ss << query.GetResult().size() << " transactions found: \n";
-	int cnt = 0;
-	std::vector<std::vector<std::string>> table;
+	StringTable table;
 	for(auto tr : query.GetResult()) {
-		++cnt;
 		table.push_back(tr->PrintDebug(this));
-		if (cnt == 85) {
-			//ss << "\n...";
-			break;
-		}
 	}
-	size_t widths[7] = {0};
-	for (int i = 0; i < 7; ++i) {
-		for (auto row : table) {
-			if (row[i].length() > widths[i]) {
-				widths[i] = row[i].length();
-			}
-		}
-	}
-	for (auto row : table) {
-		for (int i = 0; i < 7; ++i) {
-			ss << std::setw(widths[i]) << row[i] << " ";
-		}
-		ss << "\n";
-	}
+	//ss << PrettyTable(table);
 			
-	return ss.str();
+	return table;
 }
 

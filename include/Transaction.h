@@ -1,8 +1,6 @@
 #pragma once
 
-#include <memory>
-#include <string>
-#include <cstdint>
+#include "CommonTypes.h"
 
 class IIdResolve;
 class Currency;
@@ -30,7 +28,7 @@ public:
 	inline uint8_t GetTypeId() const { return m_type_id; }
 	inline uint8_t GetCategoryId() const { return m_category_id; }
 	void SetCategoryId(const uint8_t cat_id);
-	std::vector<std::string> PrintDebug(const IIdResolve* resif) const;
+	StringVector PrintDebug(const IIdResolve* resif) const;
 	CurrencyType GetCurrencyType() const;
 };
 

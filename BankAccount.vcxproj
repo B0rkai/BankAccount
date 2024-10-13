@@ -154,6 +154,7 @@
     <ClCompile Include="src\CategorySystem.cpp" />
     <ClCompile Include="src\Client.cpp" />
     <ClCompile Include="src\cMain.cpp" />
+    <ClCompile Include="src\CommonTypes.cpp" />
     <ClCompile Include="src\CSVLoader.cpp" />
     <ClCompile Include="src\CSVReader.cpp" />
     <ClCompile Include="src\Currency.cpp" />

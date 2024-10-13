@@ -6,20 +6,6 @@
 #include "IAccount.h"
 #include "Currency.h"
 
-void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear) {
-    // Modified Julian to DMY calculation with an addition of 2415019
-    int l = nSerialDate + 68569 + 2415019;
-    int n = int((4 * l) / 146097);
-    l = l - int((146097 * n + 3) / 4);
-    int i = int((4000 * (l + 1)) / 1461001);
-    l = l - int((1461 * i) / 4) + 31;
-    int j = int((80 * l) / 2447);
-    nDay = l - int((2447 * j) / 80);
-    l = int(j / 11);
-    nMonth = j + 2 - (12 * l);
-    nYear = 100 * (n - 49) + i + l;
-}
-
 std::string GetDateFormat(const uint16_t date) {
     int year, month, day;
     ExcelSerialDateToDMY(date, day, month, year);
@@ -35,8 +21,8 @@ void Transaction::SetCategoryId(const uint8_t cat_id) {
 	m_category_id = cat_id;
 }
 
-std::vector<std::string> Transaction::PrintDebug(const IIdResolve* resif) const {
-    std::vector<std::string> res;
+StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
+    StringVector res;
     res.push_back(GetDateFormat(m_date));
     res.emplace_back(resif->GetTransactionType(m_type_id));
     res.push_back(m_parent->GetCurrency()->PrettyPrint(m_amount));
