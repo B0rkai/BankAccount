@@ -77,27 +77,31 @@ public:
 		int64_t m_inc = 0;
 	};
 protected:
+	uint32_t m_count = 0;
 	std::string PrintResultLine(const Result& res, const Currency* curr) const;
-	StringVector GetResultLine(const Result& res, const Currency* curr) const;
+	StringVector GetStringResultRow(const Result& res, const Currency* curr) const;
 };
 
 class QueryCurrencySum : public QuerySum {
-	std::map<CurrencyType, Result> m_results;
 	inline virtual QueryTopic GetTopic() const override { return SUM; }
 	virtual bool CheckTransaction(const Transaction* tr) override;
+protected:
+	std::map<CurrencyType, Result> m_results;
 public:
 	virtual std::string PrintResult();
-	StringTable GetResult() const;
+	StringTable GetStringResult() const;
+	inline virtual std::map<CurrencyType, Result> GetResults() const { return m_results; }
 };
 
-class QueryCategorySum : public QuerySum {
+class QueryCategorySum : public QueryCurrencySum {
 	std::map<uint8_t, QueryCurrencySum> m_subqueries;
 	std::map<uint8_t, std::string> m_category_names;
 	inline virtual QueryTopic GetTopic() const override { return SUM; }
 	virtual bool CheckTransaction(const Transaction* tr) override;
 public:
 	virtual std::string PrintResult();
-	StringTable GetResult() const;
+	StringTable GetStringResult() const;
+	virtual std::map<CurrencyType, Result> GetResults() const;
 };
 
 class QueryCategory : public QueryByName {

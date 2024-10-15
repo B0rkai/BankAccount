@@ -171,14 +171,15 @@ void cMain::OnButtonClicked(wxCommandEvent& evt) {
 		result.append(qcat->PrintResult());
 	}
 	if (qsum) {
-		result.append(PrettyTable(qsum->GetResult()));
+		result.append(PrettyTable(qsum->GetStringResult()));
 	} else {
-		result.append(PrettyTable(qcsum->GetResult()));
+		result.append(PrettyTable(qcsum->GetStringResult()));
 	}
 	result.append(PrettyTable(table));
 	m_search_result_text->SetLabel(result);
-	//m_window->FitInside();
 	m_search_result_text->SetInitialSize();
+	//m_window->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();
+	//m_window->SetSize(rect.GetSize());
 	m_window->SetScrollbars(5,5, rect.width, rect.height); // ask the sizer about the needed size
 }

@@ -74,6 +74,7 @@ bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
 		res.m_exp += am;
 	}
 	res.m_sum += am;
+	++m_count;
 	return true;
 }
 
@@ -83,6 +84,7 @@ bool QueryCategorySum::CheckTransaction(const Transaction* tr) {
 	if (!m_category_names.count(id)) {
 		m_category_names[id] = s_resolve_if->GetCategoryInfo(id);
 	}
+	++m_count;
 	return res.CheckTransaction(tr);
 }
 
@@ -95,11 +97,11 @@ std::string QueryCategorySum::PrintResult() {
 	return res;
 }
 
-StringTable QueryCategorySum::GetResult() const {
+StringTable QueryCategorySum::GetStringResult() const {
 	StringTable table;
 	table.push_back({"Category", "Currency", "Income", "Expense", "Sum"});
 	for (auto& pair : m_subqueries) {
-		auto subtable = pair.second.GetResult();
+		auto subtable = pair.second.GetStringResult();
 		bool first = true;
 		for (auto& subrow : subtable) {
 			if (first) {
@@ -111,7 +113,36 @@ StringTable QueryCategorySum::GetResult() const {
 			row.insert(row.end(), subrow.begin(), subrow.end());
 		}
 	}
+	auto totals = GetResults();
+	for (auto& pair : totals) {
+		auto& row = table.emplace_back();
+		row.push_back("TOTAL");
+		//row.emplace_back();
+		Currency* curr = MakeCurrency(pair.first);
+		row.push_back(curr->GetName());
+		row.push_back(curr->PrettyPrint(pair.second.m_inc));
+		row.push_back(curr->PrettyPrint(pair.second.m_exp));
+		row.push_back(curr->PrettyPrint(pair.second.m_sum));
+	}
+	// TODO
 	return table;
+}
+
+std::map<CurrencyType, QuerySum::Result> QueryCategorySum::GetResults() const {
+	std::map<CurrencyType, QuerySum::Result> total;
+	for (auto& pair : m_subqueries) {
+		const auto& resmap = pair.second.GetResults();
+		for (auto& pair : resmap) {
+			if (total.count(pair.first)) {
+				total[pair.first].m_exp += pair.second.m_exp;
+				total[pair.first].m_inc += pair.second.m_inc;
+				total[pair.first].m_sum += pair.second.m_sum;
+			} else {
+				total[pair.first] = pair.second;
+			}
+		}
+	}
+	return total;
 }
 
 std::string QuerySum::PrintResultLine(const Result& res, const Currency* curr) const {
@@ -133,7 +164,7 @@ std::string QuerySum::PrintResultLine(const Result& res, const Currency* curr) c
 	return ret;
 }
 
-StringVector QuerySum::GetResultLine(const Result& res, const Currency* curr) const {
+StringVector QuerySum::GetStringResultRow(const Result& res, const Currency* curr) const {
 	return {curr->PrettyPrint(res.m_inc), curr->PrettyPrint(res.m_exp), curr->PrettyPrint(res.m_sum)};
 }
 
@@ -148,14 +179,14 @@ std::string QueryCurrencySum::PrintResult() {
 	return ss.str();
 }
 
-StringTable QueryCurrencySum::GetResult() const {
+StringTable QueryCurrencySum::GetStringResult() const {
 	StringTable table;
 	table.push_back({"Currency", "Income", "Expense", "Sum"});
 	for (auto& pair : m_results) {
 		auto& row = table.emplace_back();
 		Currency* curr = MakeCurrency(pair.first);
 		row.push_back(curr->GetName());
-		auto resline = GetResultLine(pair.second, curr);
+		auto resline = GetStringResultRow(pair.second, curr);
 		row.insert(row.end(), resline.begin(), resline.end());
 	}
 	return table;
