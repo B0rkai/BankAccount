@@ -148,11 +148,12 @@
   <ItemGroup>
     <ClCompile Include="src\Account.cpp" />
     <ClCompile Include="src\AccountManager.cpp" />
-    <ClCompile Include="src\Anything.cpp" />
+    <ClCompile Include="src\BankAccountFile.cpp" />
     <ClCompile Include="src\cApp.cpp" />
     <ClCompile Include="src\Category.cpp" />
     <ClCompile Include="src\CategorySystem.cpp" />
     <ClCompile Include="src\Client.cpp" />
+    <ClCompile Include="src\ClientManager.cpp" />
     <ClCompile Include="src\cMain.cpp" />
     <ClCompile Include="src\CommonTypes.cpp" />
     <ClCompile Include="src\CSVLoader.cpp" />
@@ -164,11 +165,12 @@
   <ItemGroup>
     <ClInclude Include="include\Account.h" />
     <ClInclude Include="include\AccountManager.h" />
-    <ClInclude Include="include\Anything.h" />
+    <ClInclude Include="include\BankAccountFile.h" />
     <ClInclude Include="include\cApp.h" />
     <ClInclude Include="include\Category.h" />
     <ClInclude Include="include\CategorySystem.h" />
     <ClInclude Include="include\Client.h" />
+    <ClInclude Include="include\ClientManager.h" />
     <ClInclude Include="include\cMain.h" />
     <ClInclude Include="include\CommonTypes.h" />
     <ClInclude Include="include\CSVLoader.h" />

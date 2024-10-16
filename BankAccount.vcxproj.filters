@@ -34,9 +34,6 @@
     <ClCompile Include="src\AccountManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\Anything.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\cApp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -70,15 +67,18 @@
     <ClCompile Include="src\CommonTypes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\BankAccountFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ClientManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Account.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\AccountManager.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Anything.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\cApp.h">
@@ -127,6 +127,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\IAccount.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BankAccountFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ClientManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

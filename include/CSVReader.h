@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 
-constexpr int NOT_FOUND = -1;
+const int NOT_FOUND = -1;
 
 class CSVRow
 {

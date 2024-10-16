@@ -24,11 +24,12 @@ class cMain :
     wxCheckBox* m_chkb = nullptr;
     wxCheckBox* m_category_sum_chkb = nullptr;
     wxCheckBox* m_date_chkb = nullptr;
-    AccountManager* m_acc_manager = nullptr;
+    std::unique_ptr<AccountManager> m_acc_manager;
 public:
     cMain();
     ~cMain();
     void InitDB(wxCommandEvent& evt);
+    void SaveFile(wxCommandEvent& evt);
     void OnButtonClicked(wxCommandEvent& evt);
     wxDECLARE_EVENT_TABLE();
 };

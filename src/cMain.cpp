@@ -37,6 +37,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_BUTTON(10001, OnButtonClicked)
 	//EVT_BUTTON(10002, InitDB)
 	EVT_MENU(10003, InitDB)
+	EVT_MENU(10004, SaveFile)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -45,7 +46,8 @@ cMain::cMain()
 	m_menu_bar = new wxMenuBar();
 	wxMenu* dbmenu = new wxMenu();
 	m_menu_bar->Append(dbmenu, "Database");
-	m_initdb_menu_item = dbmenu->Append(10003, "Init");
+	m_initdb_menu_item = dbmenu->Append(10003, "Init with csv data");
+	m_initdb_menu_item = dbmenu->Append(10004, "Save file");
 
 	SetMenuBar(m_menu_bar);
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -79,7 +81,6 @@ cMain::cMain()
 	//m_combo = new wxComboBox(this, wxID_ANY, "EUR", wxPoint(30, 140), wxSize(150, 30), wxArrayString(5, choices));
 
 
-	m_acc_manager = new AccountManager;
 	m_status_bar = new wxStatusBar(this, wxID_ANY, wxST_SIZEGRIP);
 	SetStatusBar(m_status_bar);
 	m_status_bar->SetFieldsCount(1);
@@ -88,10 +89,14 @@ cMain::cMain()
 }
 
 cMain::~cMain() {
-	delete m_acc_manager;
+}
+
+void cMain::SaveFile(wxCommandEvent& evt) {
+	evt.Skip();
 }
 
 void cMain::InitDB(wxCommandEvent& evt) {
+	m_acc_manager.reset(new AccountManager);
 	m_acc_manager->Init();
 	m_initdb_menu_item->Enable(false);
 	std::stringstream str;
@@ -105,6 +110,10 @@ void cMain::InitDB(wxCommandEvent& evt) {
 
 void cMain::OnButtonClicked(wxCommandEvent& evt) {
 	evt.Skip();
+	if (!m_acc_manager) {
+		m_search_result_text->SetLabel("First load the database");
+		return;
+	}
 	std::string result;
 	wxString val1 = m_client_search_text->GetValue();
 	wxString val2 = m_category_search_text->GetValue();
@@ -181,5 +190,5 @@ void cMain::OnButtonClicked(wxCommandEvent& evt) {
 	//m_window->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();
 	//m_window->SetSize(rect.GetSize());
-	m_window->SetScrollbars(5,5, rect.width, rect.height); // ask the sizer about the needed size
+	m_window->SetScrollbars(5,5, rect.width, rect.height);
 }

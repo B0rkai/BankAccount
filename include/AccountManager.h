@@ -5,6 +5,7 @@
 #include "IIdResolve.h"
 #include "INameResolve.h"
 #include "CategorySystem.h"
+#include "ClientManager.h"
 #include "Query.h"
 
 class Account;
@@ -12,8 +13,9 @@ class Client;
 
 class AccountManager : public IDataBase, public IIdResolve, public INameResolve {
 	std::vector<std::string> m_transaction_types;
-	std::unordered_map<std::string, Client*> m_client_map;
-	std::vector<Client*> m_clients;
+	/*std::unordered_map<std::string, Client*> m_client_map;
+	std::vector<Client*> m_clients;*/
+	ClientManager m_client_man;
 	std::vector<Account*> m_accounts;
 	CategorySystem m_category_system;
 
@@ -31,6 +33,8 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve 
 	virtual std::vector <uint8_t> GetCategoryId(const char* subcat) const override;
 	virtual std::string GetClientInfo(const uint16_t id) const override;
 	virtual std::string GetCategoryInfo(const uint8_t id) const override;
+
+	inline virtual void Modified() {};
 
 public:
 	AccountManager();

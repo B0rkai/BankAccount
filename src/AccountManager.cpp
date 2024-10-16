@@ -73,47 +73,15 @@ uint8_t AccountManager::CreateOrGetAccountId(const char* bank_name, const char* 
 }
 
 std::vector<uint16_t> AccountManager::GetClientId(const char* client_name) const {
-	if (strlen(client_name) == 0) {
-		return {0};
-	}
-	auto it = m_client_map.find(client_name);
-	if (it != m_client_map.end()) {
-		return {it->second->GetId()};
-	}
-	// make linear search string contains
-	std::vector<uint16_t> results;
-	for (auto client : m_clients) {
-		if (client->CheckNameContains(client_name)) {
-			results.push_back(client->GetId());
-		}
-	}
-	return results;
+	return m_client_man.GetClientIds(client_name);
 }
 
 std::vector <uint8_t> AccountManager::GetCategoryId(const char* subcat) const {
 	return m_category_system.GetCategoryId(subcat);
 }
 
-uint16_t AccountManager::CreateOrGetClientId(const char* client_name, const char* client_account_number) {
-	if (strlen(client_name) == 0) {
-		return 0;
-	}
-	auto it = m_client_map.find(client_name);
-	if (it == m_client_map.end()) {
-		size_t size = m_clients.size();
-		if (size + 1 == INVALID_CLIENT_ID) {
-			throw "too many clients";
-		}
-		Client* new_client = new Client((uint16_t)size, client_name);
-			m_clients.push_back(new_client); ;
-		if (strlen(client_account_number)) {
-			new_client->AddAccountNumber(client_account_number);
-		}
-		m_client_map.emplace(client_name, new_client);
-		return size;
-	}
-	it->second->AddAccountNumber(client_account_number);
-	return it->second->GetId();
+uint16_t AccountManager::CreateOrGetClientId(const char* client_name, const char*) {
+	return m_client_man.GetClientId(client_name);
 }
 
 std::string AccountManager::GetCategoryName(const uint8_t id) const {
@@ -131,24 +99,17 @@ const char* AccountManager::GetTransactionType(const uint8_t id) const {
 }
 
 const char* AccountManager::GetClientName(const uint16_t id) const {
-	if(id < m_clients.size()) {
-		return m_clients[id]->GetName();
-	}
-	return "INVALID_CLIENT";
+	return m_client_man.GetClientName(id);
 }
 
 AccountManager::AccountManager() {}
 
 AccountManager::~AccountManager() {
 	DeletePointers(m_accounts);
-	DeletePointers(m_clients);
 }
 
 void AccountManager::Init() {
 	CSVLoader loader;
-	if (m_clients.empty()) {
-		m_clients.push_back(new Client(0, "")); // the default 'empty' client
-	}
 
 	loader.LoadFileToDB(*this, FILENAME);
 }
@@ -158,7 +119,7 @@ size_t AccountManager::CountAccounts() {
 }
 
 size_t AccountManager::CountClients() {
-	return m_clients.size();
+	return m_client_man.size();
 }
 
 size_t AccountManager::CountTransactions() {
@@ -170,17 +131,7 @@ size_t AccountManager::CountTransactions() {
 }
 
 std::string AccountManager::GetClientInfo(const uint16_t id) const {
-	std::string res;
-	size_t size = m_clients.size();
-	if (size <= id) {
-		res = "Invalid client id";
-		return res;
-	}
-	Client* client = m_clients[id];
-	if (client) {
-		return client->PrintDebug();
-	}
-	return res;
+	return m_client_man.GetClientInfo(id);
 }
 
 std::string AccountManager::GetCategoryInfo(const uint8_t id) const {
@@ -203,7 +154,7 @@ std::string AccountManager::GetClientInfoOfName(const char* name) {
 	}
 	ss << " found\n";
 	for (auto id : results) {
-		ss << m_clients[id]->PrintDebug();
+		ss << m_client_man.GetClientInfo(id);
 		ss << "\n";
 	}
 	return ss.str();
