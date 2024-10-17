@@ -30,7 +30,7 @@ bool CSVLoader::LoadFileToDB(IDataBase& dbif, const std::string& filename) {
         }
         uint8_t type_id = dbif.CreateOrGetTransactionTypeId(row[type_column]);
         uint16_t client_id = dbif.CreateOrGetClientId(row[client_name_column], row[client_acc_num_column]);
-        dbif.AddTransaction(account_id, std::stol(row[date_column]), type_id, curr->ParseAmount(row[amount_column]), client_id, row[category_column], row[memo_column], row[description_column]);
+        dbif.AddTransaction(account_id, (uint16_t)std::stol(row[date_column]), type_id, curr->ParseAmount(row[amount_column]), client_id, row[category_column], row[memo_column], row[description_column]);
     }
     return false;
 }

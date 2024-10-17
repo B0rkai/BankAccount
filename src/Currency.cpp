@@ -55,15 +55,15 @@ std::string Currency::PrettyPrint(const int32_t val) const {
 
 int32_t Currency::ParseAmount(const char* amount) const {
 	if (!m_cents) {
-		return std::stoll(amount);
+		return std::stol(amount);
 	}
 	std::string samount(amount);
 	size_t pos = samount.find(",");
 	if (pos != std::string::npos) {
 		samount[pos] = '\0';
-		return std::stoll(samount.c_str()) * 100 + std::stoll(&samount[pos+1]);
+		return std::stoll(samount.c_str()) * 100 + std::stol(&samount[pos+1]);
 	}
-	return std::stoll(samount.c_str()) * 100;
+	return std::stol(samount.c_str()) * 100;
 }
 
 class Euro : public Currency {
@@ -97,7 +97,7 @@ class GBPound : public Currency {
 	static GBPound* s_object;
 public:
 	GBPound()
-		: Currency("£", "Pound sterling", "GBP", '.', ',', true, true) {}
+		: Currency("\u00A3", "Pound sterling", "GBP", '.', ',', true, true) {}
 	static GBPound* GetObject();
 	virtual CurrencyType Type() const { return GBP; }
 };

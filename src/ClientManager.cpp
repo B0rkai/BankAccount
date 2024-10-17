@@ -16,7 +16,7 @@ ClientManager::~ClientManager() {
 	DeletePointers(m_clients);
 }
 
-std::string ClientManager::GetClientInfo(const uint16_t id) const {
+std::string ClientManager::GetInfo(const uint16_t id) const {
 	std::string res;
 	size_t size = m_clients.size();
 	if (size <= id) {
@@ -30,9 +30,32 @@ std::string ClientManager::GetClientInfo(const uint16_t id) const {
 	return res;
 }
 
-const char* ClientManager::GetClientName(const uint16_t id) const {
+const char* ClientManager::GetName(const uint16_t id) const {
 	CheckId(id);
 	return m_clients[id]->GetName();
+}
+
+StringTable ClientManager::List() const {
+	StringTable table;
+	table.reserve(m_clients.size() + 1);
+	table.push_back({"ID", "Name", "Account Number 1"});
+	size_t acccolumns = 1;
+	for (const Client* cli : m_clients) {
+		StringVector& row = table.emplace_back();
+		row.push_back(std::to_string(cli->GetId()));
+		row.push_back(cli->GetName());
+		auto& accs = cli->GetAccountNumbers();
+		if (accs.size() > acccolumns) {
+			acccolumns = accs.size();
+		}
+		row.insert(row.end(), accs.begin(), accs.end());
+	}
+	for (int i = 1; i < acccolumns; ++i) {
+		std::string head("Account Number ");
+		head.append(std::to_string(i + 1));
+		table.front().push_back(head);
+	}
+	return table;
 }
 
 bool ClientManager::MergeClients(const std::set<uint16_t>& froms, const uint16_t to) {
@@ -89,16 +112,16 @@ uint16_t ClientManager::GetClientId(const char* client_name) {
 	}
 	// create new client
 	m_clients.push_back(new Client((uint16_t)size, client_name));
-	return size;
+	return (uint16_t)size;
 	
 }
 
-void ClientManager::AddClientAccountNumber(const uint16_t id, const char* acc_number) {
+void ClientManager::AddAccountNumber(const uint16_t id, const char* acc_number) {
 	CheckId(id);
 	m_clients[id]->AddAccountNumber(acc_number);
 }
 
-void ClientManager::AddClientKeyword(const uint16_t id, const char* keyword) {
+void ClientManager::AddKeyword(const uint16_t id, const char* keyword) {
 	CheckId(id);
 	m_clients[id]->AddKeyword(keyword);
 }
@@ -116,16 +139,15 @@ void ClientManager::Stream(std::ostream& out) const {
 void ClientManager::Stream(std::istream& in) {
 	int id, size;
 	in >> size;
-	char dump;
-	in >> std::noskipws >> dump; // eat endl
+	DumpChar(in); // eat endl
 	m_clients.reserve(size + 1);
 	std::string name;
-	while (true) {
+	for (int i = 0; i < size; ++i) {
 		in >> id;
-		if (in.eof()) {
+		/*if (in.eof()) {
 			break;
-		}
-		in >> dump;
+		}*/
+		DumpChar(in);
 		StreamString(in, name);
 		m_clients.push_back(new Client(id, name.c_str()));
 		m_clients.back()->Stream(in);
@@ -136,7 +158,7 @@ size_t ClientManager::size() const {
 	return m_clients.size();
 }
 
-std::vector<uint16_t> ClientManager::GetClientIds(const char* client_name) const {
+std::vector<uint16_t> ClientManager::GetIds(const char* client_name) const {
 	if (strlen(client_name) == 0) {
 		return {0};
 	}

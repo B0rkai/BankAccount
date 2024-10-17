@@ -40,7 +40,7 @@ public:
 	inline void AddId(const uint16_t id) { m_ids.emplace(id); }
 	virtual bool CheckTransaction(const Transaction* tr) = 0;
 	inline virtual void PreResolve() {};
-	virtual std::string PrintDebug();
+	//virtual std::string PrintDebug();
 	virtual std::string PrintResult();
 	inline virtual bool ReadOnly() const { return true; }
 	inline virtual bool IsOk() const = 0;
@@ -56,9 +56,9 @@ public:
 
 class QueryClient : public QueryByName {
 	std::string m_result;
-	virtual std::string PrintDebug();
+	//virtual std::string PrintDebug();
 	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return CLIENT; }
+	inline virtual QueryTopic GetTopic() const override { return QueryTopic::CLIENT; }
 	virtual void PreResolve() override;
 public:
 	virtual std::string PrintResult();
@@ -80,7 +80,7 @@ private:
 };
 
 class QueryCurrencySum : public QuerySum {
-	inline virtual QueryTopic GetTopic() const override { return SUM; }
+	inline virtual QueryTopic GetTopic() const override { return QueryTopic::SUM; }
 	virtual bool CheckTransaction(const Transaction* tr) override;
 protected:
 	std::map<CurrencyType, Result> m_results;
@@ -93,7 +93,7 @@ public:
 class QueryCategorySum : public QueryCurrencySum {
 	std::map<uint8_t, QueryCurrencySum> m_subqueries;
 	std::map<uint8_t, std::string> m_category_names;
-	inline virtual QueryTopic GetTopic() const override { return SUM; }
+	inline virtual QueryTopic GetTopic() const override { return QueryTopic::SUM; }
 	virtual bool CheckTransaction(const Transaction* tr) override;
 public:
 	virtual std::string PrintResult();
@@ -104,7 +104,7 @@ public:
 class QueryCategory : public QueryByName {
 	std::string m_result;
 	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return CATEGORY; }
+	inline virtual QueryTopic GetTopic() const override { return QueryTopic::CATEGORY; }
 	virtual void PreResolve() override;
 public:
 	virtual std::string PrintResult();
@@ -134,12 +134,12 @@ private:
 
 class QueryAmount : public QueryByNumber {
 	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return AMOUNT; }
+	inline virtual QueryTopic GetTopic() const override { return QueryTopic::AMOUNT; }
 };
 
 class QueryDate : protected QueryByNumber {
 	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return DATUM; }
+	inline virtual QueryTopic GetTopic() const override { return QueryTopic::DATUM; }
 public:
 	inline void SetMax(uint16_t max) { QueryByNumber::SetMax((int32_t)max); }
 	inline void SetMin(uint16_t min) { QueryByNumber::SetMin((int32_t)min); }

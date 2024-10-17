@@ -1,11 +1,12 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include <set>
 #include <string>
 #include <istream>
 #include <ostream>
 
-enum QueryTopic {
+enum class QueryTopic {
 	SUM,
 	TYPE,
 	DATUM,
@@ -19,12 +20,14 @@ enum QueryTopic {
 constexpr char COMMA = ',';
 constexpr char DQUOTE = '\"';
 constexpr char ENDL = '\n';
+constexpr char CRET = '\r';
 
 constexpr uint8_t INVALID_ACCOUNT_ID = 0xffu;
 constexpr uint8_t INVALID_TYPE_ID = 0xffu;
 constexpr uint8_t INVALID_CATEGORY_ID = 0xffu;
 constexpr uint16_t INVALID_CLIENT_ID = 0xffffu;
 
+using StringSet = std::set<std::string>;
 using StringVector = std::vector<std::string>;
 using StringTable = std::vector<StringVector>;
 
@@ -37,7 +40,7 @@ void DeletePointers(PtrContainer& container) {
 
 template<class StringContainer>
 void StreamContainer(std::ostream& out, const StringContainer& container) {
-	int size = container.size();
+	size_t size = container.size();
 	out << container.size();
 	if (!size) {
 		return;
@@ -65,7 +68,7 @@ void StreamContainer(std::istream& in, StringContainer& container) {
 	in >> size;
 	container.clear();
 	if (!size) {
-		in >> std::noskipws >> dump; // eat ENDL
+		DumpChar(in); // eat CRET/ENDL
 		return;
 	}
 	in >> dump; // eat comma
@@ -76,12 +79,13 @@ void StreamContainer(std::istream& in, StringContainer& container) {
 		while (c != COMMA) {
 			v.append(1,c);
 			in >> std::noskipws >> c;
-			if (c == ENDL) {
+			if (c == CRET) {
+				DumpChar(in);
 				break;
 			}
 		}
 		container.insert(container.end(), v);
-		if (c == ENDL) {
+		if (c == CRET) {
 			break;
 		}
 	}
@@ -89,3 +93,5 @@ void StreamContainer(std::istream& in, StringContainer& container) {
 
 void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear);
 int DMYToExcelSerialDate(int nDay, int nMonth, int nYear);
+
+std::string GetDateFormat(const uint16_t date);

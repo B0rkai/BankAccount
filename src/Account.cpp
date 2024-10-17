@@ -4,6 +4,8 @@
 #include "WQuery.h"
 #include "Transaction.h"
 
+#include <algorithm>
+
 Account::Account(const char* bank_name, const char* acc_number, const char* acc_name, const CurrencyType curr)
 : m_bank_name(bank_name), m_acc_number(acc_number), m_acc_name(acc_name), m_curr(MakeCurrency(curr)) {}
 
@@ -24,15 +26,20 @@ void Account::AddTransaction(const uint16_t date, const uint8_t type_id, const i
 	new_tra.GetCategoryId() = category_id;
 }
 
+bool Account::RunQuery(Query& query, const Transaction* tr) const {
+	bool match = true;
+	for(auto& qe : query) {
+		match &= qe->CheckTransaction(tr);
+		if (!match) {
+			return false;
+		}
+	}
+	return match;
+}
+
 void Account::MakeQuery(Query& query) const {
 	for(const auto& tr : m_transactions) {
-		bool match = true;
-		for(auto& qe : query) {
-			match &= qe->CheckTransaction(&tr);
-			if (!match) {
-				break;
-			}
-		}
+		bool match = RunQuery(query, &tr);
 		if(match && query.ReturnList()) {
 			query.GetResult().push_back(&tr);
 		}
@@ -41,10 +48,21 @@ void Account::MakeQuery(Query& query) const {
 
 void Account::MakeQuery(WQuery& query) {
 	for (auto& tr : m_transactions) {
-		if (query.WElement()->CheckTransaction(&tr) && query.ReturnList()) {
+		if (RunQuery(query, &tr) && query.WElement()->CheckTransaction(&tr) && query.ReturnList()) {
 			query.GetResult().push_back(&tr);
 		}
 	}
+}
+
+const Transaction* Account::GetLastRecord() const {
+	return &m_transactions.back();
+}
+
+void Account::Sort() {
+	// TODO solve it
+	std::sort(m_transactions.begin(), m_transactions.end(), [](const Transaction& t1, const Transaction& t2) {
+		return (t1.GetDate() < t2.GetDate());
+	});
 }
 
 void Account::Stream(std::ostream& out) const {
@@ -70,7 +88,7 @@ void Account::Stream(std::istream& in) {
 	for (int i = 0; i < size; ++i) {
 		in >> am >> dump >> da >> dump >> cli >> dump >> ty >> dump >> ca >> dump;
 		StreamString(in, me);
-		if (in.peek() != ENDL) {
+		if (in.peek() != CRET) {
 			StreamString(in, de);
 		} else {
 			DumpChar(in);
@@ -84,5 +102,4 @@ void Account::Stream(std::istream& in) {
 		}
 		m_transactions.emplace_back((IAccount*)this, am, da, cli, (uint8_t)ty, !me.empty() ? &m_memos.back() : nullptr, !de.empty() ? &m_descriptions.back() : nullptr).GetCategoryId() = (uint8_t)ca;
 	}
-
 }

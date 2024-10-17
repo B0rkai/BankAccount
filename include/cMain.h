@@ -25,14 +25,17 @@ class cMain :
     wxCheckBox* m_chkb = nullptr;
     wxCheckBox* m_category_sum_chkb = nullptr;
     wxCheckBox* m_date_chkb = nullptr;
+    wxCheckBox* m_categorize_chkb = nullptr;
     std::unique_ptr<BankAccountFile> m_bank_file;
 public:
     cMain();
     ~cMain();
-    void InitDB(wxCommandEvent& evt);
+    void List(wxCommandEvent& evt);
+    void DateFilterToggle(wxCommandEvent& evt);
+    void LoadFile(wxCommandEvent& evt);
     void SaveFile(wxCommandEvent& evt);
-    void ClientMerge(wxCommandEvent& evt);
-    void OnButtonClicked(wxCommandEvent& evt);
+    void Categorize(wxCommandEvent& evt);
+    void SearchButtonClicked(wxCommandEvent& evt);
     wxDECLARE_EVENT_TABLE();
 };
 

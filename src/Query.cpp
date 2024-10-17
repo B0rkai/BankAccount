@@ -40,23 +40,23 @@ std::string QueryClient::PrintResult() {
 	return ss.str();
 }
 
-std::string QueryClient::PrintDebug() {
-	std::string res = QueryElement::PrintDebug();
-	if (m_names.size()) {
-		res.append("names:[");
-	}
-	bool first = true;
-	for (auto& name : m_names) {
-		if (!first) {
-			res.append("|");
-		} else {
-			first = false;
-		}
-		res.append(name);
-	}
-	res.append("]");
-	return res;
-}
+//std::string QueryClient::PrintDebug() {
+//	std::string res = QueryElement::PrintDebug();
+//	if (m_names.size()) {
+//		res.append("names:[");
+//	}
+//	bool first = true;
+//	for (auto& name : m_names) {
+//		if (!first) {
+//			res.append("|");
+//		} else {
+//			first = false;
+//		}
+//		res.append(name);
+//	}
+//	res.append("]");
+//	return res;
+//}
 
 bool QueryClient::CheckTransaction(const Transaction* tr) {
 	const uint16_t client_id = tr->GetClientId();
@@ -124,9 +124,9 @@ StringTable QueryCategorySum::GetStringResult() const {
 		Currency* curr = MakeCurrency(pair.first);
 		row.push_back(curr->GetName());
 		row.push_back(std::to_string(pair.second.m_count));
-		row.push_back(curr->PrettyPrint(pair.second.m_inc));
-		row.push_back(curr->PrettyPrint(pair.second.m_exp));
-		row.push_back(curr->PrettyPrint(pair.second.m_sum));
+		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_inc));
+		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_exp));
+		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_sum));
 	}
 	// TODO
 	return table;
@@ -154,23 +154,23 @@ std::string QuerySum::PrintResultLine(const Result& res, const Currency* curr) c
 	std::string ret;
 	int cnt = 0;
 	if (res.m_inc) {
-		ret.append(curr->PrettyPrint(res.m_inc)).append(" income ");
+		ret.append(curr->PrettyPrint((int32_t)res.m_inc)).append(" income ");
 		++cnt;
 	}
 	if (res.m_exp) {
-		ret.append(curr->PrettyPrint(res.m_exp)).append(" expense ");
+		ret.append(curr->PrettyPrint((int32_t)res.m_exp)).append(" expense ");
 		++cnt;
 	}
 	if ((res.m_sum == 0) && (cnt != 1)) {
 		ret.append("a zero sum");
 	} else if (cnt == 2) {
-		ret.append("a sum of ").append(curr->PrettyPrint(res.m_sum));
+		ret.append("a sum of ").append(curr->PrettyPrint((int32_t)res.m_sum));
 	}
 	return ret;
 }
 
 StringVector QuerySum::GetStringResultRow(const Result& res, const Currency* curr) const {
-	return {std::to_string(res.m_count), curr->PrettyPrint(res.m_inc), curr->PrettyPrint(res.m_exp), curr->PrettyPrint(res.m_sum)};
+	return {std::to_string(res.m_count), curr->PrettyPrint((int32_t)res.m_inc), curr->PrettyPrint((int32_t)res.m_exp), curr->PrettyPrint((int32_t)res.m_sum)};
 }
 
 std::string QueryCurrencySum::PrintResult() {
@@ -197,16 +197,16 @@ StringTable QueryCurrencySum::GetStringResult() const {
 	return table;
 }
 
-std::string QueryElement::PrintDebug() {
-	switch (GetTopic()) {
-	case CLIENT:
-		return "CLIENT: ";
-	case SUM:
-		return "SUMMARIZE";
-	default:
-		return "UNKNOWN";
-	}
-}
+//std::string QueryElement::PrintDebug() {
+//	switch (GetTopic()) {
+//	case CLIENT:
+//		return "CLIENT: ";
+//	case SUM:
+//		return "SUMMARIZE";
+//	default:
+//		return "UNKNOWN";
+//	}
+//}
 
 std::string QueryElement::PrintResult() {
 	return std::string();

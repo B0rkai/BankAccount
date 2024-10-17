@@ -3,7 +3,8 @@
 #include <vector>
 #include <string>
 
-#include "IWClient.h"
+#include "CommonTypes.h"
+#include "IWQuery.h"
 
 class Client;
 
@@ -18,18 +19,19 @@ public:
 // Load API
 	// create new client if not found
 	uint16_t GetClientId(const char* name);
-	void AddClientAccountNumber(const uint16_t id, const char* acc_number);
-	void AddClientKeyword(const uint16_t id, const char* keyword);
+	void AddAccountNumber(const uint16_t id, const char* acc_number);
+	void AddKeyword(const uint16_t id, const char* keyword);
 
 	void Stream(std::ostream& out) const;
 	void Stream(std::istream& in);
 
 // Query API
 	// get client ids of client names matching keyword
-	std::vector<uint16_t> GetClientIds(const char* keyword) const;
+	std::vector<uint16_t> GetIds(const char* keyword) const;
 	// print: id, name, (account numbers)
-	std::string GetClientInfo(const uint16_t id) const;
-	const char* GetClientName(const uint16_t id) const;
+	std::string GetInfo(const uint16_t id) const;
+	const char* GetName(const uint16_t id) const;
+	StringTable List() const;
 
 // WQuery API
 	virtual bool MergeClients(const std::set<uint16_t>& from, const uint16_t to) override;

@@ -43,7 +43,7 @@ void CSVRow::readNextRow(std::istream& str) {
             quoted = false;
             ++pos;
         }
-        m_data.emplace_back(pos);
+        m_data.emplace_back((int)pos);
         m_line[pos] = '\0'; // terminate individual char* fields
         ++pos;
         if (m_line[pos] == '"') {
@@ -53,7 +53,7 @@ void CSVRow::readNextRow(std::istream& str) {
     }
     // This checks for a trailing comma with no data after it.
     pos = m_line.size();
-    m_data.emplace_back(pos);
+    m_data.emplace_back((int)pos);
 }
 
 std::istream& operator>>(std::istream& str, CSVRow& data) {

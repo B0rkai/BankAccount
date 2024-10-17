@@ -6,20 +6,8 @@
 #include "IAccount.h"
 #include "Currency.h"
 
-std::string GetDateFormat(const uint16_t date) {
-    int year, month, day;
-    ExcelSerialDateToDMY(date, day, month, year);
-    std::stringstream ss;
-    ss << year << "." << std::setfill('0') << std::setw(2) << month << "." << std::setfill('0') << std::setw(2) << day;
-	return ss.str();
-}
-
 Transaction::Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const uint16_t client_id, const uint8_t type_id, std::string* memo, std::string* desc)
 	: m_parent(parent), m_amount(amount), m_date(date), m_client_id(client_id), m_type_id(type_id), m_memo_ptr(memo), m_desc_ptr(desc) {}
-
-//void Transaction::SetCategoryId(const uint8_t cat_id) {
-//	m_category_id = cat_id;
-//}
 
 StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
     StringVector res;
@@ -56,3 +44,4 @@ void Transaction::Stream(std::ostream& out) const {
     }
     out << ENDL;
 }
+

@@ -9,10 +9,10 @@ class IAccount;
 
 class Transaction {
 	IAccount* m_parent;
-	const int32_t m_amount;
-	const uint16_t m_date;
+	int32_t m_amount;
+	uint16_t m_date;
 	uint16_t m_client_id;
-	const uint8_t m_type_id;
+	uint8_t m_type_id;
 	uint8_t m_category_id = 0xffu;
 	std::string* m_memo_ptr;
 	std::string* m_desc_ptr;
@@ -29,8 +29,19 @@ public:
 	inline uint8_t GetTypeId() const { return m_type_id; }
 	inline uint8_t GetCategoryId() const { return m_category_id; }
 	inline uint8_t& GetCategoryId() { return m_category_id; }
-	StringVector PrintDebug(const IIdResolve* resif) const;
 	CurrencyType GetCurrencyType() const;
+
+	enum Debug {
+		DATE,
+		TYPE,
+		AMOUNT,
+		CLIENT,
+		MEMO,
+		DESCRIPTION,
+		CATEGORY
+	};
+	StringVector PrintDebug(const IIdResolve* resif) const;
+	
 	void Stream(std::ostream& out) const;
 };
 

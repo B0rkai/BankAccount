@@ -361,3 +361,10 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# external dependencies
+external/**.lib
+external/**/*.h
+
+# program files
+save/**

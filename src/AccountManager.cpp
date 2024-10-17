@@ -51,7 +51,7 @@ uint8_t AccountManager::CreateOrGetTransactionTypeId(const char* type)
 		throw "too many transaction types";
 	}
 	m_transaction_types.emplace_back(type);
-	return size;
+	return (uint8_t)size;
 }
 
 uint8_t AccountManager::CreateOrGetAccountId(const char* bank_name, const char* account_number, const CurrencyType curr, const char* account_name)
@@ -71,11 +71,11 @@ uint8_t AccountManager::CreateOrGetAccountId(const char* bank_name, const char* 
 		throw "too many accounts";
 	}
 	m_accounts.push_back(new Account(bank_name, account_number, account_name, curr));
-	return size;
+	return (uint8_t)size;
 }
 
 std::vector<uint16_t> AccountManager::GetClientId(const char* client_name) const {
-	return m_client_man.GetClientIds(client_name);
+	return m_client_man.GetIds(client_name);
 }
 
 std::vector <uint8_t> AccountManager::GetCategoryId(const char* subcat) const {
@@ -84,7 +84,7 @@ std::vector <uint8_t> AccountManager::GetCategoryId(const char* subcat) const {
 
 uint16_t AccountManager::CreateOrGetClientId(const char* client_name, const char* acc_num) {
 	uint16_t id = m_client_man.GetClientId(client_name);
-	m_client_man.AddClientAccountNumber(id, acc_num);
+	m_client_man.AddAccountNumber(id, acc_num);
 	return id;
 }
 
@@ -103,7 +103,7 @@ const char* AccountManager::GetTransactionType(const uint8_t id) const {
 }
 
 const char* AccountManager::GetClientName(const uint16_t id) const {
-	return m_client_man.GetClientName(id);
+	return m_client_man.GetName(id);
 }
 
 void AccountManager::StreamCategorySystem(std::ostream& out) const {
@@ -131,9 +131,8 @@ void AccountManager::StreamTransactionTypes(std::ostream& out) const {
 
 void AccountManager::StreamTransactionTypes(std::istream& in) {
 	int size;
-	char dump;
 	in >> size;
-	in >> std::noskipws >> dump; // eat endl
+	DumpChar(in); // eat endl
 	m_transaction_types.clear();
 	m_transaction_types.reserve(size);
 	for (int i = 0; i < size; ++i) {
@@ -153,8 +152,7 @@ void AccountManager::StreamAccounts(std::ostream& out) const {
 void AccountManager::StreamAccounts(std::istream& in) {
 	int size;
 	in >> size;
-	char dump;
-	in >> std::noskipws >> dump; // eat endl
+	DumpChar(in); // eat endl
 	m_accounts.clear();
 	m_accounts.reserve(size);
 	std::string bank_name, acc_numb, acc_name, curr_name;
@@ -165,6 +163,7 @@ void AccountManager::StreamAccounts(std::istream& in) {
 		StreamString(in, curr_name);
 		m_accounts.push_back(new Account(bank_name.c_str(), acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
 		m_accounts.back()->Stream(in);
+		m_accounts.back()->Sort();
 	}
 }
 
@@ -174,21 +173,15 @@ AccountManager::~AccountManager() {
 	DeletePointers(m_accounts);
 }
 
-void AccountManager::Init() {
-	CSVLoader loader;
-
-	loader.LoadFileToDB(*this, FILENAME);
-}
-
-size_t AccountManager::CountAccounts() {
+size_t AccountManager::CountAccounts() const {
 	return m_accounts.size();
 }
 
-size_t AccountManager::CountClients() {
+size_t AccountManager::CountClients() const {
 	return m_client_man.size();
 }
 
-size_t AccountManager::CountTransactions() {
+size_t AccountManager::CountTransactions() const {
 	size_t res = 0;
 	for (auto& acc : m_accounts) {
 		res += acc->Size();
@@ -196,8 +189,35 @@ size_t AccountManager::CountTransactions() {
 	return res;
 }
 
+size_t AccountManager::CountCategories() const {
+	return m_category_system.size();
+}
+
+std::string AccountManager::GetLastRecordDate() const {
+	std::string lastdate;
+	uint16_t max = 0;
+	for (const auto* acc : m_accounts) {
+		const Transaction* tr = acc->GetLastRecord();
+		if (tr->GetDate() > max) {
+			max = tr->GetDate();
+		}
+	}
+	return GetDateFormat(max);
+}
+
+StringTable AccountManager::GetSummary(const QueryTopic topic) {
+	switch (topic) {
+	case QueryTopic::CLIENT:
+		return m_client_man.List();
+	case QueryTopic::CATEGORY:
+		return m_category_system.List();
+	default:
+		return {};
+	}
+}
+
 std::string AccountManager::GetClientInfo(const uint16_t id) const {
-	return m_client_man.GetClientInfo(id);
+	return m_client_man.GetInfo(id);
 }
 
 std::string AccountManager::GetCategoryInfo(const uint8_t id) const {
@@ -220,7 +240,7 @@ std::string AccountManager::GetClientInfoOfName(const char* name) {
 	}
 	ss << " found\n";
 	for (auto id : results) {
-		ss << m_client_man.GetClientInfo(id);
+		ss << m_client_man.GetInfo(id);
 		ss << "\n";
 	}
 	return ss.str();
@@ -252,14 +272,18 @@ StringTable AccountManager::MakeQuery(Query& query) const {
 
 StringTable AccountManager::MakeQuery(WQuery& query) {
 	QueryElement::SetResolveIf(this);
-	//for (auto& qe : query) {
-	//	qe->PreResolve();
-	//}
+	WQueryElement::SetResolveIf(this);
+	for (auto& qe : query) {
+		qe->PreResolve();
+	}
 	WQueryElement* wqe = query.WElement();
 	wqe->PreResolve();
 	switch (wqe->GetTopic()) {
-	case CLIENT:
+	case QueryTopic::CLIENT:
 		wqe->Execute(&m_client_man);
+		break;
+	case QueryTopic::CATEGORY:
+		wqe->Execute(&m_category_system);
 		break;
 	default:
 		break;
@@ -269,6 +293,7 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 		acc->MakeQuery(query);
 	}
 	QueryElement::SetResolveIf(nullptr);
+	WQueryElement::SetResolveIf(nullptr);
 	if (!query.ReturnList()) {
 		return {};
 	}

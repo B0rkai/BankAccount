@@ -19,8 +19,7 @@ bool Category::CheckName(const char* name) const {
 	return ((m_category_name.find(name) != std::string::npos) || (m_subcategory_name.find(name) != std::string::npos));
 }
 
-bool Category::CheckKeywords(const char* str) const {
-	std::string text(str);
+bool Category::CheckKeywords(const std::string text) const {
 	for (auto& key : m_keywords) {
 		if (text.find(key) != std::string::npos) {
 			return true;

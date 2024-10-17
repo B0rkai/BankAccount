@@ -21,6 +21,7 @@ class Account : public IAccount {
 	std::vector<Transaction> m_transactions;
 	std::list<std::string> m_memos;
 	std::list<std::string> m_descriptions;
+	bool RunQuery(Query& query, const Transaction* tr) const;
 public:
 	Account(const char* bank_name, const char* acc_number, const char* acc_name, const CurrencyType curr);
 	const char* GetAccNumber() const { return m_acc_number.data(); }
@@ -29,6 +30,11 @@ public:
 	void MakeQuery(Query& query) const;
 	void MakeQuery(WQuery& query);
 	inline virtual const Currency* GetCurrency() const override { return m_curr; }
+
+	const Transaction* GetLastRecord() const;
+
+	void Sort();
+
 	void Stream(std::ostream& out) const;
 	void Stream(std::istream& in);
 };

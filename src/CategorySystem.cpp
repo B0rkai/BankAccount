@@ -91,6 +91,41 @@ const Category* CategorySystem::GetCategory(const uint8_t id) const {
 	return m_categories[id];
 }
 
+StringTable CategorySystem::List() const {
+	StringTable table;
+	table.reserve(m_categories.size() + 1);
+	table.push_back({"ID", "Category", "Sub-Category", "Keywords"});
+	for (const Category* cat : m_categories) {
+		StringVector& row = table.emplace_back();
+		row.push_back(std::to_string(cat->GetId()));
+		row.push_back(cat->GetCategoryName());
+		row.push_back(cat->GetSubCategoryName());
+		StringSet kywrds = cat->GetKeywords();
+		std::string line("[");
+		bool first = true;
+		for (auto& key : kywrds) {
+			if (!first) {
+				line.append(",");
+			} else {
+				first = false;
+			}
+			line.append(key);
+		}
+		line.append("]");
+		row.push_back(line);
+	}
+	return table;
+}
+
+uint8_t CategorySystem::Categorize(const std::string& text) {
+	for (const Category* cat : m_categories) {
+		if (cat->CheckKeywords(text)) {
+			return cat->GetId();
+		}
+	}
+	return 0u;
+}
+
 void CategorySystem::Stream(std::ostream& out) const {
 	out << (m_categories.size() - 1) << ENDL;
 	for (const Category* cat : m_categories) {
@@ -104,16 +139,15 @@ void CategorySystem::Stream(std::ostream& out) const {
 void CategorySystem::Stream(std::istream& in) {
 	int id, size;
 	in >> size;
-	char dump;
-	in >> std::noskipws >> dump; // eat endl
+	DumpChar(in); // eat endl
 	m_categories.reserve(size + 1);
 	std::string cat, subcat;
-	while (true) {
+	for (int i = 0; i < size; ++i) {
 		in >> id;
-		if (in.eof()) {
+		/*if (in.eof()) {
 			break;
-		}
-		in >> dump;
+		}*/
+		DumpChar(in);
 		StreamString(in, cat);
 		StreamString(in, subcat);
 		m_categories.push_back(new Category(id, cat.c_str(), subcat.c_str()));

@@ -50,10 +50,13 @@ protected:
 public:
 	AccountManager();
 	~AccountManager();
-	void Init();
-	size_t CountAccounts();
-	size_t CountClients();
-	size_t CountTransactions();
+	size_t CountAccounts() const;
+	size_t CountClients() const;
+	size_t CountTransactions() const;
+	size_t CountCategories() const;
+
+	std::string GetLastRecordDate() const;
+	StringTable GetSummary(const QueryTopic topic);
 
 	std::string GetClientInfoOfName(const char* name);
 

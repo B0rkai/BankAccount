@@ -17,7 +17,7 @@ public:
 // Read Access
 	inline uint16_t GetId() const { return m_id; }
 	inline const char* GetName() const { return m_name.data(); }
-	inline const std::set<std::string>& GetAccountNumbers() { return m_account_numbers; }
+	inline const std::set<std::string>& GetAccountNumbers() const { return m_account_numbers; }
 
 // Write Access
 	void AddAccountNumber(const char* acc);

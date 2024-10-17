@@ -1,4 +1,6 @@
 #include "CommonTypes.h"
+#include <iomanip>
+#include <sstream>
 
 // From: https://stackoverflow.com/questions/56717088/algorithm-for-converting-serial-date-excel-to-year-month-day-in-c
 
@@ -27,6 +29,9 @@ int DMYToExcelSerialDate(int nDay, int nMonth, int nYear) {
 void DumpChar(std::istream& in) {
     static char dump;
     in >> std::noskipws >> dump;
+    if (dump == '\r') {
+        in >> std::noskipws >> dump;
+    }
 }
 
 void StreamString(std::ostream& out, const std::string& str) {
@@ -51,11 +56,20 @@ void StreamString(std::istream& in, std::string& str) {
     while (c != end) {
         str.append(1, c);
         in >> std::noskipws >> c;
-        if (c == ENDL) {
+        if (c == CRET) {
+            DumpChar(in);
             break;
         }
     }
     if (quoted) {
         in >> dump; // eat comma
     }
+}
+
+std::string GetDateFormat(const uint16_t date) {
+    int year, month, day;
+    ExcelSerialDateToDMY(date, day, month, year);
+    std::stringstream ss;
+    ss << year << "." << std::setfill('0') << std::setw(2) << month << "." << std::setfill('0') << std::setw(2) << day;
+    return ss.str();
 }

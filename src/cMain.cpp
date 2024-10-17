@@ -20,27 +20,46 @@ std::string PrettyTable(const StringTable& table) {
 	std::vector<size_t> widths(column_count, 0);
 	for (int i = 0; i < column_count; ++i) {
 		for (auto row : table) {
+			if (row.size() <= i) {
+				continue;
+			}
 			if (row[i].length() > widths[i]) {
 				widths[i] = row[i].length();
 			}
 		}
 	}
-	for (auto row : table) {
-		for (int i = 0; i < column_count; ++i) {
-			ss << " " << std::setw(widths[i]) << row[i];
+	for (auto& row : table) {
+		int i = 0;
+		for (auto& str : row) {
+			ss << " " << std::setw(widths[i]) << str;
+			++i;
 		}
 		ss << "\n";
 	}
 	return ss.str();
 }
 
+constexpr int SEARCH_BUTT = 10001;
+constexpr int CHKBX_DATE_FILTER = 10002;
+constexpr int MENU_LOAD = 10003;
+constexpr int MENU_SAVE = 10004;
+constexpr int MENU_CATEGORIZE = 10005;
+//constexpr int EVT_6 = 10006;
+//constexpr int EVT_7 = 10007;
+constexpr int MENU_LIST_CLIENTS = 10008;
+constexpr int MENU_LIST_CATEGORIES = 10009;
+
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
-	EVT_BUTTON(10001, OnButtonClicked)
+	EVT_BUTTON(SEARCH_BUTT, SearchButtonClicked)
 	//EVT_BUTTON(10002, InitDB)
-	EVT_MENU(10003, InitDB)
-	EVT_MENU(10004, SaveFile)
-	EVT_MENU(10005, ClientMerge)
-	EVT_MENU(10006, InitDB)
+	EVT_CHECKBOX(CHKBX_DATE_FILTER, DateFilterToggle)
+	EVT_MENU(MENU_LOAD, LoadFile)
+	EVT_MENU(MENU_SAVE, SaveFile)
+	EVT_MENU(MENU_CATEGORIZE, Categorize)
+	//EVT_MENU(10006, LoadFile)
+	//EVT_MENU(10007, Load?)
+	EVT_MENU(MENU_LIST_CLIENTS, List)
+	EVT_MENU(MENU_LIST_CATEGORIES, List)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -51,14 +70,16 @@ cMain::cMain()
 	wxMenu* dbmenu2 = new wxMenu();
 	m_menu_bar->Append(dbmenu1, "Database");
 	m_menu_bar->Append(dbmenu2, "Query");
-	m_initdb_menu_item = dbmenu1->Append(10003, "Init with csv data");
-	m_resetdb_menu_item = dbmenu1->Append(10006, "Reset data");
-	m_resetdb_menu_item->Enable(false);
+	m_initdb_menu_item = dbmenu1->Append(10003, "Load file*");
+	//m_resetdb_menu_item = dbmenu1->Append(10006, "Reset data");
+	//m_resetdb_menu_item->Enable(false);
 	auto mitem = dbmenu1->Append(10007, "Load file");
 	mitem->Enable(false);
 	mitem = dbmenu1->Append(10004, "Save file");
 	//mitem->Enable(false);
-	dbmenu2->Append(10005, "Client Merge");
+	dbmenu2->Append(10005, "Categorize");
+	dbmenu2->Append(10008, "List Clients");
+	dbmenu2->Append(10009, "List Categories");
 
 	SetMenuBar(m_menu_bar);
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -84,7 +105,8 @@ cMain::cMain()
 	m_window->SetBackgroundColour(wxColour(0, 0, 0));
 	m_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transaction list", wxPoint(210, 30));
 	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by categories", wxPoint(210, 50));
-	m_date_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "filter date", wxPoint(210, 70));
+	m_date_chkb = new wxCheckBox(m_main_panel, 10002, "filter date", wxPoint(210, 70));
+	m_categorize_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "categorize records", wxPoint(210, 90));
 	m_but_search = new wxButton(m_main_panel, 10001, "Search", wxPoint(210, 110), wxSize(110, 25));
 	m_date_from_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 0));
 	m_date_to_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(750, 0));
@@ -102,6 +124,29 @@ cMain::cMain()
 cMain::~cMain() {
 }
 
+void cMain::List(wxCommandEvent& evt) {
+	int id = evt.GetId();
+	evt.Skip();
+	if (id == MENU_LIST_CLIENTS) {
+		m_search_result_text->SetLabel(PrettyTable(m_bank_file->GetSummary(QueryTopic::CLIENT)));
+	} else if (id == MENU_LIST_CATEGORIES) {
+		m_search_result_text->SetLabel(PrettyTable(m_bank_file->GetSummary(QueryTopic::CATEGORY)));
+	} else {
+		return;
+	}
+	m_search_result_text->SetInitialSize();
+	//m_window->SetInitialSize();
+	wxRect rect = m_search_result_text->GetRect();
+	//m_window->SetSize(rect.GetSize());
+	m_window->SetScrollbars(5, 5, rect.width, rect.height);
+}
+
+void cMain::DateFilterToggle(wxCommandEvent& evt) {
+	m_date_from_textctrl->Show(m_date_chkb->GetValue());
+	m_date_to_textctrl->Show(m_date_chkb->GetValue());
+	evt.Skip();
+}
+
 void cMain::SaveFile(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
@@ -111,28 +156,46 @@ void cMain::SaveFile(wxCommandEvent& evt) {
 	m_bank_file->Save();
 }
 
-void cMain::ClientMerge(wxCommandEvent& evt) {
+void cMain::Categorize(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
 		m_search_result_text->SetLabel("First load the database");
 		return;
 	}
+	if (!m_categorize_chkb->GetValue()) {
+		m_search_result_text->SetLabel("No Query");
+		return;
+	}
 	WQuery wq;
-	ClientMergeQuery* cmq = new ClientMergeQuery;
-	cmq->AddTargetId(333);
-	cmq->AddOtherId(411);
-	wq.AddWElement(cmq);
+	QueryDate* qdate;
+	if (m_date_chkb->GetValue()) {
+		qdate = new QueryDate;
+		wxDateTime d1 = m_date_from_textctrl->GetDate();
+		wxDateTime d2 = m_date_to_textctrl->GetDate();
+		qdate->SetMin(DMYToExcelSerialDate(d1.GetDay(), d1.GetMonth() + 1, d1.GetYear()));
+		qdate->SetMax(DMYToExcelSerialDate(d2.GetDay(), d2.GetMonth() + 1, d2.GetYear()));
+		wq.push_back((QueryElement*)qdate);
+	}
+	CategorizingQuery* cq = new CategorizingQuery;
+	cq->SetFlags(CategorizingQuery::AUTOMATIC);
+	wq.AddWElement(cq);
+	//ClientMergeQuery* cmq = new ClientMergeQuery;
+	//cmq->AddTargetId(333);
+	//cmq->AddOtherId(411);
+	//wq.AddWElement(cmq);
 	auto table = m_bank_file->MakeQuery(wq);
 	m_search_result_text->SetLabel(PrettyTable(table));
 }
 
-void cMain::InitDB(wxCommandEvent& evt) {
-	m_bank_file.reset(new BankAccountFile("dummy"));
+void cMain::LoadFile(wxCommandEvent& evt) {
+	m_bank_file.reset(new BankAccountFile("save\\BData.baf"));
 	m_bank_file->Load();
 	m_initdb_menu_item->Enable(false);
-	m_resetdb_menu_item->Enable(true);
+	//m_resetdb_menu_item->Enable(true);
 	std::stringstream str;
-	str << " --- " << m_bank_file->CountAccounts() << " accounts has " << m_bank_file->CountTransactions() << " transactions, and " << m_bank_file->CountClients() << " clients found! ---";
+	//str << " --- " << m_bank_file->CountAccounts() << " accounts has " << m_bank_file->CountTransactions() << " transactions, and " << m_bank_file->CountClients() << " clients found! ---";
+	str << " --- " << m_bank_file->CountTransactions() << " records, " << m_bank_file->CountAccounts() << " accounts, " << m_bank_file->CountClients() << " clients, " << m_bank_file->CountCategories() << " categories loaded.";
+	str << " Last record date: " << m_bank_file->GetLastRecordDate() << " --- ";
 	char buf[120];
 	str.getline(buf, 120);
 	std::string name(buf);
@@ -140,7 +203,7 @@ void cMain::InitDB(wxCommandEvent& evt) {
 	evt.Skip();
 }
 
-void cMain::OnButtonClicked(wxCommandEvent& evt) {
+void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
 		m_search_result_text->SetLabel("First load the database");
