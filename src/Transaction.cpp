@@ -17,9 +17,9 @@ std::string GetDateFormat(const uint16_t date) {
 Transaction::Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const uint16_t client_id, const uint8_t type_id, std::string* memo, std::string* desc)
 	: m_parent(parent), m_amount(amount), m_date(date), m_client_id(client_id), m_type_id(type_id), m_memo_ptr(memo), m_desc_ptr(desc) {}
 
-void Transaction::SetCategoryId(const uint8_t cat_id) {
-	m_category_id = cat_id;
-}
+//void Transaction::SetCategoryId(const uint8_t cat_id) {
+//	m_category_id = cat_id;
+//}
 
 StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
     StringVector res;
@@ -43,4 +43,16 @@ StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
 
 CurrencyType Transaction::GetCurrencyType() const {
     return m_parent->GetCurrency()->Type();
+}
+
+void Transaction::Stream(std::ostream& out) const {
+    out << m_amount << COMMA << m_date << COMMA << m_client_id << COMMA << (short)m_type_id << COMMA << (short)m_category_id << COMMA;
+    if (m_memo_ptr) {
+        StreamString(out, *m_memo_ptr);
+    }
+    out << COMMA;
+    if (m_desc_ptr) {
+        StreamString(out, *m_desc_ptr);
+    }
+    out << ENDL;
 }

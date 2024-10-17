@@ -5,6 +5,8 @@
 #include "CSVLoader.h"
 #include "Account.h"
 #include "Client.h"
+#include "Query.h"
+#include "WQuery.h"
 
 const char* FILENAME = "C:\\Users\\borka\\Documents\\BankAccount.csv";
 
@@ -80,8 +82,10 @@ std::vector <uint8_t> AccountManager::GetCategoryId(const char* subcat) const {
 	return m_category_system.GetCategoryId(subcat);
 }
 
-uint16_t AccountManager::CreateOrGetClientId(const char* client_name, const char*) {
-	return m_client_man.GetClientId(client_name);
+uint16_t AccountManager::CreateOrGetClientId(const char* client_name, const char* acc_num) {
+	uint16_t id = m_client_man.GetClientId(client_name);
+	m_client_man.AddClientAccountNumber(id, acc_num);
+	return id;
 }
 
 std::string AccountManager::GetCategoryName(const uint8_t id) const {
@@ -100,6 +104,68 @@ const char* AccountManager::GetTransactionType(const uint8_t id) const {
 
 const char* AccountManager::GetClientName(const uint16_t id) const {
 	return m_client_man.GetClientName(id);
+}
+
+void AccountManager::StreamCategorySystem(std::ostream& out) const {
+	m_category_system.Stream(out);
+}
+
+void AccountManager::StreamCategorySystem(std::istream& in) {
+	m_category_system.Stream(in);
+}
+
+void AccountManager::StreamClients(std::ostream& out) const {
+	m_client_man.Stream(out);
+}
+
+void AccountManager::StreamClients(std::istream& in) {
+	m_client_man.Stream(in);
+}
+
+void AccountManager::StreamTransactionTypes(std::ostream& out) const {
+	out << m_transaction_types.size() << ENDL;
+	for (const auto& type : m_transaction_types) {
+		out << type << ENDL;
+	}
+}
+
+void AccountManager::StreamTransactionTypes(std::istream& in) {
+	int size;
+	char dump;
+	in >> size;
+	in >> std::noskipws >> dump; // eat endl
+	m_transaction_types.clear();
+	m_transaction_types.reserve(size);
+	for (int i = 0; i < size; ++i) {
+		std::string type;
+		StreamString(in, type);
+		m_transaction_types.push_back(type);
+	}
+}
+
+void AccountManager::StreamAccounts(std::ostream& out) const {
+	out << m_accounts.size() << ENDL;
+	for (auto acc : m_accounts) {
+		acc->Stream(out);
+	}
+}
+
+void AccountManager::StreamAccounts(std::istream& in) {
+	int size;
+	in >> size;
+	char dump;
+	in >> std::noskipws >> dump; // eat endl
+	m_accounts.clear();
+	m_accounts.reserve(size);
+	std::string bank_name, acc_numb, acc_name, curr_name;
+	for (int i = 0; i < size; ++i) {
+		StreamString(in, bank_name);
+		StreamString(in, acc_numb);
+		StreamString(in, acc_name);
+		StreamString(in, curr_name);
+		m_accounts.push_back(new Account(bank_name.c_str(), acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
+		m_accounts.back()->Stream(in);
+	}
 }
 
 AccountManager::AccountManager() {}
@@ -160,7 +226,7 @@ std::string AccountManager::GetClientInfoOfName(const char* name) {
 	return ss.str();
 }
 
-StringTable AccountManager::MakeQuery(Query& query) {
+StringTable AccountManager::MakeQuery(Query& query) const {
 	QueryElement::SetResolveIf(this);
 	for(auto& qe : query) {
 		qe->PreResolve();
@@ -180,9 +246,40 @@ StringTable AccountManager::MakeQuery(Query& query) {
 	StringTable table;
 	for(auto tr : query.GetResult()) {
 		table.push_back(tr->PrintDebug(this));
-	}
-	//ss << PrettyTable(table);
-			
+	}			
 	return table;
 }
 
+StringTable AccountManager::MakeQuery(WQuery& query) {
+	QueryElement::SetResolveIf(this);
+	//for (auto& qe : query) {
+	//	qe->PreResolve();
+	//}
+	WQueryElement* wqe = query.WElement();
+	wqe->PreResolve();
+	switch (wqe->GetTopic()) {
+	case CLIENT:
+		wqe->Execute(&m_client_man);
+		break;
+	default:
+		break;
+	}
+
+	for (auto& acc : m_accounts) {
+		acc->MakeQuery(query);
+	}
+	QueryElement::SetResolveIf(nullptr);
+	if (!query.ReturnList()) {
+		return {};
+	}
+	std::sort(query.GetResult().begin(), query.GetResult().end(), [](const Transaction* t1, const Transaction* t2) {
+		return (t1->GetDate() < t2->GetDate());
+	});
+	std::stringstream ss;
+	ss << query.GetResult().size() << " transactions found: \n";
+	StringTable table;
+	for (auto tr : query.GetResult()) {
+		table.push_back(tr->PrintDebug(this));
+	}
+	return table;
+}

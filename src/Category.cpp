@@ -1,5 +1,6 @@
 #include <string>
 #include <vector>
+#include "CommonTypes.h"
 #include "Category.h"
 
 static const char* cUncategorized = "UNCATEGORIZED";
@@ -35,4 +36,14 @@ std::string Category::PrintDebug() const {
 	std::string res = m_category_name;
 	res.append(":").append(m_subcategory_name);
 	return res;
+}
+
+void Category::Stream(std::ostream& out) const {
+	out << (int)m_id << COMMA << m_category_name << COMMA << m_subcategory_name << COMMA;
+	StreamContainer(out, m_keywords);
+	out << ENDL;
+}
+
+void Category::Stream(std::istream& in) {
+	StreamContainer(in, m_keywords);
 }

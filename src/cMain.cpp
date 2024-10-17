@@ -6,7 +6,8 @@
 #include "cMain.h"
 #include "Currency.h"
 #include "Query.h"
-#include "AccountManager.h"
+#include "WQuery.h"
+#include "BankAccountFile.h"
 #include "CommonTypes.h"
 
 std::string PrettyTable(const StringTable& table) {
@@ -38,16 +39,26 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	//EVT_BUTTON(10002, InitDB)
 	EVT_MENU(10003, InitDB)
 	EVT_MENU(10004, SaveFile)
+	EVT_MENU(10005, ClientMerge)
+	EVT_MENU(10006, InitDB)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
 : wxFrame(nullptr, wxID_ANY, "Kaki", wxPoint(100, 100), wxSize(1024, 768)) {
 	
 	m_menu_bar = new wxMenuBar();
-	wxMenu* dbmenu = new wxMenu();
-	m_menu_bar->Append(dbmenu, "Database");
-	m_initdb_menu_item = dbmenu->Append(10003, "Init with csv data");
-	m_initdb_menu_item = dbmenu->Append(10004, "Save file");
+	wxMenu* dbmenu1 = new wxMenu();
+	wxMenu* dbmenu2 = new wxMenu();
+	m_menu_bar->Append(dbmenu1, "Database");
+	m_menu_bar->Append(dbmenu2, "Query");
+	m_initdb_menu_item = dbmenu1->Append(10003, "Init with csv data");
+	m_resetdb_menu_item = dbmenu1->Append(10006, "Reset data");
+	m_resetdb_menu_item->Enable(false);
+	auto mitem = dbmenu1->Append(10007, "Load file");
+	mitem->Enable(false);
+	mitem = dbmenu1->Append(10004, "Save file");
+	//mitem->Enable(false);
+	dbmenu2->Append(10005, "Client Merge");
 
 	SetMenuBar(m_menu_bar);
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -93,14 +104,35 @@ cMain::~cMain() {
 
 void cMain::SaveFile(wxCommandEvent& evt) {
 	evt.Skip();
+	if (!m_bank_file) {
+		m_search_result_text->SetLabel("First load the database");
+		return;
+	}
+	m_bank_file->Save();
+}
+
+void cMain::ClientMerge(wxCommandEvent& evt) {
+	evt.Skip();
+	if (!m_bank_file) {
+		m_search_result_text->SetLabel("First load the database");
+		return;
+	}
+	WQuery wq;
+	ClientMergeQuery* cmq = new ClientMergeQuery;
+	cmq->AddTargetId(333);
+	cmq->AddOtherId(411);
+	wq.AddWElement(cmq);
+	auto table = m_bank_file->MakeQuery(wq);
+	m_search_result_text->SetLabel(PrettyTable(table));
 }
 
 void cMain::InitDB(wxCommandEvent& evt) {
-	m_acc_manager.reset(new AccountManager);
-	m_acc_manager->Init();
+	m_bank_file.reset(new BankAccountFile("dummy"));
+	m_bank_file->Load();
 	m_initdb_menu_item->Enable(false);
+	m_resetdb_menu_item->Enable(true);
 	std::stringstream str;
-	str << " --- " << m_acc_manager->CountAccounts() << " accounts has " << m_acc_manager->CountTransactions() << " transactions, and " << m_acc_manager->CountClients() << " clients found! ---";
+	str << " --- " << m_bank_file->CountAccounts() << " accounts has " << m_bank_file->CountTransactions() << " transactions, and " << m_bank_file->CountClients() << " clients found! ---";
 	char buf[120];
 	str.getline(buf, 120);
 	std::string name(buf);
@@ -110,7 +142,7 @@ void cMain::InitDB(wxCommandEvent& evt) {
 
 void cMain::OnButtonClicked(wxCommandEvent& evt) {
 	evt.Skip();
-	if (!m_acc_manager) {
+	if (!m_bank_file) {
 		m_search_result_text->SetLabel("First load the database");
 		return;
 	}
@@ -171,7 +203,7 @@ void cMain::OnButtonClicked(wxCommandEvent& evt) {
 		qcsum = new QueryCurrencySum;
 		q.push_back(qcsum);
 	}
-	auto table = m_acc_manager->MakeQuery(q);
+	auto table = m_bank_file->MakeQuery(q);
 
 	if (qcli) {
 		result.append(qcli->PrintResult());

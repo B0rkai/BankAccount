@@ -23,3 +23,39 @@ int DMYToExcelSerialDate(int nDay, int nMonth, int nYear) {
         int((3 * (int((nYear + 4900 + int((nMonth - 14) / 12)) / 100))) / 4) +
         nDay - 2415019 - 32075;
 }
+
+void DumpChar(std::istream& in) {
+    static char dump;
+    in >> std::noskipws >> dump;
+}
+
+void StreamString(std::ostream& out, const std::string& str) {
+    if (str.find(',') != std::string::npos) {
+        out << DQUOTE << str << DQUOTE;
+        return;
+    }
+    out << str;
+
+}
+
+void StreamString(std::istream& in, std::string& str) {
+    char dump = NULL;
+    char c;
+    str.clear();
+    in >> std::noskipws >> c;
+    bool quoted = (c == DQUOTE);
+    if (quoted) {
+        in >> std::noskipws >> c;
+    }
+    const char end = quoted ? DQUOTE : COMMA;
+    while (c != end) {
+        str.append(1, c);
+        in >> std::noskipws >> c;
+        if (c == ENDL) {
+            break;
+        }
+    }
+    if (quoted) {
+        in >> dump; // eat comma
+    }
+}

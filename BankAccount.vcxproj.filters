@@ -73,6 +73,9 @@
     <ClCompile Include="src\ClientManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\WQuery.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Account.h">
@@ -133,6 +136,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ClientManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\WQuery.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\IWClient.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

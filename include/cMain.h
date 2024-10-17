@@ -4,7 +4,7 @@
 #include "wx\calctrl.h"
 
 // wxButton;
-class AccountManager;
+class BankAccountFile;
 
 class cMain :
     public wxFrame {
@@ -12,6 +12,7 @@ class cMain :
     wxScrolledWindow* m_window = nullptr;
     wxMenuBar* m_menu_bar = nullptr;
     wxMenuItem* m_initdb_menu_item = nullptr;
+    wxMenuItem* m_resetdb_menu_item = nullptr;
     wxStatusBar* m_status_bar = nullptr;
     wxButton* m_but_search = nullptr;
     wxButton* m_but_init_db = nullptr;
@@ -24,12 +25,13 @@ class cMain :
     wxCheckBox* m_chkb = nullptr;
     wxCheckBox* m_category_sum_chkb = nullptr;
     wxCheckBox* m_date_chkb = nullptr;
-    std::unique_ptr<AccountManager> m_acc_manager;
+    std::unique_ptr<BankAccountFile> m_bank_file;
 public:
     cMain();
     ~cMain();
     void InitDB(wxCommandEvent& evt);
     void SaveFile(wxCommandEvent& evt);
+    void ClientMerge(wxCommandEvent& evt);
     void OnButtonClicked(wxCommandEvent& evt);
     wxDECLARE_EVENT_TABLE();
 };

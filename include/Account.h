@@ -11,6 +11,7 @@
 enum CurrencyType : uint8_t;
 class Currency;
 class Query;
+class WQuery;
 
 class Account : public IAccount {
 	const std::string m_bank_name;
@@ -25,7 +26,10 @@ public:
 	const char* GetAccNumber() const { return m_acc_number.data(); }
 	size_t Size();
 	void AddTransaction(const uint16_t date, const uint8_t type_id, const int32_t amount, const uint16_t client_id, const uint8_t category_id, const char* memo, const char* desc);
-	void MakeQuery(Query& query);
+	void MakeQuery(Query& query) const;
+	void MakeQuery(WQuery& query);
 	inline virtual const Currency* GetCurrency() const override { return m_curr; }
+	void Stream(std::ostream& out) const;
+	void Stream(std::istream& in);
 };
 

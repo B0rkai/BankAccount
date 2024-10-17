@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <set>
+#include "CommonTypes.h"
 
 class Category {
 	const uint8_t m_id;
@@ -16,4 +17,6 @@ public:
 	bool CheckName(const char* name) const;
 	bool CheckKeywords(const char* str) const;
 	std::string PrintDebug() const;
+	void Stream(std::ostream& out) const;
+	void Stream(std::istream& in);
 };

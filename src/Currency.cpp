@@ -70,7 +70,7 @@ class Euro : public Currency {
 	static Euro* s_object;
 public:
 	Euro()
-		: Currency("€", "Euro", '.', ',', true, false) {}
+		: Currency("€", "Euro", "EUR", '.', ',', true, false) {}
 	static Euro* GetObject();
 	virtual CurrencyType Type() const { return EUR; }
 };
@@ -79,7 +79,7 @@ class Forint : public Currency {
 	static Forint* s_object;
 public:
 	Forint()
-		: Currency("Ft", "Forint", ',', ' ', false, false) {}
+		: Currency("Ft", "Forint", "HUF", ',', ' ', false, false) {}
 	static Forint* GetObject();
 	virtual CurrencyType Type() const { return HUF; }
 };
@@ -88,7 +88,7 @@ class USDollar : public Currency {
 	static USDollar* s_object;
 public:
 	USDollar()
-		: Currency("$", "US dollar", '.', ',', true, true) {}
+		: Currency("$", "US dollar", "USD", '.', ',', true, true) {}
 	static USDollar* GetObject();
 	virtual CurrencyType Type() const { return USD; }
 };
@@ -97,7 +97,7 @@ class GBPound : public Currency {
 	static GBPound* s_object;
 public:
 	GBPound()
-		: Currency("£", "Pound sterling", '.', ',', true, true) {}
+		: Currency("£", "Pound sterling", "GBP", '.', ',', true, true) {}
 	static GBPound* GetObject();
 	virtual CurrencyType Type() const { return GBP; }
 };
@@ -106,7 +106,7 @@ class SwissFranc : public Currency {
 	static SwissFranc* s_object;
 public:
 	SwissFranc()
-		: Currency("Fr.", "Swiss franc", '.', ' ', true, true) {}
+		: Currency("Fr.", "Swiss franc", "CHF", '.', ' ', true, true) {}
 	static SwissFranc* GetObject();
 	virtual CurrencyType Type() const { return CHF; }
 };

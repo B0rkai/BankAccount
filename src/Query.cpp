@@ -7,7 +7,7 @@
 
 // CLIENT
 
-INameResolve* QueryElement::s_resolve_if = nullptr;
+const INameResolve* QueryElement::s_resolve_if = nullptr;
 
 void QueryClient::PreResolve() {
 	for(auto& name : m_names) {
@@ -22,6 +22,10 @@ void QueryClient::PreResolve() {
 		}
 	}
 	m_names.clear();
+}
+
+bool QueryByName::IsOk() const {
+	return !m_names.empty();
 }
 
 std::string QueryClient::PrintResult() {
@@ -74,7 +78,7 @@ bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
 		res.m_exp += am;
 	}
 	res.m_sum += am;
-	++m_count;
+	++res.m_count;
 	return true;
 }
 
@@ -84,7 +88,6 @@ bool QueryCategorySum::CheckTransaction(const Transaction* tr) {
 	if (!m_category_names.count(id)) {
 		m_category_names[id] = s_resolve_if->GetCategoryInfo(id);
 	}
-	++m_count;
 	return res.CheckTransaction(tr);
 }
 
@@ -99,7 +102,7 @@ std::string QueryCategorySum::PrintResult() {
 
 StringTable QueryCategorySum::GetStringResult() const {
 	StringTable table;
-	table.push_back({"Category", "Currency", "Income", "Expense", "Sum"});
+	table.push_back({"Category", "Currency", "#", "Income", "Expense", "Sum"});
 	for (auto& pair : m_subqueries) {
 		auto subtable = pair.second.GetStringResult();
 		bool first = true;
@@ -120,6 +123,7 @@ StringTable QueryCategorySum::GetStringResult() const {
 		//row.emplace_back();
 		Currency* curr = MakeCurrency(pair.first);
 		row.push_back(curr->GetName());
+		row.push_back(std::to_string(pair.second.m_count));
 		row.push_back(curr->PrettyPrint(pair.second.m_inc));
 		row.push_back(curr->PrettyPrint(pair.second.m_exp));
 		row.push_back(curr->PrettyPrint(pair.second.m_sum));
@@ -137,6 +141,7 @@ std::map<CurrencyType, QuerySum::Result> QueryCategorySum::GetResults() const {
 				total[pair.first].m_exp += pair.second.m_exp;
 				total[pair.first].m_inc += pair.second.m_inc;
 				total[pair.first].m_sum += pair.second.m_sum;
+				total[pair.first].m_count += pair.second.m_count;
 			} else {
 				total[pair.first] = pair.second;
 			}
@@ -165,7 +170,7 @@ std::string QuerySum::PrintResultLine(const Result& res, const Currency* curr) c
 }
 
 StringVector QuerySum::GetStringResultRow(const Result& res, const Currency* curr) const {
-	return {curr->PrettyPrint(res.m_inc), curr->PrettyPrint(res.m_exp), curr->PrettyPrint(res.m_sum)};
+	return {std::to_string(res.m_count), curr->PrettyPrint(res.m_inc), curr->PrettyPrint(res.m_exp), curr->PrettyPrint(res.m_sum)};
 }
 
 std::string QueryCurrencySum::PrintResult() {
@@ -181,7 +186,7 @@ std::string QueryCurrencySum::PrintResult() {
 
 StringTable QueryCurrencySum::GetStringResult() const {
 	StringTable table;
-	table.push_back({"Currency", "Income", "Expense", "Sum"});
+	table.push_back({"Currency", "#", "Income", "Expense", "Sum"});
 	for (auto& pair : m_results) {
 		auto& row = table.emplace_back();
 		Currency* curr = MakeCurrency(pair.first);
@@ -253,20 +258,33 @@ bool QueryByNumber::Check(const int32_t val) const {
 
 void QueryByNumber::SetMax(int32_t max) {
 	m_max = max;
-	if (m_type == EQUAL) {
+	if (m_type == INVALID) {
 		m_type = LESS;
 	} else if (m_type == GREATER) {
-		m_type = RANGE;
+		if (m_max > m_min) {
+			m_type = RANGE;
+		} else {
+			m_type = INVALID;
+		}
 	}
 }
 
 void QueryByNumber::SetMin(int32_t min) {
 	m_min = min;
-	if (m_type == EQUAL) {
+	if (m_type == INVALID) {
 		m_type = GREATER;
 	} else if (m_type == LESS) {
-		m_type = RANGE;
+		if (m_max > m_min) {
+			m_type = RANGE;
+		} else {
+			m_type = INVALID;
+		}
 	}
+}
+
+void QueryByNumber::SetTarget(const int32_t trg) {
+	m_type = EQUAL;
+	m_target = trg;
 }
 
 bool QueryAmount::CheckTransaction(const Transaction* tr) {
@@ -280,3 +298,13 @@ bool QueryDate::CheckTransaction(const Transaction* tr) {
 Query::~Query() {
 	DeletePointers(m_elements);
 }
+
+void Query::push_back(QueryElement* qe) {
+	if (!qe->ReadOnly()) {
+		if (m_read_only) {
+			m_read_only = false;
+		} else {
+			return; // only one wquery is allowed
+		}
+	}
+	m_elements.push_back(qe); }

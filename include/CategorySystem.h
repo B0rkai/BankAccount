@@ -12,5 +12,7 @@ public:
 	~CategorySystem();
 	std::vector<uint8_t> GetCategoryId(const char* subcat) const;
 	const Category* GetCategory(const uint8_t id) const;
+	void Stream(std::ostream& out) const;
+	void Stream(std::istream& in);
 };
 

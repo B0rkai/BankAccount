@@ -49,7 +49,7 @@ CategoryConfig categoryconf[] = {
 CategorySystem::CategorySystem() {
 	int idx = 0;
 	m_categories.push_back(new Category(idx, "", "")); // default category
-	for (auto& conf : categoryconf) {
+	/*for (auto& conf : categoryconf) {
 		++idx;
 		Category* cat = new Category(idx, conf.category, conf.subcategory);
 		m_categories.push_back(cat);
@@ -59,7 +59,7 @@ CategorySystem::CategorySystem() {
 		if (!m_category_map.emplace(conf.subcategory, cat).second) {
 			throw "category already exists??";
 		}
-	}
+	}*/
 }
 
 CategorySystem::~CategorySystem() {
@@ -89,4 +89,34 @@ const Category* CategorySystem::GetCategory(const uint8_t id) const {
 		return nullptr;
 	}
 	return m_categories[id];
+}
+
+void CategorySystem::Stream(std::ostream& out) const {
+	out << (m_categories.size() - 1) << ENDL;
+	for (const Category* cat : m_categories) {
+		if (cat->GetId() == 0) {
+			continue;
+		}
+		cat->Stream(out);
+	}
+}
+
+void CategorySystem::Stream(std::istream& in) {
+	int id, size;
+	in >> size;
+	char dump;
+	in >> std::noskipws >> dump; // eat endl
+	m_categories.reserve(size + 1);
+	std::string cat, subcat;
+	while (true) {
+		in >> id;
+		if (in.eof()) {
+			break;
+		}
+		in >> dump;
+		StreamString(in, cat);
+		StreamString(in, subcat);
+		m_categories.push_back(new Category(id, cat.c_str(), subcat.c_str()));
+		m_categories.back()->Stream(in);
+	}
 }

@@ -4,6 +4,21 @@
 Client::Client(const uint16_t id, const char* name)
 : m_id(id), m_name(name) {}
 
+void Client::Stream(std::istream& in) {
+	StreamContainer(in, m_account_numbers);
+	StreamContainer(in, m_keywords);
+}
+
+void Client::Stream(std::ostream& out) const {
+	out << m_id << COMMA;
+	StreamString(out, m_name);
+	out << COMMA;
+	StreamContainer(out, m_account_numbers);
+	out << COMMA;
+	StreamContainer(out, m_keywords);
+	out << ENDL;
+}
+
 void Client::AddAccountNumber(const char* acc) {
 	if (!strlen(acc)) {
 		return;

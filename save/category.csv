@@ -1,0 +1,35 @@
+34
+1,Living expenses,Groceries,18,ALDI,BENU,BILLA,CBA,Coop,DM,Fressn,LIDL,Migros,PENNY,Penny,ROSS,S MARKET,SPAR,Spar,TESCO,Tesco,migrolino
+2,Living expenses,Clothing,11,ABOUTYOU,BOSS,C&A,CALVIN,CCC,H&M,PRIMARK,SPORTSD,TOPP,ZARA,aboutyou
+3,Bills,Utilities,9,AEGON,Alfa Vienna,Cig Pann,E.ON,EON,MVM,NKM,Tetõtér,közös
+4,Bills,Mortgage,1,Hitel törlesztés
+5,Bills,Bank costs,12,Bankkártya,CSOMAGDÍJ,DÍJA,KAMAT,Kamatadó,Kamatelsz,KÖLTSÉG,SZOCHO,díja,kamat,kamat jovairas,számlavezetés
+6,Telecommunication,Mobile,3,TELEKOM WEB,TELEKOM/,VODAFONE
+7,Telecommunication,Home,5,Amazon Video,NETFLIX,Netflix,Prime Video,UPC
+8,Entertainment,Cafe,5,CAFE,Cafe+Co,KAFE ART,cafe frei,nespresso
+9,Entertainment,Restaurant,7,3 GY,Cafe Molo,GEKKO,JOHN BULL,MAD MAX,PannÄnia,ZOLDFAZEK
+10,Entertainment,Fast Food,16,BEST FOOD GR,BU:FE',BURGER,DON PEPE,DONALDS,DONUT,Delivery Hero,FORTE,LA PIZZA DI,MARCO POL,MCD,NETPINCER,Netpincer,PIZZAFORTE,TELETAL,foodora
+11,Entertainment,Cinema,3,CINEMA,ITMAGYARCIN,blue Cinema
+12,Entertainment,Cultural,3,DIVINO,LIBRI,MONYO
+13,Travel,Transportation,19,.MAV,BKK,BUNDESB,Bundesb,JET 2,MOL,NYKK,OEBB,OMV,PARKOL,RYANAIR,SHELL,SIMPLE,UBER,Uber,V-START,WIZZ,ZVV,easyJet
+14,Travel,Accommodation,3,AIRBNB,Booking,HOTEL
+15,Travel,Extra,1,DUTY
+16,Home improvement,Furniture,3,Design Bú,Design Mö,JYSK
+17,Home improvement,Renovation,12,ANRODISZ,DOKKER,Dr. Padl,Esõ Dániel,Festek,Forgácsné Varga,Il Bagno,Orbán Gábor,PalCo,Rábaablak,Vaskos,elektrikstore
+18,Home improvement,Appliances,2,LA'MPAHA'Z,feny24
+19,Hobby,Sport,2,DECATHLON,Galaxy
+20,Hobby,Hardware,4,Amazon,EKWB,PCX,eMAG
+21,Hobby,Audio,6,BLIZZARD,EPIC GAMES,GENEANET,GOOGLE,MIDJOURNEY,STEAM
+22,Hobby,Software,1,Tidal
+23,Income,Salary,8,BESI,BÉR,FUBA,Gy.tartás,Munkabér,PACKARD,havi m,munkabér
+24,Income,Revenue,3,Perspectix,Schleisheimer,Schleissheimer
+25,Income,Taxes,3,Iparkamara,NAV,Város Önk.
+26,Income,Travel compensation,1,Utazási
+27,Income,Debt,0
+28,Special,Internal Transfer,2,devizaváltás,int
+29,Project,NewHome,0
+30,Project,Study,0
+31,Project,Car,2,Autófokusz,Toyota
+32,Project,Wedding,0
+33,Project,Child,4,BRENDON,PPRSR,REGIO,TORPE-FALVA
+34,Project,Business,1,Iparkamara

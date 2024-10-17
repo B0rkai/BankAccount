@@ -1,13 +1,16 @@
 #pragma once
 #include <vector>
+#include <ostream>
 #include <unordered_map>
 #include "IDataBase.h"
 #include "IIdResolve.h"
 #include "INameResolve.h"
 #include "CategorySystem.h"
 #include "ClientManager.h"
-#include "Query.h"
+#include "CommonTypes.h"
 
+class Query;
+class WQuery;
 class Account;
 class Client;
 
@@ -35,7 +38,15 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve 
 	virtual std::string GetCategoryInfo(const uint8_t id) const override;
 
 	inline virtual void Modified() {};
-
+protected:
+	void StreamCategorySystem(std::ostream& out) const;
+	void StreamCategorySystem(std::istream& in);
+	void StreamClients(std::ostream& out) const;
+	void StreamClients(std::istream& in);
+	void StreamTransactionTypes(std::ostream& out) const;
+	void StreamTransactionTypes(std::istream& in);
+	void StreamAccounts(std::ostream& out) const;
+	void StreamAccounts(std::istream& in);
 public:
 	AccountManager();
 	~AccountManager();
@@ -46,5 +57,6 @@ public:
 
 	std::string GetClientInfoOfName(const char* name);
 
-	StringTable MakeQuery(Query& query);
+	StringTable MakeQuery(Query& query) const;
+	StringTable MakeQuery(WQuery& query);
 };
