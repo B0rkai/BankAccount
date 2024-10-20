@@ -76,6 +76,12 @@
     <ClCompile Include="src\WQuery.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\TransactionType.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\TypeTraits.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Account.h">
@@ -142,6 +148,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\IWQuery.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\TransactionType.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\TypeTraits.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -6,7 +6,7 @@
 #include "IAccount.h"
 #include "Currency.h"
 
-Transaction::Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const uint16_t client_id, const uint8_t type_id, std::string* memo, std::string* desc)
+Transaction::Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const Id client_id, const Id type_id, std::string* memo, std::string* desc)
 	: m_parent(parent), m_amount(amount), m_date(date), m_client_id(client_id), m_type_id(type_id), m_memo_ptr(memo), m_desc_ptr(desc) {}
 
 StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
@@ -34,7 +34,7 @@ CurrencyType Transaction::GetCurrencyType() const {
 }
 
 void Transaction::Stream(std::ostream& out) const {
-    out << m_amount << COMMA << m_date << COMMA << m_client_id << COMMA << (short)m_type_id << COMMA << (short)m_category_id << COMMA;
+    out << m_amount << COMMA << m_date << COMMA << m_client_id << COMMA << m_type_id << COMMA << m_category_id << COMMA;
     if (m_memo_ptr) {
         StreamString(out, *m_memo_ptr);
     }

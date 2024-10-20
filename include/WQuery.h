@@ -1,12 +1,12 @@
 #pragma once
-#include <set>
 #include "Query.h"
 
 class WQueryElement;
 class Transaction;
+class IIdResolve;
 class IWClient;
 class IWCategory;
-class IIdResolve;
+class IWAccount;
 
 class WQuery : public Query {
     WQueryElement* m_wqe = nullptr;
@@ -26,24 +26,35 @@ public:
     virtual bool CheckTransaction(Transaction* tr) = 0; // non-const parameter
     inline virtual void PreResolve() {};
     virtual void Execute(IWClient* client_if) {};
-    virtual void Execute(IWCategory* client_if) {};
+    virtual void Execute(IWCategory* category_if) {};
+    virtual void Execute(IWAccount* account_if) {};
 };
 
-class ClientMergeQuery : public WQueryElement {
-    uint16_t m_target_id = INVALID_CLIENT_ID;
-    std::set<uint16_t> m_others;
+class MergeQuery : public WQueryElement {
+protected:
+    Id m_target_id = INVALID_ID;
+    IdSet m_others;
     virtual bool IsOk() const;
     virtual void PreResolve();
-    inline virtual QueryTopic GetTopic() const override { return QueryTopic::CLIENT; }
-    virtual void Execute(IWClient* client_if) override;
-    virtual bool CheckTransaction(Transaction* tr) override;
 public:
     inline void AddTargetId(const uint16_t id) { m_target_id = id; }
     void AddOtherId(const uint16_t id);
 };
 
+class ClientMergeQuery : public MergeQuery {
+    GETQUERYTOPIC(CLIENT)
+    virtual void Execute(IWClient* client_if) override;
+    virtual bool CheckTransaction(Transaction* tr) override;
+};
+
+class TypeMergeQuery : public MergeQuery {
+    GETQUERYTOPIC(TYPE)
+    virtual void Execute(IWAccount* account_if) override;
+    virtual bool CheckTransaction(Transaction* tr) override;
+};
+
 class CategorizingQuery : public WQueryElement {
-    inline virtual QueryTopic GetTopic() const override { return QueryTopic::CATEGORY; }
+    GETQUERYTOPIC(CATEGORY)
     virtual bool IsOk() const;
     inline virtual void Execute(IWCategory* category_if) override { if_category = category_if; };
     virtual bool CheckTransaction(Transaction* tr) override;

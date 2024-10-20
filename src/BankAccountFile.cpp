@@ -50,10 +50,7 @@ void BankAccountFile::Load() {
 
 	{
 		//std::ifstream in("save\\BankAccount.csv");
-		StreamCategorySystem(*decompressStream);
-		StreamClients(*decompressStream);
-		StreamTransactionTypes(*decompressStream);
-		StreamAccounts(*decompressStream);
+		Stream(*decompressStream);
 	}
 	m_state = SAVED;
 }
@@ -61,10 +58,7 @@ void BankAccountFile::Load() {
 void BankAccountFile::Save() {
 	{
 		std::ofstream out("save\\BankAccount.csv");
-		StreamCategorySystem(out);
-		StreamClients(out);
-		StreamTransactionTypes(out);
-		StreamAccounts(out);
+		Stream(out);
 	}
 	ZipSave(m_filename);
 	std::remove("save\\BankAccount.csv");

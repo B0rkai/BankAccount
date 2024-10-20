@@ -5,24 +5,7 @@
 #include "Transaction.h"
 #include "INameResolve.h"
 
-// CLIENT
-
 const INameResolve* QueryElement::s_resolve_if = nullptr;
-
-void QueryClient::PreResolve() {
-	for(auto& name : m_names) {
-		std::vector<uint16_t> ids = s_resolve_if->GetClientId(name.c_str());
-		for (auto id : ids) {
-			if(id == INVALID_CLIENT_ID) {
-				// error
-				continue;
-			}
-			AddId(id);
-			m_result.append("\n").append(s_resolve_if->GetClientInfo(id));
-		}
-	}
-	m_names.clear();
-}
 
 bool QueryByName::IsOk() const {
 	return !m_names.empty();
@@ -40,24 +23,6 @@ std::string QueryClient::PrintResult() {
 	return ss.str();
 }
 
-//std::string QueryClient::PrintDebug() {
-//	std::string res = QueryElement::PrintDebug();
-//	if (m_names.size()) {
-//		res.append("names:[");
-//	}
-//	bool first = true;
-//	for (auto& name : m_names) {
-//		if (!first) {
-//			res.append("|");
-//		} else {
-//			first = false;
-//		}
-//		res.append(name);
-//	}
-//	res.append("]");
-//	return res;
-//}
-
 bool QueryClient::CheckTransaction(const Transaction* tr) {
 	const uint16_t client_id = tr->GetClientId();
 	auto& ids = GetIds();
@@ -67,6 +32,14 @@ bool QueryClient::CheckTransaction(const Transaction* tr) {
 		}
 	}
     return false;
+}
+
+IdSet QueryClient::DoResolve(const String& name) {
+	return s_resolve_if->GetClientId(name.c_str());
+}
+
+String QueryClient::DoResolve(const uint16_t id) {
+	return s_resolve_if->GetClientInfo(id);
 }
 
 bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
@@ -83,7 +56,7 @@ bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
 }
 
 bool QueryCategorySum::CheckTransaction(const Transaction* tr) {
-	uint8_t id = tr->GetCategoryId();
+	Id id = tr->GetCategoryId();
 	QueryElement& res = m_subqueries[id];
 	if (!m_category_names.count(id)) {
 		m_category_names[id] = s_resolve_if->GetCategoryInfo(id);
@@ -103,6 +76,7 @@ std::string QueryCategorySum::PrintResult() {
 StringTable QueryCategorySum::GetStringResult() const {
 	StringTable table;
 	table.push_back({"Category", "Currency", "#", "Income", "Expense", "Sum"});
+	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED});
 	for (auto& pair : m_subqueries) {
 		auto subtable = pair.second.GetStringResult();
 		bool first = true;
@@ -120,7 +94,6 @@ StringTable QueryCategorySum::GetStringResult() const {
 	for (auto& pair : totals) {
 		auto& row = table.emplace_back();
 		row.push_back("TOTAL");
-		//row.emplace_back();
 		Currency* curr = MakeCurrency(pair.first);
 		row.push_back(curr->GetName());
 		row.push_back(std::to_string(pair.second.m_count));
@@ -187,6 +160,7 @@ std::string QueryCurrencySum::PrintResult() {
 StringTable QueryCurrencySum::GetStringResult() const {
 	StringTable table;
 	table.push_back({"Currency", "#", "Income", "Expense", "Sum"});
+	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED});
 	for (auto& pair : m_results) {
 		auto& row = table.emplace_back();
 		Currency* curr = MakeCurrency(pair.first);
@@ -197,23 +171,12 @@ StringTable QueryCurrencySum::GetStringResult() const {
 	return table;
 }
 
-//std::string QueryElement::PrintDebug() {
-//	switch (GetTopic()) {
-//	case CLIENT:
-//		return "CLIENT: ";
-//	case SUM:
-//		return "SUMMARIZE";
-//	default:
-//		return "UNKNOWN";
-//	}
-//}
-
 std::string QueryElement::PrintResult() {
 	return std::string();
 }
 
 bool QueryCategory::CheckTransaction(const Transaction* tr) {
-	const uint8_t cat_id = tr->GetCategoryId();
+	const Id cat_id = tr->GetCategoryId();
 	auto& ids = GetIds();
 	for (auto& id : ids) {
 		if (cat_id == id) {
@@ -223,18 +186,12 @@ bool QueryCategory::CheckTransaction(const Transaction* tr) {
 	return false;
 }
 
-void QueryCategory::PreResolve() {
-	for (auto& name : m_names) {
-		std::vector<uint8_t> ids = s_resolve_if->GetCategoryId(name.c_str());
-		for (auto id : ids) {
-			AddId(id);
-			m_result.append("\n").append(s_resolve_if->GetCategoryInfo(id));
-		}
-	}
-	m_names.clear();
-	if (m_result.empty()) {
-		m_result = "No category found";
-	}
+IdSet QueryCategory::DoResolve(const String& name) {
+	return s_resolve_if->GetCategoryId(name.c_str());
+}
+
+String QueryCategory::DoResolve(const uint16_t id) {
+	return s_resolve_if->GetCategoryInfo(id);
 }
 
 std::string QueryCategory::PrintResult() {
@@ -295,9 +252,9 @@ bool QueryDate::CheckTransaction(const Transaction* tr) {
 	return Check(tr->GetDate());
 }
 
-Query::~Query() {
-	DeletePointers(m_elements);
-}
+Query::Query() : m_elements(true) {}
+
+Query::~Query() {}
 
 void Query::push_back(QueryElement* qe) {
 	if (!qe->ReadOnly()) {
@@ -308,3 +265,35 @@ void Query::push_back(QueryElement* qe) {
 		}
 	}
 	m_elements.push_back(qe); }
+
+bool QueryType::CheckTransaction(const Transaction* tr) {
+	auto& ids = GetIds();
+	for (auto& id : ids) {
+		if (tr->GetTypeId() == id) {
+			return true;
+		}
+	}
+	return false;
+}
+
+IdSet QueryType::DoResolve(const String& name) {
+	return s_resolve_if->GetTransactionTypeId(name.c_str());
+}
+
+String QueryType::DoResolve(const uint16_t id) {
+	return s_resolve_if->GetTransactionTypeInfo(id);
+}
+
+void QueryByName::PreResolve() {
+	for (auto& name : m_names) {
+		IdSet ids = DoResolve(name);
+		for (auto id : ids) {
+			AddId(id);
+			m_result.append("\n").append(DoResolve(id));
+		}
+	}
+	m_names.clear();
+	if (m_result.empty()) {
+		m_result = "No type found";
+	}
+}

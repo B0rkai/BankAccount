@@ -10,7 +10,7 @@ class Client;
 
 class ClientManager : public IWClient {
 	//std::unordered_map<std::string, Client*> m_client_map;
-	std::vector<Client*> m_clients;
+	PtrVector<Client> m_clients;
 	void CheckId(const uint16_t id) const;
 public:
 	ClientManager();
@@ -27,14 +27,14 @@ public:
 
 // Query API
 	// get client ids of client names matching keyword
-	std::vector<uint16_t> GetIds(const char* keyword) const;
+	IdSet GetIds(const char* keyword) const;
 	// print: id, name, (account numbers)
 	std::string GetInfo(const uint16_t id) const;
 	const char* GetName(const uint16_t id) const;
 	StringTable List() const;
 
 // WQuery API
-	virtual bool MergeClients(const std::set<uint16_t>& from, const uint16_t to) override;
+	virtual void MergeClients(const std::set<uint16_t>& from, const uint16_t to) override;
 
 // Statistics
 	size_t size() const;

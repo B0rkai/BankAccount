@@ -1,7 +1,8 @@
 #pragma once
-#include <set>
 #include <map>
 #include "CommonTypes.h"
+
+#define GETQUERYTOPIC(topic) inline virtual QueryTopic GetTopic() const override { return QueryTopic::topic; }
 
 enum CurrencyType : uint8_t;
 class Transaction;
@@ -12,13 +13,14 @@ class QueryElement;
 
 class Query {
 public:
-	using Result = std::vector<const Transaction*>;
+	using Result = PtrVector<const Transaction>;
 private:
-	std::vector<QueryElement*> m_elements;
+	PtrVector<QueryElement> m_elements;
 	Result m_result;
 	bool m_return_list = true;
 	bool m_read_only = true;
 public:
+	Query();
 	~Query();
 	inline bool ReturnList() const { return m_return_list; }
 	inline bool ReadOnly() const { return m_read_only; }
@@ -30,38 +32,58 @@ public:
 };
 
 class QueryElement {
-	std::set<uint16_t> m_ids;
+	IdSet m_ids;
 protected:
 	static const INameResolve* s_resolve_if;
 public:
 	inline static void SetResolveIf(const INameResolve* resif) { s_resolve_if = resif; }
 	virtual QueryTopic GetTopic() const = 0;
-	inline const std::set<uint16_t>& GetIds() const { return m_ids; }
+	inline const IdSet& GetIds() const { return m_ids; }
 	inline void AddId(const uint16_t id) { m_ids.emplace(id); }
 	virtual bool CheckTransaction(const Transaction* tr) = 0;
 	inline virtual void PreResolve() {};
-	//virtual std::string PrintDebug();
-	virtual std::string PrintResult();
+	virtual String PrintResult();
 	inline virtual bool ReadOnly() const { return true; }
 	inline virtual bool IsOk() const = 0;
 };
 
 class QueryByName : public QueryElement {
 protected:
-	std::set<std::string> m_names;
+	StringSet m_names;
+	String m_result;
 	virtual bool IsOk() const;
+	virtual void PreResolve() override;
+	virtual IdSet DoResolve(const String& name) = 0;
+	virtual String DoResolve(const uint16_t name) = 0;
 public:
 	inline void AddName(const char* name) { m_names.emplace(name); }
 };
 
-class QueryClient : public QueryByName {
-	std::string m_result;
-	//virtual std::string PrintDebug();
+class QueryType : public QueryByName {
+	GETQUERYTOPIC(TYPE)
 	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return QueryTopic::CLIENT; }
-	virtual void PreResolve() override;
+	virtual IdSet DoResolve(const String& name) override;
+	virtual String DoResolve(const uint16_t id) override;
 public:
-	virtual std::string PrintResult();
+
+};
+
+class QueryClient : public QueryByName {
+	GETQUERYTOPIC(CLIENT)
+	virtual bool CheckTransaction(const Transaction* tr) override;
+	virtual IdSet DoResolve(const String& name) override;
+	virtual String DoResolve(const uint16_t id) override;
+public:
+	virtual String PrintResult();
+};
+
+class QueryCategory : public QueryByName {
+	GETQUERYTOPIC(CATEGORY)
+	virtual bool CheckTransaction(const Transaction* tr) override;
+	virtual IdSet DoResolve(const String& name) override;
+	virtual String DoResolve(const uint16_t id) override;
+public:
+	virtual String PrintResult();
 };
 
 class QuerySum : public QueryElement {
@@ -73,41 +95,32 @@ public:
 		uint32_t m_count = 0;
 	};
 protected:
-	std::string PrintResultLine(const Result& res, const Currency* curr) const;
+	String PrintResultLine(const Result& res, const Currency* curr) const;
 	StringVector GetStringResultRow(const Result& res, const Currency* curr) const;
 private:
 	inline virtual bool IsOk() const { return true; }
 };
 
 class QueryCurrencySum : public QuerySum {
-	inline virtual QueryTopic GetTopic() const override { return QueryTopic::SUM; }
+	GETQUERYTOPIC(SUM)
 	virtual bool CheckTransaction(const Transaction* tr) override;
 protected:
 	std::map<CurrencyType, Result> m_results;
 public:
-	virtual std::string PrintResult();
+	virtual String PrintResult();
 	StringTable GetStringResult() const;
 	inline virtual std::map<CurrencyType, Result> GetResults() const { return m_results; }
 };
 
 class QueryCategorySum : public QueryCurrencySum {
-	std::map<uint8_t, QueryCurrencySum> m_subqueries;
-	std::map<uint8_t, std::string> m_category_names;
-	inline virtual QueryTopic GetTopic() const override { return QueryTopic::SUM; }
+	GETQUERYTOPIC(SUM)
+	std::map<Id, QueryCurrencySum> m_subqueries;
+	std::map<Id, String> m_category_names;
 	virtual bool CheckTransaction(const Transaction* tr) override;
 public:
-	virtual std::string PrintResult();
+	virtual String PrintResult();
 	StringTable GetStringResult() const;
 	virtual std::map<CurrencyType, Result> GetResults() const;
-};
-
-class QueryCategory : public QueryByName {
-	std::string m_result;
-	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return QueryTopic::CATEGORY; }
-	virtual void PreResolve() override;
-public:
-	virtual std::string PrintResult();
 };
 
 class QueryByNumber : public QueryElement {
@@ -133,13 +146,13 @@ private:
 };
 
 class QueryAmount : public QueryByNumber {
+	GETQUERYTOPIC(AMOUNT)
 	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return QueryTopic::AMOUNT; }
 };
 
 class QueryDate : protected QueryByNumber {
+	GETQUERYTOPIC(DATUM)
 	virtual bool CheckTransaction(const Transaction* tr) override;
-	inline virtual QueryTopic GetTopic() const override { return QueryTopic::DATUM; }
 public:
 	inline void SetMax(uint16_t max) { QueryByNumber::SetMax((int32_t)max); }
 	inline void SetMin(uint16_t min) { QueryByNumber::SetMin((int32_t)min); }

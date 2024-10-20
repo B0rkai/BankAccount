@@ -1,10 +1,9 @@
 #pragma once
-#include <string>
-#include <cstdint>
+#include "CommonTypes.h"
 
 class IIdResolve {
 public:
-	virtual std::string GetCategoryName(const uint8_t id) const = 0;
-	virtual const char* GetTransactionType(const uint8_t id) const = 0;
-	virtual const char* GetClientName(const uint16_t id) const = 0;
+	virtual std::string GetCategoryName(const Id id) const = 0;
+	virtual const char* GetTransactionType(const Id id) const = 0;
+	virtual const char* GetClientName(const Id id) const = 0;
 };

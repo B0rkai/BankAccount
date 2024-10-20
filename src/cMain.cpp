@@ -1,6 +1,7 @@
 
 #include <sstream>
 #include <iomanip>
+#include <cwctype>
 #include "wx/wx.h"
 #include "wx/windowid.h"
 #include "cMain.h"
@@ -31,7 +32,19 @@ std::string PrettyTable(const StringTable& table) {
 	for (auto& row : table) {
 		int i = 0;
 		for (auto& str : row) {
-			ss << " " << std::setw(widths[i]) << str;
+			int intend = widths[i] - str.length();
+			if (table.GetMetaData(i) == StringTable::RIGHT_ALIGNED) {
+				while (intend--) {
+					ss << " ";
+				}
+			}
+			ss << str;
+			if (table.GetMetaData(i) == StringTable::LEFT_ALIGNED) {
+				while (intend--) {
+					ss << " ";
+				}
+			}
+			ss << " ";
 			++i;
 		}
 		ss << "\n";
@@ -44,8 +57,8 @@ constexpr int CHKBX_DATE_FILTER = 10002;
 constexpr int MENU_LOAD = 10003;
 constexpr int MENU_SAVE = 10004;
 constexpr int MENU_CATEGORIZE = 10005;
-//constexpr int EVT_6 = 10006;
-//constexpr int EVT_7 = 10007;
+constexpr int MENU_LIST_TYPES = 10006;
+constexpr int MENU_LIST_ACCOUNTS = 10007;
 constexpr int MENU_LIST_CLIENTS = 10008;
 constexpr int MENU_LIST_CATEGORIES = 10009;
 
@@ -56,30 +69,32 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_LOAD, LoadFile)
 	EVT_MENU(MENU_SAVE, SaveFile)
 	EVT_MENU(MENU_CATEGORIZE, Categorize)
-	//EVT_MENU(10006, LoadFile)
-	//EVT_MENU(10007, Load?)
+	EVT_MENU(MENU_LIST_TYPES, List)
+	EVT_MENU(MENU_LIST_ACCOUNTS, List)
 	EVT_MENU(MENU_LIST_CLIENTS, List)
 	EVT_MENU(MENU_LIST_CATEGORIES, List)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
-: wxFrame(nullptr, wxID_ANY, "Kaki", wxPoint(100, 100), wxSize(1024, 768)) {
+: wxFrame(nullptr, wxID_ANY, "Kaki", wxPoint(100, 100), wxSize(1920, 1080)) {
 	
 	m_menu_bar = new wxMenuBar();
 	wxMenu* dbmenu1 = new wxMenu();
 	wxMenu* dbmenu2 = new wxMenu();
 	m_menu_bar->Append(dbmenu1, "Database");
 	m_menu_bar->Append(dbmenu2, "Query");
-	m_initdb_menu_item = dbmenu1->Append(10003, "Load file*");
+	m_initdb_menu_item = dbmenu1->Append(MENU_LOAD, "Load file*");
 	//m_resetdb_menu_item = dbmenu1->Append(10006, "Reset data");
 	//m_resetdb_menu_item->Enable(false);
-	auto mitem = dbmenu1->Append(10007, "Load file");
-	mitem->Enable(false);
-	mitem = dbmenu1->Append(10004, "Save file");
+	/*auto mitem = dbmenu1->Append(MENU_LOAD, "Load file");
+	mitem->Enable(false);*/
+	dbmenu1->Append(MENU_SAVE, "Save file");
 	//mitem->Enable(false);
 	dbmenu2->Append(10005, "Categorize");
-	dbmenu2->Append(10008, "List Clients");
-	dbmenu2->Append(10009, "List Categories");
+	dbmenu2->Append(MENU_LIST_ACCOUNTS, "List Accounts");
+	dbmenu2->Append(MENU_LIST_TYPES, "List Transaction Types");
+	dbmenu2->Append(MENU_LIST_CLIENTS, "List Clients");
+	dbmenu2->Append(MENU_LIST_CATEGORIES, "List Categories");
 
 	SetMenuBar(m_menu_bar);
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -92,7 +107,7 @@ cMain::cMain()
 	m_client_search_text = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(20, 30), wxSize(110, 25));
 	new wxStaticText(m_main_panel, wxID_ANY, "Category filter", wxPoint(22, 62));
 	m_category_search_text = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(20, 80), wxSize(110, 25));
-	m_window = new wxScrolledWindow(m_main_panel, wxID_ANY, wxPoint(20, 150), wxSize(960, 530));
+	m_window = new wxScrolledWindow(m_main_panel, wxID_ANY, wxPoint(20, 170), wxSize(1850, 880));
 	wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 	m_window->SetSizer(sizer);
 	m_search_result_text = new wxStaticText(m_window, wxID_ANY, "Standby", wxPoint(5, 5), wxSize(900, 520));
@@ -109,7 +124,9 @@ cMain::cMain()
 	m_categorize_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "categorize records", wxPoint(210, 90));
 	m_but_search = new wxButton(m_main_panel, 10001, "Search", wxPoint(210, 110), wxSize(110, 25));
 	m_date_from_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 0));
+	m_date_from_textctrl->Show(false);
 	m_date_to_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(750, 0));
+	m_date_to_textctrl->Show(false);
 	//wxString choices[5] = { "EUR", "USD", "GBP", "CHF", "HUF" };
 	//m_combo = new wxComboBox(this, wxID_ANY, "EUR", wxPoint(30, 140), wxSize(150, 30), wxArrayString(5, choices));
 
@@ -122,15 +139,20 @@ cMain::cMain()
 }
 
 cMain::~cMain() {
+	m_search_result_text->SetLabelText("");
 }
 
 void cMain::List(wxCommandEvent& evt) {
 	int id = evt.GetId();
 	evt.Skip();
 	if (id == MENU_LIST_CLIENTS) {
-		m_search_result_text->SetLabel(PrettyTable(m_bank_file->GetSummary(QueryTopic::CLIENT)));
+		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::CLIENT)));
 	} else if (id == MENU_LIST_CATEGORIES) {
-		m_search_result_text->SetLabel(PrettyTable(m_bank_file->GetSummary(QueryTopic::CATEGORY)));
+		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::CATEGORY)));
+	} else if (id == MENU_LIST_ACCOUNTS) {
+		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::ACCOUNT)));
+	} else if (id == MENU_LIST_TYPES) {
+		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::TYPE)));
 	} else {
 		return;
 	}
@@ -150,7 +172,7 @@ void cMain::DateFilterToggle(wxCommandEvent& evt) {
 void cMain::SaveFile(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
-		m_search_result_text->SetLabel("First load the database");
+		m_search_result_text->SetLabelText("First load the database");
 		return;
 	}
 	m_bank_file->Save();
@@ -159,11 +181,11 @@ void cMain::SaveFile(wxCommandEvent& evt) {
 void cMain::Categorize(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
-		m_search_result_text->SetLabel("First load the database");
+		m_search_result_text->SetLabelText("First load the database");
 		return;
 	}
 	if (!m_categorize_chkb->GetValue()) {
-		m_search_result_text->SetLabel("No Query");
+		m_search_result_text->SetLabelText("No Query");
 		return;
 	}
 	WQuery wq;
@@ -184,7 +206,7 @@ void cMain::Categorize(wxCommandEvent& evt) {
 	//cmq->AddOtherId(411);
 	//wq.AddWElement(cmq);
 	auto table = m_bank_file->MakeQuery(wq);
-	m_search_result_text->SetLabel(PrettyTable(table));
+	m_search_result_text->SetLabelText(PrettyTable(table));
 }
 
 void cMain::LoadFile(wxCommandEvent& evt) {
@@ -206,7 +228,7 @@ void cMain::LoadFile(wxCommandEvent& evt) {
 void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
-		m_search_result_text->SetLabel("First load the database");
+		m_search_result_text->SetLabelText("First load the database");
 		return;
 	}
 	std::string result;
@@ -280,7 +302,7 @@ void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 		result.append(PrettyTable(qcsum->GetStringResult()));
 	}
 	result.append(PrettyTable(table));
-	m_search_result_text->SetLabel(result);
+	m_search_result_text->SetLabelText(result);
 	m_search_result_text->SetInitialSize();
 	//m_window->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();

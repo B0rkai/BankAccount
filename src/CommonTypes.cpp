@@ -4,6 +4,48 @@
 
 // From: https://stackoverflow.com/questions/56717088/algorithm-for-converting-serial-date-excel-to-year-month-day-in-c
 
+void GetInLowerCase(const String& original, String& lowercase) {
+    lowercase.clear();
+    for (const char& c : original) {
+        lowercase.push_back(static_cast<char>(tolower(static_cast<unsigned char>(c))));
+    }
+}
+
+bool caseInsensitiveStringCompare(const char* str1, const char* str2) {
+    if (strlen(str1) != strlen(str2)) {
+        return false;
+    }
+    while (*str1 != 0) {
+        if (tolower(static_cast<unsigned char>(*str1)) != tolower(static_cast<unsigned char>(*str2))) {
+            return false;
+        }
+        ++str1;
+        ++str2;
+    }
+    return true;
+}
+
+bool caseInsensitiveStringContains(const char* string, const char* sub) {
+    String original(string);
+    String substring(sub);
+    return caseInsensitiveStringContains(original, substring);
+}
+
+bool caseInsensitiveStringCompare(const String& str1, const String& str2) {
+    return caseInsensitiveStringCompare(str1.c_str(), str2.c_str());
+}
+
+bool caseInsensitiveStringContains(const String& string, const String& sub) {
+    if (string.length() <= sub.length()) {
+        return caseInsensitiveStringCompare(string, sub);
+    }
+    String lwc_string;
+    String lwc_sub;
+    GetInLowerCase(string, lwc_string);
+    GetInLowerCase(sub, lwc_sub);
+    return (lwc_string.find(lwc_sub) != String::npos);
+}
+
 void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear) {
     // Modified Julian to DMY calculation with an addition of 2415019
     int l = nSerialDate + 68569 + 2415019;
@@ -34,8 +76,8 @@ void DumpChar(std::istream& in) {
     }
 }
 
-void StreamString(std::ostream& out, const std::string& str) {
-    if (str.find(',') != std::string::npos) {
+void StreamString(std::ostream& out, const String& str) {
+    if (str.find(',') != String::npos) {
         out << DQUOTE << str << DQUOTE;
         return;
     }
@@ -43,7 +85,16 @@ void StreamString(std::ostream& out, const std::string& str) {
 
 }
 
-void StreamString(std::istream& in, std::string& str) {
+void Trimm(String& str) {
+    while (str.back() == ' ') {
+        str.pop_back();
+    }
+    while (str.front() == ' ') {
+        str.erase(0, 1);
+    }
+}
+
+void StreamString(std::istream& in, String& str) {
     char dump = NULL;
     char c;
     str.clear();
@@ -64,12 +115,26 @@ void StreamString(std::istream& in, std::string& str) {
     if (quoted) {
         in >> dump; // eat comma
     }
+    if (!str.empty()) {
+        Trimm(str);
+    }
 }
 
-std::string GetDateFormat(const uint16_t date) {
+String GetDateFormat(const uint16_t date) {
     int year, month, day;
     ExcelSerialDateToDMY(date, day, month, year);
     std::stringstream ss;
     ss << year << "." << std::setfill('0') << std::setw(2) << month << "." << std::setfill('0') << std::setw(2) << day;
     return ss.str();
+}
+
+StringTable::MetaData StringTable::GetMetaData(size_t i) const {
+    if (m_metadata.size() <= i) {
+        return LEFT_ALIGNED;
+    }
+    return m_metadata[i];
+}
+
+void StringTable::insert_meta(const std::initializer_list<MetaData>& list) {
+    m_metadata.insert(m_metadata.begin(), list);
 }

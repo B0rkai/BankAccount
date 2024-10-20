@@ -9,64 +9,13 @@ struct CategoryConfig {
 	std::set<const char*> keywords;
 };
 
-CategoryConfig categoryconf[] = {
-	{"Living expenses", "Groceries", { "TESCO","Tesco","LIDL","ALDI","SPAR","CBA","S MARKET","Fressn","DM","ROSS","PENNY","Coop","BENU","Migros","migrolino","BILLA","Spar","Penny" }},
-	{"Living expenses", "Clothing", { "ZARA","H&M","CCC","C&A","SPORTSD","TOPP","PRIMARK","CALVIN","aboutyou","ABOUTYOU","BOSS" }},
-	{"Bills", "Utilities", { "E.ON","NKM","közös","Tetõtér","MVM","AEGON","Alfa Vienna","EON","Cig Pann" }},
-	{"Bills", "Mortgage", { "Hitel törlesztés" }},
-	{"Bills", "Bank costs", { "Bankkártya","díja","KÖLTSÉG","KAMAT","DÍJA","CSOMAGDÍJ","számlavezetés","kamat jovairas","Kamatadó","SZOCHO","Kamatelsz","kamat" }},
-	{"Telecommunication", "Mobile", { "VODAFONE","TELEKOM/","TELEKOM WEB" }},
-	{"Telecommunication", "Home", { "UPC","NETFLIX","Amazon Video","Netflix","Prime Video" }},
-	{"Entertainment", "Cafe", { "cafe frei","KAFE ART","CAFE","nespresso","Cafe+Co" }},
-	{"Entertainment", "Restaurant", { "GEKKO","PannÄnia","MAD MAX","3 GY","Cafe Molo","JOHN BULL","ZOLDFAZEK" }},
-	{"Entertainment", "Fast Food", { "NETPINCER","BURGER","DONALDS","BEST FOOD GR","LA PIZZA DI","DON PEPE","MARCO POL","MCD","FORTE","BU:FE'","Delivery Hero","DONUT","TELETAL","PIZZAFORTE","Netpincer","foodora" }},
-	{"Entertainment", "Cinema", { "CINEMA","ITMAGYARCIN","blue Cinema" }},
-	{"Entertainment", "Cultural", { "LIBRI","MONYO","DIVINO"}},
-	{"Travel", "Transportation", { "V-START","RYANAIR","WIZZ","NYKK","easyJet","JET 2","Uber","UBER","PARKOL","BUNDESB","Bundesb","SIMPLE","MOL","SHELL","OMV",".MAV","ZVV","OEBB","BKK"}},
-	{"Travel", "Accommodation", { "Booking","HOTEL","AIRBNB"}},
-	{"Travel", "Extra", { "DUTY" }},
-	{"Home improvement", "Furniture", { "JYSK","Design Bú","Design Mö" }},
-	{"Home improvement", "Renovation", { "Vaskos","Festek","Dr. Padl","Forgácsné Varga","Rábaablak","PalCo","Orbán Gábor","elektrikstore","Esõ Dániel","Il Bagno","ANRODISZ","DOKKER" }},
-	{"Home improvement", "Appliances", { "LA'MPAHA'Z","feny24" }},
-	{"Hobby", "Sport", { "DECATHLON","Galaxy" }},
-	{"Hobby", "Hardware", { "Amazon","PCX","eMAG","EKWB" }},
-	{"Hobby", "Audio", { "STEAM","BLIZZARD","GOOGLE","MIDJOURNEY","EPIC GAMES","GENEANET" }},
-	{"Hobby", "Software", { "Tidal" }},
-	{"Income", "Salary", { "havi m","PACKARD","FUBA","BESI","BÉR","Gy.tartás","munkabér","Munkabér" }},
-	{"Income", "Revenue", { "Perspectix","Schleissheimer","Schleisheimer" }},
-	{"Income", "Taxes", { "NAV","Város Önk.","Iparkamara" }},
-	{"Income", "Travel compensation", { "Utazási" }},
-	{"Income", "Debt", {}},
-	{"Special", "Internal Transfer", { "int","devizaváltás" }},
-	{"Project", "NewHome", {}},
-	{"Project", "Study", {}},
-	{"Project", "Car", { "Toyota","Autófokusz" }},
-	{"Project", "Wedding", {}},
-	{"Project", "Child", { "BRENDON","TORPE-FALVA","REGIO","PPRSR" }},
-	{"Project", "Business", { "Iparkamara" }}
-};
-
-CategorySystem::CategorySystem() {
-	int idx = 0;
-	m_categories.push_back(new Category(idx, "", "")); // default category
-	/*for (auto& conf : categoryconf) {
-		++idx;
-		Category* cat = new Category(idx, conf.category, conf.subcategory);
-		m_categories.push_back(cat);
-		for (auto& w : conf.keywords) {
-			cat->AddNewKeyword(w);
-		}
-		if (!m_category_map.emplace(conf.subcategory, cat).second) {
-			throw "category already exists??";
-		}
-	}*/
+CategorySystem::CategorySystem() : m_categories(true) {
+	m_categories.push_back(new Category(0, "", "")); // default category
 }
 
-CategorySystem::~CategorySystem() {
-	DeletePointers(m_categories);
-}
+CategorySystem::~CategorySystem() {}
 
-std::vector<uint8_t> CategorySystem::GetCategoryId(const char* name) const {
+IdSet CategorySystem::GetCategoryId(const char* name) const {
 	if (strlen(name) == 0) {
 		return {0};
 	}
@@ -75,16 +24,16 @@ std::vector<uint8_t> CategorySystem::GetCategoryId(const char* name) const {
 		return {it->second->GetId()};
 	}
 	// make linear search string contains
-	std::vector<uint8_t> results;
+	IdSet results;
 	for (auto cat : m_categories) {
 		if (cat->CheckName(name)) {
-			results.push_back(cat->GetId());
+			results.insert(cat->GetId());
 		}
 	}
 	return results;
 }
 
-const Category* CategorySystem::GetCategory(const uint8_t id) const {
+const Category* CategorySystem::GetCategory(const Id id) const {
 	if(id > m_categories.size()) {
 		return nullptr;
 	}
@@ -94,32 +43,21 @@ const Category* CategorySystem::GetCategory(const uint8_t id) const {
 StringTable CategorySystem::List() const {
 	StringTable table;
 	table.reserve(m_categories.size() + 1);
-	table.push_back({"ID", "Category", "Sub-Category", "Keywords"});
+	table.push_back({"ID", "Category group", "Category", "Keywords"});
+	table.push_meta_back(StringTable::RIGHT_ALIGNED); // for the ID
 	for (const Category* cat : m_categories) {
 		StringVector& row = table.emplace_back();
 		row.push_back(std::to_string(cat->GetId()));
-		row.push_back(cat->GetCategoryName());
-		row.push_back(cat->GetSubCategoryName());
-		StringSet kywrds = cat->GetKeywords();
-		std::string line("[");
-		bool first = true;
-		for (auto& key : kywrds) {
-			if (!first) {
-				line.append(",");
-			} else {
-				first = false;
-			}
-			line.append(key);
-		}
-		line.append("]");
-		row.push_back(line);
+		row.push_back(cat->GetCategoryGroupName());
+		row.push_back(cat->GetName());		
+		row.push_back(ContainerAsString(cat->GetKeywords()));
 	}
 	return table;
 }
 
-uint8_t CategorySystem::Categorize(const std::string& text) {
+Id CategorySystem::Categorize(const std::string& text) {
 	for (const Category* cat : m_categories) {
-		if (cat->CheckKeywords(text)) {
+		if (cat->CheckKeywords(text.c_str())) {
 			return cat->GetId();
 		}
 	}
@@ -144,9 +82,6 @@ void CategorySystem::Stream(std::istream& in) {
 	std::string cat, subcat;
 	for (int i = 0; i < size; ++i) {
 		in >> id;
-		/*if (in.eof()) {
-			break;
-		}*/
 		DumpChar(in);
 		StreamString(in, cat);
 		StreamString(in, subcat);

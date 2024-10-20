@@ -12,6 +12,7 @@ enum class QueryTopic {
 	DATUM,
 	WRITE,
 	CLIENT,
+	ACCOUNT,
 	AMOUNT,
 	CATEGORY,
 	SUBCATEGORY
@@ -22,14 +23,44 @@ constexpr char DQUOTE = '\"';
 constexpr char ENDL = '\n';
 constexpr char CRET = '\r';
 
-constexpr uint8_t INVALID_ACCOUNT_ID = 0xffu;
-constexpr uint8_t INVALID_TYPE_ID = 0xffu;
-constexpr uint8_t INVALID_CATEGORY_ID = 0xffu;
-constexpr uint16_t INVALID_CLIENT_ID = 0xffffu;
+using Id = uint16_t;
+using IdSet = std::set<uint16_t>;
 
-using StringSet = std::set<std::string>;
-using StringVector = std::vector<std::string>;
-using StringTable = std::vector<StringVector>;
+constexpr Id INVALID_ID = 0xffffu;
+
+using String		= std::string;
+using StringSet		= std::set<String>;
+using StringVector	= std::vector<String>;
+
+class StringTable : public std::vector<StringVector> {
+public:
+	enum MetaData {
+		LEFT_ALIGNED,
+		RIGHT_ALIGNED
+	};
+	MetaData GetMetaData(size_t i) const;
+	template <class T>
+	inline void push_meta_back(const T& t) { m_metadata.push_back(t); }
+	void insert_meta(const std::initializer_list<MetaData>& list);
+private:
+	std::vector<MetaData> m_metadata;
+};
+
+template <class T>
+class PtrVector : public std::vector<T*> {
+	const bool m_owner;
+public:
+	using Type = T*;
+	PtrVector(const bool owner = false) : m_owner(owner) {}
+	~PtrVector() {
+		if (!m_owner) {
+			return;
+		}
+		for (T* ptr : *this) {
+			delete ptr;
+		}
+	}
+};
 
 template<class PtrContainer>
 void DeletePointers(PtrContainer& container) {
@@ -57,9 +88,30 @@ void StreamContainer(std::ostream& out, const StringContainer& container) {
 	}
 }
 
+template<class Container>
+String ContainerAsString(const Container container) {
+	std::string line("[");
+	bool first = true;
+	for (auto& key : container) {
+		if (!first) {
+			line.append(",");
+		} else {
+			first = false;
+		}
+		line.append(key);
+	}
+	line.append("]");
+	return line;
+}
+
+bool caseInsensitiveStringCompare(const char* str1, const char* str2);
+bool caseInsensitiveStringCompare(const String& str1, const String& str2);
+bool caseInsensitiveStringContains(const char* string, const char* sub);
+bool caseInsensitiveStringContains(const String& string, const String& sub);
+
 void DumpChar(std::istream& in);
-void StreamString(std::ostream& out, const std::string& str);
-void StreamString(std::istream& in, std::string& str);
+void StreamString(std::ostream& out, const String& str);
+void StreamString(std::istream& in, String& str);
 
 template<class StringContainer>
 void StreamContainer(std::istream& in, StringContainer& container) {

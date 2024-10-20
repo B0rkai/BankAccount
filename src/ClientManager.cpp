@@ -8,13 +8,11 @@ void ClientManager::CheckId(const uint16_t id) const {
 	}
 }
 
-ClientManager::ClientManager() {
+ClientManager::ClientManager() : m_clients(true) {
 	m_clients.push_back(new Client(0, "")); // NO CLIENT
 }
 
-ClientManager::~ClientManager() {
-	DeletePointers(m_clients);
-}
+ClientManager::~ClientManager() {}
 
 std::string ClientManager::GetInfo(const uint16_t id) const {
 	std::string res;
@@ -32,7 +30,7 @@ std::string ClientManager::GetInfo(const uint16_t id) const {
 
 const char* ClientManager::GetName(const uint16_t id) const {
 	CheckId(id);
-	return m_clients[id]->GetName();
+	return m_clients[id]->GetName().c_str();
 }
 
 StringTable ClientManager::List() const {
@@ -58,17 +56,19 @@ StringTable ClientManager::List() const {
 	return table;
 }
 
-bool ClientManager::MergeClients(const std::set<uint16_t>& froms, const uint16_t to) {
+void ClientManager::MergeClients(const std::set<uint16_t>& froms, const uint16_t to) {
 	CheckId(to);
 	// first copy over the account numbers
-	for (auto& from : froms) {
-		CheckId(from);
-		// these access works before erasing
+	{ // scope because ptrs will be invalide
 		Client* cto = m_clients[to];
-		Client* cfrom = m_clients[from];
-		const auto& accs = cfrom->GetAccountNumbers();
-		for (const auto& acc : accs) {
-			cto->AddAccountNumber(acc.c_str());
+		for (auto& from : froms) {
+			CheckId(from);
+			// these access works before erasing
+			Client* cfrom = m_clients[from];
+			const auto& accs = cfrom->GetAccountNumbers();
+			for (const auto& acc : accs) {
+				cto->AddAccountNumber(acc.c_str());
+			}
 		}
 	}
 	// delete not needed clients
@@ -86,7 +86,6 @@ bool ClientManager::MergeClients(const std::set<uint16_t>& froms, const uint16_t
 	for (int i = 0; i < size; ++i) {
 		m_clients[i]->SetId((uint16_t)i);
 	}
-	return false;
 }
 
 uint16_t ClientManager::GetClientId(const char* client_name) {
@@ -107,7 +106,7 @@ uint16_t ClientManager::GetClientId(const char* client_name) {
 	}
 	// check client count
 	size_t size = m_clients.size();
-	if (size + 1 == INVALID_CLIENT_ID) {
+	if (size + 1 == INVALID_ID) {
 		throw "too many clients";
 	}
 	// create new client
@@ -158,7 +157,7 @@ size_t ClientManager::size() const {
 	return m_clients.size();
 }
 
-std::vector<uint16_t> ClientManager::GetIds(const char* client_name) const {
+IdSet ClientManager::GetIds(const char* client_name) const {
 	if (strlen(client_name) == 0) {
 		return {0};
 	}
@@ -169,10 +168,10 @@ std::vector<uint16_t> ClientManager::GetIds(const char* client_name) const {
 		}
 	}
 	// second check partial match
-	std::vector<uint16_t> results;
+	IdSet results;
 	for (auto client : m_clients) {
 		if (client->CheckNameContains(client_name)) {
-			results.push_back(client->GetId());
+			results.insert(client->GetId());
 		}
 	}
 	return results;

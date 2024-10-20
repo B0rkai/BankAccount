@@ -7,13 +7,13 @@
 #include <algorithm>
 
 Account::Account(const char* bank_name, const char* acc_number, const char* acc_name, const CurrencyType curr)
-: m_bank_name(bank_name), m_acc_number(acc_number), m_acc_name(acc_name), m_curr(MakeCurrency(curr)) {}
+: NamedType(acc_name), m_bank_name(bank_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)) {}
 
-size_t Account::Size() {
+size_t Account::Size() const {
 	return m_transactions.size();
 }
 
-void Account::AddTransaction(const uint16_t date, const uint8_t type_id, const int32_t amount, const uint16_t client_id, const uint8_t category_id, const char* memo, const char* desc) {
+void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const Id category_id, const char* memo, const char* desc) {
 	std::string* memo_ptr = nullptr;
 	std::string* desc_ptr = nullptr;
 	if (strlen(memo)) {
@@ -54,6 +54,10 @@ void Account::MakeQuery(WQuery& query) {
 	}
 }
 
+const Transaction* Account::GetFirstRecord() const {
+	return &m_transactions.front();
+}
+
 const Transaction* Account::GetLastRecord() const {
 	return &m_transactions.back();
 }
@@ -70,14 +74,16 @@ void Account::Stream(std::ostream& out) const {
 	out << COMMA;
 	StreamString(out, m_acc_number);
 	out << COMMA;
-	StreamString(out, m_acc_name);
-	out << COMMA << m_curr->GetShortName() << COMMA << m_transactions.size() << ENDL;
+	StreamString(out, GetName());
+	out << COMMA << m_curr->GetShortName() << COMMA << m_status << COMMA << m_transactions.size() << ENDL;
 	for (const auto& tr : m_transactions) {
 		tr.Stream(out);
 	}
 }
 
 void Account::Stream(std::istream& in) {
+	in >> m_status;
+	DumpChar(in); // dump comma
 	int size;
 	in >> size;
 	DumpChar(in); // dump endl
@@ -100,6 +106,6 @@ void Account::Stream(std::istream& in) {
 		if (!de.empty()) {
 			m_descriptions.push_back(de);
 		}
-		m_transactions.emplace_back((IAccount*)this, am, da, cli, (uint8_t)ty, !me.empty() ? &m_memos.back() : nullptr, !de.empty() ? &m_descriptions.back() : nullptr).GetCategoryId() = (uint8_t)ca;
+		m_transactions.emplace_back((IAccount*)this, am, da, cli, ty, !me.empty() ? &m_memos.back() : nullptr, !de.empty() ? &m_descriptions.back() : nullptr).GetCategoryId() = ca;
 	}
 }

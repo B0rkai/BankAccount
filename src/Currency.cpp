@@ -26,6 +26,7 @@ void Currency::RecursiveDigits(std::stringstream& str, uint32_t num) const {
 
 std::string Currency::PrettyPrint(const int32_t val) const {
 	std::stringstream str;
+	str << " "; // extra spacing
 	if (val < 0) {
 		str << '-';
 	}
@@ -61,7 +62,7 @@ int32_t Currency::ParseAmount(const char* amount) const {
 	size_t pos = samount.find(",");
 	if (pos != std::string::npos) {
 		samount[pos] = '\0';
-		return std::stoll(samount.c_str()) * 100 + std::stol(&samount[pos+1]);
+		return std::stol(samount.c_str()) * 100 + std::stol(&samount[pos+1]);
 	}
 	return std::stol(samount.c_str()) * 100;
 }
@@ -79,7 +80,7 @@ class Forint : public Currency {
 	static Forint* s_object;
 public:
 	Forint()
-		: Currency("Ft", "Forint", "HUF", ',', ' ', false, false) {}
+		: Currency("Ft", "Forint", "HUF", ',', '\'', false, false) {}
 	static Forint* GetObject();
 	virtual CurrencyType Type() const { return HUF; }
 };
@@ -106,7 +107,7 @@ class SwissFranc : public Currency {
 	static SwissFranc* s_object;
 public:
 	SwissFranc()
-		: Currency("Fr.", "Swiss franc", "CHF", '.', ' ', true, true) {}
+		: Currency("Fr.", "Swiss franc", "CHF", '.', ',', true, true) {}
 	static SwissFranc* GetObject();
 	virtual CurrencyType Type() const { return CHF; }
 };
@@ -152,31 +153,36 @@ SwissFranc* SwissFranc::s_object = nullptr;
 
 Euro* Euro::GetObject() {
 	if (!s_object) {
-		s_object = new Euro;
+		static Euro euro;
+		s_object = &euro;
 	}
 	return s_object;
 }
 Forint * Forint::GetObject() {
 	if (!s_object) {
-		s_object = new Forint;
+		static Forint forint;
+		s_object = &forint;
 	}
 	return s_object;
 }
 USDollar * USDollar::GetObject() {
 	if (!s_object) {
-		s_object = new USDollar;
+		static USDollar dodo;
+		s_object = &dodo;
 	}
 	return s_object;
 }
 GBPound * GBPound::GetObject() {
 	if (!s_object) {
-		s_object = new GBPound;
+		static GBPound pounds;
+		s_object = &pounds;
 	}
 	return s_object;
 }
 SwissFranc * SwissFranc::GetObject() {
 	if (!s_object) {
-		s_object = new SwissFranc;
+		static SwissFranc francs;
+		s_object = &francs;
 	}
 	return s_object;
 }

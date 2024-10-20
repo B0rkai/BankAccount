@@ -7,16 +7,17 @@
 
 #include "IAccount.h"
 #include "Transaction.h"
+#include "TypeTraits.h"
 
 enum CurrencyType : uint8_t;
 class Currency;
 class Query;
 class WQuery;
 
-class Account : public IAccount {
+class Account : public IAccount, public NamedType {
 	const std::string m_bank_name;
 	const std::string m_acc_number;
-	const std::string m_acc_name;
+	bool m_status = true;
 	Currency* m_curr;
 	std::vector<Transaction> m_transactions;
 	std::list<std::string> m_memos;
@@ -24,13 +25,19 @@ class Account : public IAccount {
 	bool RunQuery(Query& query, const Transaction* tr) const;
 public:
 	Account(const char* bank_name, const char* acc_number, const char* acc_name, const CurrencyType curr);
-	const char* GetAccNumber() const { return m_acc_number.data(); }
-	size_t Size();
-	void AddTransaction(const uint16_t date, const uint8_t type_id, const int32_t amount, const uint16_t client_id, const uint8_t category_id, const char* memo, const char* desc);
+
+	inline const char* GetAccNumber() const { return m_acc_number.data(); }
+	inline std::string GetBankName() const { return m_bank_name; }
+	bool Status() const { return m_status; }
+
+
+	size_t Size() const;
+	void AddTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const Id category_id, const char* memo, const char* desc);
 	void MakeQuery(Query& query) const;
 	void MakeQuery(WQuery& query);
 	inline virtual const Currency* GetCurrency() const override { return m_curr; }
 
+	const Transaction* GetFirstRecord() const;
 	const Transaction* GetLastRecord() const;
 
 	void Sort();

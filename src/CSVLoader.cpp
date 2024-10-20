@@ -18,7 +18,7 @@ bool CSVLoader::LoadFileToDB(IDataBase& dbif, const std::string& filename) {
     int account_num_column = row.WhichColumn("Bank account number");
     int account_name_column = row.WhichColumn("Account name");
     int bank_name_column = row.WhichColumn("Bank");
-    uint8_t account_id = 0xffu;
+    Id account_id = INVALID_ID;
     Currency* curr = MakeCurrency(HUF); // default
     std::string prev_acc_number;
     while (filestr >> row) {
@@ -28,9 +28,9 @@ bool CSVLoader::LoadFileToDB(IDataBase& dbif, const std::string& filename) {
             account_id = dbif.CreateOrGetAccountId(row[bank_name_column], row[account_num_column], curr->Type(), row[account_name_column]);
             prev_acc_number = acc_number;
         }
-        uint8_t type_id = dbif.CreateOrGetTransactionTypeId(row[type_column]);
-        uint16_t client_id = dbif.CreateOrGetClientId(row[client_name_column], row[client_acc_num_column]);
-        dbif.AddTransaction(account_id, (uint16_t)std::stol(row[date_column]), type_id, curr->ParseAmount(row[amount_column]), client_id, row[category_column], row[memo_column], row[description_column]);
+        Id type_id = dbif.CreateOrGetTransactionTypeId(row[type_column]);
+        Id client_id = dbif.CreateOrGetClientId(row[client_name_column], row[client_acc_num_column]);
+        dbif.AddTransaction(account_id, (Id)std::stol(row[date_column]), type_id, curr->ParseAmount(row[amount_column]), client_id, row[category_column], row[memo_column], row[description_column]);
     }
     return false;
 }

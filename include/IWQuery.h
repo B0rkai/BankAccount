@@ -1,14 +1,17 @@
 #pragma once
-#include <cstdint>
-#include <string>
-#include <set>
+#include "CommonTypes.h"
 
 class IWClient {
 public:
-	virtual bool MergeClients(const std::set<uint16_t>& from, const uint16_t to) = 0;
+	virtual void MergeClients(const IdSet& from, const Id to) = 0;
 };
 
 class IWCategory {
 public:
-	virtual uint8_t Categorize(const std::string& text) = 0;
+	virtual Id Categorize(const String& text) = 0;
+};
+
+class IWAccount {
+public:
+	virtual void MergeTypes(const IdSet& from, const Id to) = 0;
 };
