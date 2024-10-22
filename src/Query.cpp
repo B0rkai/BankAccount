@@ -11,7 +11,7 @@ bool QueryByName::IsOk() const {
 	return !m_names.empty();
 }
 
-std::string QueryClient::PrintResult() {
+String QueryClient::PrintResult() {
 	std::stringstream ss;
 	size_t size = GetIds().size();
 	ss << size << " client";
@@ -21,25 +21,6 @@ std::string QueryClient::PrintResult() {
 	ss << " found:";
 	ss << m_result;
 	return ss.str();
-}
-
-bool QueryClient::CheckTransaction(const Transaction* tr) {
-	const uint16_t client_id = tr->GetClientId();
-	auto& ids = GetIds();
-	for(auto& id : ids) {
-		if(client_id == id) {
-			return true;
-		}
-	}
-    return false;
-}
-
-IdSet QueryClient::DoResolve(const String& name) {
-	return s_resolve_if->GetClientId(name.c_str());
-}
-
-String QueryClient::DoResolve(const uint16_t id) {
-	return s_resolve_if->GetClientInfo(id);
 }
 
 bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
@@ -59,13 +40,13 @@ bool QueryCategorySum::CheckTransaction(const Transaction* tr) {
 	Id id = tr->GetCategoryId();
 	QueryElement& res = m_subqueries[id];
 	if (!m_category_names.count(id)) {
-		m_category_names[id] = s_resolve_if->GetCategoryInfo(id);
+		m_category_names[id] = s_resolve_if->GetInfo(GetTopic(), id);
 	}
 	return res.CheckTransaction(tr);
 }
 
-std::string QueryCategorySum::PrintResult() {
-	std::string res = "\n";
+String QueryCategorySum::PrintResult() {
+	String res = "\n";
 	for (auto& pair : m_subqueries) {
 		res.append(m_category_names[pair.first]).append(": ");
 		res.append(pair.second.PrintResult());
@@ -123,8 +104,8 @@ std::map<CurrencyType, QuerySum::Result> QueryCategorySum::GetResults() const {
 	return total;
 }
 
-std::string QuerySum::PrintResultLine(const Result& res, const Currency* curr) const {
-	std::string ret;
+String QuerySum::PrintResultLine(const Result& res, const Currency* curr) const {
+	String ret;
 	int cnt = 0;
 	if (res.m_inc) {
 		ret.append(curr->PrettyPrint((int32_t)res.m_inc)).append(" income ");
@@ -146,7 +127,7 @@ StringVector QuerySum::GetStringResultRow(const Result& res, const Currency* cur
 	return {std::to_string(res.m_count), curr->PrettyPrint((int32_t)res.m_inc), curr->PrettyPrint((int32_t)res.m_exp), curr->PrettyPrint((int32_t)res.m_sum)};
 }
 
-std::string QueryCurrencySum::PrintResult() {
+String QueryCurrencySum::PrintResult() {
 	std::stringstream ss;
 	for (auto& pair : m_results) {
 		Currency* curr = MakeCurrency(pair.first);
@@ -171,30 +152,22 @@ StringTable QueryCurrencySum::GetStringResult() const {
 	return table;
 }
 
-std::string QueryElement::PrintResult() {
-	return std::string();
-}
-
-bool QueryCategory::CheckTransaction(const Transaction* tr) {
-	const Id cat_id = tr->GetCategoryId();
+bool QueryElement::CheckTransaction(const Transaction* tr) {
+	const Id tr_id = tr->GetId(GetTopic());
 	auto& ids = GetIds();
 	for (auto& id : ids) {
-		if (cat_id == id) {
+		if (tr_id == id) {
 			return true;
 		}
 	}
 	return false;
 }
 
-IdSet QueryCategory::DoResolve(const String& name) {
-	return s_resolve_if->GetCategoryId(name.c_str());
+String QueryElement::PrintResult() {
+	return String();
 }
 
-String QueryCategory::DoResolve(const uint16_t id) {
-	return s_resolve_if->GetCategoryInfo(id);
-}
-
-std::string QueryCategory::PrintResult() {
+String QueryCategory::PrintResult() {
 	return m_result;
 }
 
@@ -264,32 +237,16 @@ void Query::push_back(QueryElement* qe) {
 			return; // only one wquery is allowed
 		}
 	}
-	m_elements.push_back(qe); }
-
-bool QueryType::CheckTransaction(const Transaction* tr) {
-	auto& ids = GetIds();
-	for (auto& id : ids) {
-		if (tr->GetTypeId() == id) {
-			return true;
-		}
-	}
-	return false;
-}
-
-IdSet QueryType::DoResolve(const String& name) {
-	return s_resolve_if->GetTransactionTypeId(name.c_str());
-}
-
-String QueryType::DoResolve(const uint16_t id) {
-	return s_resolve_if->GetTransactionTypeInfo(id);
+	m_elements.push_back(qe);
 }
 
 void QueryByName::PreResolve() {
 	for (auto& name : m_names) {
-		IdSet ids = DoResolve(name);
+		IdSet ids = s_resolve_if->GetIds(GetTopic(), name.c_str());
 		for (auto id : ids) {
 			AddId(id);
-			m_result.append("\n").append(DoResolve(id));
+			m_result.push_back(ENDL);
+			m_result.append(s_resolve_if->GetInfo(GetTopic(), id));
 		}
 	}
 	m_names.clear();

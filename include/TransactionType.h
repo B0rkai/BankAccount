@@ -1,6 +1,6 @@
 #pragma once
 #include "CommonTypes.h"
-#include "TypeTraits.h"
+#include "ManagedType.h"
 
 class TransactionType : public NumberedType, public NamedType, public MappedType {
 public:

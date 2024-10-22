@@ -52,12 +52,6 @@
     <ClCompile Include="src\Currency.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\CSVLoader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\CSVReader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\Transaction.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -79,7 +73,13 @@
     <ClCompile Include="src\TransactionType.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\TypeTraits.cpp">
+    <ClCompile Include="src\ManagedType.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ManagerType.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\DataImporter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -109,12 +109,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\Currency.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\CSVLoader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\CSVReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\IDataBase.h">
@@ -153,7 +147,13 @@
     <ClInclude Include="include\TransactionType.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\TypeTraits.h">
+    <ClInclude Include="include\ManagedType.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ManagerType.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\DataImporter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

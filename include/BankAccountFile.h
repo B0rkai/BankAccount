@@ -11,13 +11,13 @@ public:
 		SAVED
 	};
 
-	BankAccountFile(const std::string filename);
-	void Load();
-	void Save();
+	BankAccountFile(const String filename);
+	bool Load();
+	bool Save(const bool compress);
 	inline State GetState() const { return m_state; }
 private:
 	virtual void Modified() override;
-	const std::string m_filename;
+	const String m_filename;
 	State m_state = EMPTY;
 };
 

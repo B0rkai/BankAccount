@@ -14,8 +14,8 @@ size_t Account::Size() const {
 }
 
 void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const Id category_id, const char* memo, const char* desc) {
-	std::string* memo_ptr = nullptr;
-	std::string* desc_ptr = nullptr;
+	String* memo_ptr = nullptr;
+	String* desc_ptr = nullptr;
 	if (strlen(memo)) {
 		memo_ptr = &m_memos.emplace_back(memo);
 	}
@@ -41,7 +41,7 @@ void Account::MakeQuery(Query& query) const {
 	for(const auto& tr : m_transactions) {
 		bool match = RunQuery(query, &tr);
 		if(match && query.ReturnList()) {
-			query.GetResult().push_back(&tr);
+			query.GetResult().emplace_back(&tr);
 		}
 	}
 }
@@ -49,7 +49,7 @@ void Account::MakeQuery(Query& query) const {
 void Account::MakeQuery(WQuery& query) {
 	for (auto& tr : m_transactions) {
 		if (RunQuery(query, &tr) && query.WElement()->CheckTransaction(&tr) && query.ReturnList()) {
-			query.GetResult().push_back(&tr);
+			query.GetResult().emplace_back(&tr);
 		}
 	}
 }
@@ -89,17 +89,17 @@ void Account::Stream(std::istream& in) {
 	DumpChar(in); // dump endl
 	int32_t am;
 	uint16_t da, cli, ty, ca;
-	std::string me, de;
+	String me, de;
 	char dump;
 	for (int i = 0; i < size; ++i) {
 		in >> am >> dump >> da >> dump >> cli >> dump >> ty >> dump >> ca >> dump;
 		StreamString(in, me);
-		if (in.peek() != CRET) {
+		if (!IsEndl(in.peek())) {
 			StreamString(in, de);
 		} else {
-			DumpChar(in);
 			de.clear();
 		}
+		DumpChar(in); // dump endl
 		if (!me.empty()) {
 			m_memos.push_back(me);
 		}

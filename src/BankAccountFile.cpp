@@ -1,17 +1,19 @@
 #include <fstream>
+#include <filesystem>
 #include "BankAccountFile.h"
 #include "ZipFile.h"
 
-static void ZipSave(const std::string& filename) {
+static const char* UNCOMPRESSED_FILE("save\\BankAccount.csv");
+
+static void ZipSave(const String& filename) {
 	ZipArchive::Ptr archive = ZipFile::Open(filename);
 
 	std::ifstream contentStream;
-	contentStream.open("save\\BankAccount.csv", std::ios::binary);
+	contentStream.open(UNCOMPRESSED_FILE, std::ios::binary);
 	archive->RemoveEntry("save.data");
 	ZipArchiveEntry::Ptr entry = archive->CreateEntry("save.data");
-	//assert(entry != nullptr);
 
-	//entry->SetPassword("pass");
+	entry->SetPassword("pass");
 
 	// if this is not set, the input stream would be readen twice
 	// this method is only useful for password protected files
@@ -23,46 +25,55 @@ static void ZipSave(const std::string& filename) {
 	ZipFile::SaveAndClose(archive, filename);
 }
 
-BankAccountFile::BankAccountFile(const std::string filename)
-: m_filename(filename) {}
+BankAccountFile::BankAccountFile(const String filename)
+	: m_filename(filename) {}
 
-void BankAccountFile::Load() {
+bool BankAccountFile::Load() {
 	if (m_state == SAVED) {
-		return; // do nothing, it is already synced
+		return false; // do nothing, it is already synced
 	}
-	
-	ZipArchive::Ptr archive = ZipFile::Open(m_filename);
+	bool compressed = !std::filesystem::exists(UNCOMPRESSED_FILE);
+	if (compressed) {
+		if (!std::filesystem::exists(m_filename)) {
+			return false;
 
-	ZipArchiveEntry::Ptr entry = archive->GetEntry("save.data");
+		}
+		ZipArchive::Ptr archive = ZipFile::Open(m_filename);
+		ZipArchiveEntry::Ptr entry = archive->GetEntry("save.data");
+		// if the entry is password protected, it is necessary
+		// to set the password before getting a decompression stream
+		if (entry->IsPasswordProtected()) {
+			// when decompressing an encrypted entry
+			// there is no need to specify the use of data descriptor
+			// (ZibLib will deduce if the data descriptor was used)
+			entry->SetPassword("pass");
+		}
+		// if the entry is password protected and the provided password is wrong
+		// (or none is provided) the return value will be nullptr
+		std::istream* decompressStream = entry->GetDecompressionStream();
+		{
+			Stream(*decompressStream);
+		}
+	} else {
 
-	// if the entry is password protected, it is necessary
-	// to set the password before getting a decompression stream
-	if (entry->IsPasswordProtected()) {
-		// when decompressing an encrypted entry
-		// there is no need to specify the use of data descriptor
-		// (ZibLib will deduce if the data descriptor was used)
-		entry->SetPassword("pass");
-	}
-
-	// if the entry is password protected and the provided password is wrong
-	// (or none is provided) the return value will be nullptr
-	std::istream* decompressStream = entry->GetDecompressionStream();
-
-	{
-		//std::ifstream in("save\\BankAccount.csv");
-		Stream(*decompressStream);
+		std::ifstream in(UNCOMPRESSED_FILE);
+		Stream(in);
 	}
 	m_state = SAVED;
+	return true;
 }
 
-void BankAccountFile::Save() {
+bool BankAccountFile::Save(const bool compress) {
 	{
-		std::ofstream out("save\\BankAccount.csv");
+		std::ofstream out(UNCOMPRESSED_FILE);
 		Stream(out);
 	}
-	ZipSave(m_filename);
-	std::remove("save\\BankAccount.csv");
+	if (compress) {
+		ZipSave(m_filename);
+		std::remove(UNCOMPRESSED_FILE);
+	}
 	m_state = SAVED;
+	return true;
 }
 
 void BankAccountFile::Modified() {

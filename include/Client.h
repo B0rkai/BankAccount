@@ -2,24 +2,24 @@
 #include <string>
 #include <set>
 #include "CommonTypes.h"
-#include "TypeTraits.h"
+#include "ManagedType.h"
 
-class Client : public NumberedType, public NamedType, public MappedType {
-	std::set<std::string> m_account_numbers;
+class Client : public ManagedType {
+	StringSet m_account_numbers;
 public:
 	Client(const Id id, const char* name);
 
-	void Stream(std::istream& in);
-	void Stream(std::ostream& out) const;
+	virtual void StreamIn(std::istream& in) override;
+	virtual void StreamOut(std::ostream& out) const override;
 
 // Read Access
-	inline const std::set<std::string>& GetAccountNumbers() const { return m_account_numbers; }
+	inline const StringSet& GetAccountNumbers() const { return m_account_numbers; }
 
 // Write Access
 	void AddAccountNumber(const char* acc);
+	void Merge(const Client* other);
 
 // Query
 	bool CheckAccountNumbers(const char* acc) const;
-	std::string PrintDebug();
 };
 

@@ -36,6 +36,7 @@ public:
     void SaveFile(wxCommandEvent& evt);
     void Categorize(wxCommandEvent& evt);
     void SearchButtonClicked(wxCommandEvent& evt);
+    void Test(wxCommandEvent& evt);
     wxDECLARE_EVENT_TABLE();
 };
 

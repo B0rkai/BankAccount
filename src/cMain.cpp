@@ -2,16 +2,19 @@
 #include <sstream>
 #include <iomanip>
 #include <cwctype>
+
 #include "wx/wx.h"
 #include "wx/windowid.h"
+
+#include "CommonTypes.h"
 #include "cMain.h"
 #include "Currency.h"
 #include "Query.h"
 #include "WQuery.h"
 #include "BankAccountFile.h"
-#include "CommonTypes.h"
+#include "DataImporter.h"
 
-std::string PrettyTable(const StringTable& table) {
+String PrettyTable(const StringTable& table) {
 	if (table.empty()) {
 		return "";
 	}
@@ -52,27 +55,32 @@ std::string PrettyTable(const StringTable& table) {
 	return ss.str();
 }
 
-constexpr int SEARCH_BUTT = 10001;
-constexpr int CHKBX_DATE_FILTER = 10002;
-constexpr int MENU_LOAD = 10003;
-constexpr int MENU_SAVE = 10004;
-constexpr int MENU_CATEGORIZE = 10005;
-constexpr int MENU_LIST_TYPES = 10006;
-constexpr int MENU_LIST_ACCOUNTS = 10007;
-constexpr int MENU_LIST_CLIENTS = 10008;
-constexpr int MENU_LIST_CATEGORIES = 10009;
+enum CtrIds {
+	SEARCH_BUTT = 10001,
+	MENU_DEBUG_SAVE,
+	CHKBX_DATE_FILTER,
+	MENU_LOAD,
+	MENU_SAVE,
+	MENU_CATEGORIZE,
+	MENU_LIST_TYPES,
+	MENU_LIST_ACCOUNTS,
+	MENU_LIST_CLIENTS,
+	MENU_LIST_CATEGORIES,
+	MENU_TEST
+};
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_BUTTON(SEARCH_BUTT, SearchButtonClicked)
-	//EVT_BUTTON(10002, InitDB)
 	EVT_CHECKBOX(CHKBX_DATE_FILTER, DateFilterToggle)
 	EVT_MENU(MENU_LOAD, LoadFile)
 	EVT_MENU(MENU_SAVE, SaveFile)
+	EVT_MENU(MENU_DEBUG_SAVE, SaveFile)
 	EVT_MENU(MENU_CATEGORIZE, Categorize)
 	EVT_MENU(MENU_LIST_TYPES, List)
 	EVT_MENU(MENU_LIST_ACCOUNTS, List)
 	EVT_MENU(MENU_LIST_CLIENTS, List)
 	EVT_MENU(MENU_LIST_CATEGORIES, List)
+	EVT_MENU(MENU_TEST, Test)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -89,12 +97,14 @@ cMain::cMain()
 	/*auto mitem = dbmenu1->Append(MENU_LOAD, "Load file");
 	mitem->Enable(false);*/
 	dbmenu1->Append(MENU_SAVE, "Save file");
+	dbmenu1->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
 	//mitem->Enable(false);
-	dbmenu2->Append(10005, "Categorize");
+	dbmenu2->Append(MENU_CATEGORIZE, "Categorize");
 	dbmenu2->Append(MENU_LIST_ACCOUNTS, "List Accounts");
 	dbmenu2->Append(MENU_LIST_TYPES, "List Transaction Types");
 	dbmenu2->Append(MENU_LIST_CLIENTS, "List Clients");
 	dbmenu2->Append(MENU_LIST_CATEGORIES, "List Categories");
+	dbmenu2->Append(MENU_TEST, "TEST");
 
 	SetMenuBar(m_menu_bar);
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -120,9 +130,9 @@ cMain::cMain()
 	m_window->SetBackgroundColour(wxColour(0, 0, 0));
 	m_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transaction list", wxPoint(210, 30));
 	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by categories", wxPoint(210, 50));
-	m_date_chkb = new wxCheckBox(m_main_panel, 10002, "filter date", wxPoint(210, 70));
+	m_date_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "filter date", wxPoint(210, 70));
 	m_categorize_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "categorize records", wxPoint(210, 90));
-	m_but_search = new wxButton(m_main_panel, 10001, "Search", wxPoint(210, 110), wxSize(110, 25));
+	m_but_search = new wxButton(m_main_panel, SEARCH_BUTT, "Search", wxPoint(210, 110), wxSize(110, 25));
 	m_date_from_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 0));
 	m_date_from_textctrl->Show(false);
 	m_date_to_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(750, 0));
@@ -143,8 +153,12 @@ cMain::~cMain() {
 }
 
 void cMain::List(wxCommandEvent& evt) {
-	int id = evt.GetId();
 	evt.Skip();
+	if (!m_bank_file) {
+		m_search_result_text->SetLabelText("First load the database");
+		return;
+	}
+	int id = evt.GetId();
 	if (id == MENU_LIST_CLIENTS) {
 		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::CLIENT)));
 	} else if (id == MENU_LIST_CATEGORIES) {
@@ -175,7 +189,7 @@ void cMain::SaveFile(wxCommandEvent& evt) {
 		m_search_result_text->SetLabelText("First load the database");
 		return;
 	}
-	m_bank_file->Save();
+	m_bank_file->Save(evt.GetId() == MENU_SAVE);
 }
 
 void cMain::Categorize(wxCommandEvent& evt) {
@@ -210,19 +224,21 @@ void cMain::Categorize(wxCommandEvent& evt) {
 }
 
 void cMain::LoadFile(wxCommandEvent& evt) {
+	evt.Skip();
 	m_bank_file.reset(new BankAccountFile("save\\BData.baf"));
-	m_bank_file->Load();
+	if (!m_bank_file->Load()) {
+		m_status_bar->SetStatusText("ERROR: Missing data file");
+		return;
+	}
 	m_initdb_menu_item->Enable(false);
 	//m_resetdb_menu_item->Enable(true);
 	std::stringstream str;
-	//str << " --- " << m_bank_file->CountAccounts() << " accounts has " << m_bank_file->CountTransactions() << " transactions, and " << m_bank_file->CountClients() << " clients found! ---";
 	str << " --- " << m_bank_file->CountTransactions() << " records, " << m_bank_file->CountAccounts() << " accounts, " << m_bank_file->CountClients() << " clients, " << m_bank_file->CountCategories() << " categories loaded.";
 	str << " Last record date: " << m_bank_file->GetLastRecordDate() << " --- ";
 	char buf[120];
 	str.getline(buf, 120);
-	std::string name(buf);
+	String name(buf);
 	m_status_bar->SetStatusText(name);
-	evt.Skip();
 }
 
 void cMain::SearchButtonClicked(wxCommandEvent& evt) {
@@ -231,7 +247,7 @@ void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 		m_search_result_text->SetLabelText("First load the database");
 		return;
 	}
-	std::string result;
+	String result;
 	wxString val1 = m_client_search_text->GetValue();
 	wxString val2 = m_category_search_text->GetValue();
 	Query q;
@@ -240,15 +256,15 @@ void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 	if (!val1.empty()) {
 		qcli = new QueryClient;
 		size_t pos = val1.find(';');
-		if (pos == std::string::npos) {
-			qcli->AddName(val1);
+		if (pos == String::npos) {
+			qcli->AddName(val1.c_str());
 		} else {
 			size_t prevpos = 0;
 			do {
 				val1[pos] = '\0';
 				qcli->AddName(val1.c_str() + prevpos);
 				prevpos = pos + 1;
-			} while ((pos = val1.find(';', pos + 1)) != std::string::npos);
+			} while ((pos = val1.find(';', pos + 1)) != String::npos);
 			qcli->AddName(val1.c_str() + prevpos);
 		}
 		q.push_back(qcli);
@@ -256,15 +272,15 @@ void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 	if (!val2.empty()) {
 		qcat = new QueryCategory;
 		size_t pos = val2.find(';');
-		if (pos == std::string::npos) {
-			qcat->AddName(val2);
+		if (pos == String::npos) {
+			qcat->AddName(val2.c_str());
 		} else {
 			size_t prevpos = 0;
 			do {
 				val2[pos] = '\0';
 				qcat->AddName(val2.c_str() + prevpos);
 				prevpos = pos + 1;
-			} while ((pos = val2.find(';', pos + 1)) != std::string::npos);
+			} while ((pos = val2.find(';', pos + 1)) != String::npos);
 			qcat->AddName(val2.c_str() + prevpos);
 		}
 		q.push_back(qcat);
@@ -308,4 +324,9 @@ void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 	wxRect rect = m_search_result_text->GetRect();
 	//m_window->SetSize(rect.GetSize());
 	m_window->SetScrollbars(5,5, rect.width, rect.height);
+}
+
+void cMain::Test(wxCommandEvent& evt) {
+	evt.Skip();
+	StringTable data = ImportFromFile("C:\\Users\\borka\\Downloads\\EUR-hist.xml");
 }

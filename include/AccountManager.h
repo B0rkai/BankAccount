@@ -20,7 +20,7 @@ class Client;
 
 class AccountManager : public IDataBase, public IIdResolve, public INameResolve, public IWAccount {
 	std::vector<TransactionType> m_transaction_types;
-	/*std::unordered_map<std::string, Client*> m_client_map;
+	/*std::unordered_map<String, Client*> m_client_map;
 	std::vector<Client*> m_clients;*/
 	ClientManager m_client_man;
 	PtrVector<Account> m_accounts;
@@ -31,21 +31,21 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve,
 	virtual Id CreateOrGetAccountId(const char* bank_name, const char* account_number, const CurrencyType curr, const char* account_name) override;
 	virtual Id CreateOrGetClientId(const char* client_name, const char* client_account_number) override;
 
-	virtual std::string GetCategoryName(const Id id) const override;
+	virtual String GetCategoryName(const Id id) const override;
 	virtual const char* GetTransactionType(const Id id) const override;
 	virtual const char* GetClientName(const Id id) const override;
 
-	virtual IdSet GetTransactionTypeId(const char* type) const override;
-	virtual IdSet GetClientId(const char* client_name) const override;
-	virtual IdSet GetCategoryId(const char* subcat) const override;
-	virtual std::string GetTransactionTypeInfo(const Id id) const override;
-	virtual std::string GetClientInfo(const Id id) const override;
-	virtual std::string GetCategoryInfo(const Id id) const override;
+	IdSet GetTransactionTypeId(const char* type) const;
+
+	virtual IdSet GetIds(const QueryTopic topic, const char* name) const override;
+	virtual String GetInfo(const QueryTopic topic, const Id id) const override;
 
 	void CheckId(const Id& id);
-	virtual void MergeTypes(const IdSet& from, const Id to) override;
+	void MergeTypes(const IdSet& from, const Id to);
+	virtual void Merge(const QueryTopic topic, const IdSet& from, const Id to) override;
+	inline virtual IWCategorize* GetCategorizingInterface() override { return &m_category_system; }
 
-	inline virtual void Modified() {};
+	virtual void Modified() = 0;
 	StringTable List() const;
 	StringTable ListTTypes() const;
 
@@ -70,10 +70,10 @@ public:
 	size_t CountTransactions() const;
 	size_t CountCategories() const;
 
-	std::string GetLastRecordDate() const;
+	String GetLastRecordDate() const;
 	StringTable GetSummary(const QueryTopic topic);
 
-	std::string GetClientInfoOfName(const char* name);
+	String GetClientInfoOfName(const char* name);
 
 	StringTable MakeQuery(Query& query) const;
 	StringTable MakeQuery(WQuery& query);

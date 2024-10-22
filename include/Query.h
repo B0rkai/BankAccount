@@ -4,7 +4,7 @@
 
 #define GETQUERYTOPIC(topic) inline virtual QueryTopic GetTopic() const override { return QueryTopic::topic; }
 
-enum CurrencyType : uint8_t;
+enum CurrencyType : Id;
 class Transaction;
 class INameResolve;
 class Currency;
@@ -21,7 +21,7 @@ private:
 	bool m_read_only = true;
 public:
 	Query();
-	~Query();
+	virtual ~Query();
 	inline bool ReturnList() const { return m_return_list; }
 	inline bool ReadOnly() const { return m_read_only; }
 	inline void SetReturnList(bool val) { m_return_list = val; }
@@ -36,11 +36,13 @@ class QueryElement {
 protected:
 	static const INameResolve* s_resolve_if;
 public:
+	QueryElement() = default;
+	virtual ~QueryElement() = default;
 	inline static void SetResolveIf(const INameResolve* resif) { s_resolve_if = resif; }
 	virtual QueryTopic GetTopic() const = 0;
 	inline const IdSet& GetIds() const { return m_ids; }
-	inline void AddId(const uint16_t id) { m_ids.emplace(id); }
-	virtual bool CheckTransaction(const Transaction* tr) = 0;
+	inline void AddId(const Id id) { m_ids.emplace(id); }
+	virtual bool CheckTransaction(const Transaction* tr);
 	inline virtual void PreResolve() {};
 	virtual String PrintResult();
 	inline virtual bool ReadOnly() const { return true; }
@@ -53,35 +55,24 @@ protected:
 	String m_result;
 	virtual bool IsOk() const;
 	virtual void PreResolve() override;
-	virtual IdSet DoResolve(const String& name) = 0;
-	virtual String DoResolve(const uint16_t name) = 0;
 public:
+	QueryByName() = default;
+	virtual ~QueryByName() = default;
 	inline void AddName(const char* name) { m_names.emplace(name); }
 };
 
 class QueryType : public QueryByName {
 	GETQUERYTOPIC(TYPE)
-	virtual bool CheckTransaction(const Transaction* tr) override;
-	virtual IdSet DoResolve(const String& name) override;
-	virtual String DoResolve(const uint16_t id) override;
-public:
-
 };
 
 class QueryClient : public QueryByName {
 	GETQUERYTOPIC(CLIENT)
-	virtual bool CheckTransaction(const Transaction* tr) override;
-	virtual IdSet DoResolve(const String& name) override;
-	virtual String DoResolve(const uint16_t id) override;
 public:
 	virtual String PrintResult();
 };
 
 class QueryCategory : public QueryByName {
 	GETQUERYTOPIC(CATEGORY)
-	virtual bool CheckTransaction(const Transaction* tr) override;
-	virtual IdSet DoResolve(const String& name) override;
-	virtual String DoResolve(const uint16_t id) override;
 public:
 	virtual String PrintResult();
 };
@@ -94,6 +85,8 @@ public:
 		int64_t m_inc = 0;
 		uint32_t m_count = 0;
 	};
+	QuerySum() = default;
+	virtual ~QuerySum() = default;
 protected:
 	String PrintResultLine(const Result& res, const Currency* curr) const;
 	StringVector GetStringResultRow(const Result& res, const Currency* curr) const;
@@ -102,18 +95,20 @@ private:
 };
 
 class QueryCurrencySum : public QuerySum {
-	GETQUERYTOPIC(SUM)
+	GETQUERYTOPIC(CURRENCY)
 	virtual bool CheckTransaction(const Transaction* tr) override;
 protected:
 	std::map<CurrencyType, Result> m_results;
 public:
+	QueryCurrencySum() = default;
+	virtual ~QueryCurrencySum() = default;
 	virtual String PrintResult();
 	StringTable GetStringResult() const;
 	inline virtual std::map<CurrencyType, Result> GetResults() const { return m_results; }
 };
 
 class QueryCategorySum : public QueryCurrencySum {
-	GETQUERYTOPIC(SUM)
+	GETQUERYTOPIC(CATEGORY)
 	std::map<Id, QueryCurrencySum> m_subqueries;
 	std::map<Id, String> m_category_names;
 	virtual bool CheckTransaction(const Transaction* tr) override;
@@ -125,6 +120,8 @@ public:
 
 class QueryByNumber : public QueryElement {
 public:
+	QueryByNumber() = default;
+	virtual ~QueryByNumber() = default;
 	void SetMax(const int32_t max);
 	void SetMin(const int32_t min);
 	void SetTarget(const int32_t trg);

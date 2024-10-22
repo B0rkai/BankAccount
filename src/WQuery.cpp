@@ -15,16 +15,12 @@ void MergeQuery::PreResolve() {
     }
 }
 
-void ClientMergeQuery::Execute(IWClient* client_if) {
-    client_if->MergeClients(m_others, m_target_id);
-}
-
 void MergeQuery::AddOtherId(const uint16_t id) {
     m_others.insert(id);
 }
 
-bool ClientMergeQuery::CheckTransaction(Transaction* tr) {
-    Id& client_id = tr->GetClientId(); // should drop the const specifier
+bool MergeQuery::CheckTransaction(Transaction* tr) {
+    Id& client_id = tr->GetId(GetTopic());
     uint16_t diff = 0;
     for (const Id& id : m_others) {
         if (id == client_id) {
@@ -40,12 +36,20 @@ bool ClientMergeQuery::CheckTransaction(Transaction* tr) {
     return false;
 }
 
-bool CategorizingQuery::IsOk() const {
-    return (bool)if_category;
+void MergeQuery::Execute(IWAccount* account_if) {
+    account_if->Merge(GetTopic(), m_others, m_target_id);
 }
 
-bool CategorizingQuery::TryCategorizing(Transaction* tr, std::string& text) {
-    Id id = if_category->Categorize(text);
+bool CategorizingQuery::IsOk() const {
+    return (bool)if_categorize;
+}
+
+void CategorizingQuery::Execute(IWAccount* account_if) {
+    if_categorize = account_if->GetCategorizingInterface();
+}
+
+bool CategorizingQuery::TryCategorizing(Transaction* tr, String& text) {
+    Id id = if_categorize->Categorize(text);
     if (!id || (tr->GetCategoryId() == id)) {
         return false;
     }
@@ -69,25 +73,4 @@ bool CategorizingQuery::CheckTransaction(Transaction* tr) {
         // pop up the manual categorization window
     }
     return success;
-}
-
-void TypeMergeQuery::Execute(IWAccount* account_if) {
-    account_if->MergeTypes(m_others, m_target_id);
-}
-
-bool TypeMergeQuery::CheckTransaction(Transaction* tr) {
-    Id& type_id = tr->GetTypeId(); // should drop the const specifier
-    uint16_t diff = 0;
-    for (const Id& id : m_others) {
-        if (id == type_id) {
-            type_id = m_target_id;
-            return true;
-        } else if (id < type_id) {
-            ++diff;
-        }
-    }
-    if (diff) {
-        type_id -= diff;
-    }
-    return false;
 }

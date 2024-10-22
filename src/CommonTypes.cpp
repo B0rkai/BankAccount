@@ -11,6 +11,10 @@ void GetInLowerCase(const String& original, String& lowercase) {
     }
 }
 
+bool IsEndl(const char& c) {
+    return ((c == ENDL) || (c == CRET));
+}
+
 bool caseInsensitiveStringCompare(const char* str1, const char* str2) {
     if (strlen(str1) != strlen(str2)) {
         return false;
@@ -71,7 +75,7 @@ int DMYToExcelSerialDate(int nDay, int nMonth, int nYear) {
 void DumpChar(std::istream& in) {
     static char dump;
     in >> std::noskipws >> dump;
-    if (dump == '\r') {
+    while (dump == '\r') {
         in >> std::noskipws >> dump;
     }
 }
@@ -94,6 +98,7 @@ void Trimm(String& str) {
     }
 }
 
+// eats following comma, but not endl
 void StreamString(std::istream& in, String& str) {
     char dump = NULL;
     char c;
@@ -106,13 +111,15 @@ void StreamString(std::istream& in, String& str) {
     const char end = quoted ? DQUOTE : COMMA;
     while (c != end) {
         str.append(1, c);
-        in >> std::noskipws >> c;
-        if (c == CRET) {
-            DumpChar(in);
+        if (IsEndl(in.peek())) {
+            if (quoted) {
+                throw "missing closing double quotes";
+            }
             break;
         }
+        in >> std::noskipws >> c;
     }
-    if (quoted) {
+    if (quoted && (in.peek() == ',')) {
         in >> dump; // eat comma
     }
     if (!str.empty()) {

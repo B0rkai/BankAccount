@@ -24,7 +24,7 @@ void Currency::RecursiveDigits(std::stringstream& str, uint32_t num) const {
 	--depth;
 }
 
-std::string Currency::PrettyPrint(const int32_t val) const {
+String Currency::PrettyPrint(const int32_t val) const {
 	std::stringstream str;
 	str << " "; // extra spacing
 	if (val < 0) {
@@ -58,9 +58,9 @@ int32_t Currency::ParseAmount(const char* amount) const {
 	if (!m_cents) {
 		return std::stol(amount);
 	}
-	std::string samount(amount);
+	String samount(amount);
 	size_t pos = samount.find(",");
-	if (pos != std::string::npos) {
+	if (pos != String::npos) {
 		samount[pos] = '\0';
 		return std::stol(samount.c_str()) * 100 + std::stol(&samount[pos+1]);
 	}

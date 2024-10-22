@@ -7,27 +7,27 @@
 
 #include "IAccount.h"
 #include "Transaction.h"
-#include "TypeTraits.h"
+#include "ManagedType.h"
 
-enum CurrencyType : uint8_t;
+enum CurrencyType : Id;
 class Currency;
 class Query;
 class WQuery;
 
 class Account : public IAccount, public NamedType {
-	const std::string m_bank_name;
-	const std::string m_acc_number;
+	const String m_bank_name;
+	const String m_acc_number;
 	bool m_status = true;
 	Currency* m_curr;
 	std::vector<Transaction> m_transactions;
-	std::list<std::string> m_memos;
-	std::list<std::string> m_descriptions;
+	std::list<String> m_memos;
+	std::list<String> m_descriptions;
 	bool RunQuery(Query& query, const Transaction* tr) const;
 public:
 	Account(const char* bank_name, const char* acc_number, const char* acc_name, const CurrencyType curr);
 
 	inline const char* GetAccNumber() const { return m_acc_number.data(); }
-	inline std::string GetBankName() const { return m_bank_name; }
+	inline String GetBankName() const { return m_bank_name; }
 	bool Status() const { return m_status; }
 
 

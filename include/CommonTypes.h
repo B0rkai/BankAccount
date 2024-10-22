@@ -14,6 +14,7 @@ enum class QueryTopic {
 	CLIENT,
 	ACCOUNT,
 	AMOUNT,
+	CURRENCY,
 	CATEGORY,
 	SUBCATEGORY
 };
@@ -23,6 +24,8 @@ constexpr char DQUOTE = '\"';
 constexpr char ENDL = '\n';
 constexpr char CRET = '\r';
 
+bool IsEndl(const char& c);
+
 using Id = uint16_t;
 using IdSet = std::set<uint16_t>;
 
@@ -31,6 +34,8 @@ constexpr Id INVALID_ID = 0xffffu;
 using String		= std::string;
 using StringSet		= std::set<String>;
 using StringVector	= std::vector<String>;
+
+const String cStringEmpty;
 
 class StringTable : public std::vector<StringVector> {
 public:
@@ -84,17 +89,26 @@ void StreamContainer(std::ostream& out, const StringContainer& container) {
 		} else {
 			first = false;
 		}
+		if (str.find(',') != String::npos) {
+			out << DQUOTE << str << DQUOTE;
+			continue;
+		}
 		out << str;
 	}
 }
 
 template<class Container>
-String ContainerAsString(const Container container) {
-	std::string line("[");
+String ContainerAsString(const Container container, int max = -1) {
+	String line("[");
 	bool first = true;
+
 	for (auto& key : container) {
+		if (max-- == 0) {
+			line.append("...");
+			break;
+		}
 		if (!first) {
-			line.append(",");
+			line.append("|");
 		} else {
 			first = false;
 		}
@@ -125,19 +139,11 @@ void StreamContainer(std::istream& in, StringContainer& container) {
 	}
 	in >> dump; // eat comma
 	while (size--) {
-		std::string v;
-		char c;
-		in >> std::noskipws >> c;
-		while (c != COMMA) {
-			v.append(1,c);
-			in >> std::noskipws >> c;
-			if (c == CRET) {
-				DumpChar(in);
-				break;
-			}
-		}
+		String v;
+		StreamString(in, v);
 		container.insert(container.end(), v);
-		if (c == CRET) {
+		if (IsEndl(in.peek())) {
+			DumpChar(in);
 			break;
 		}
 	}
@@ -146,4 +152,4 @@ void StreamContainer(std::istream& in, StringContainer& container) {
 void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear);
 int DMYToExcelSerialDate(int nDay, int nMonth, int nYear);
 
-std::string GetDateFormat(const uint16_t date);
+String GetDateFormat(const uint16_t date);
