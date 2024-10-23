@@ -11,17 +11,17 @@ class Transaction {
 	IAccount* m_parent;
 	int32_t m_amount;
 	uint16_t m_date;
-	Id m_client_id;
+	Id m_client_id = NO_CLIENT;
 	Id m_type_id;
-	Id m_category_id = INVALID_ID;
-	String* m_memo_ptr;
-	String* m_desc_ptr;
+	Id m_category_id = UNCATEGORIZED;
+	String* m_memo_ptr = nullptr;
+	String* m_desc_ptr = nullptr;
 
 	// Not yet implemented feature
 	//uint8_t m_status_id;
 
 public:
-	Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const Id client_id, const Id type_id, String* memo = nullptr, String* desc = nullptr);
+	Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const Id client_id, const Id type_id, String* memo = nullptr);
 	inline int32_t GetAmount() const { return m_amount; }
 	inline uint16_t GetDate() const { return m_date; }
 	inline Id GetClientId() const { return m_client_id; }
@@ -33,6 +33,7 @@ public:
 	Id GetId(const QueryTopic topic) const;
 	Id& GetId(const QueryTopic topic);
 	CurrencyType GetCurrencyType() const;
+	inline void SetDiscription(String* ptr) { m_desc_ptr = ptr; }
 
 	enum Debug {
 		DATE,

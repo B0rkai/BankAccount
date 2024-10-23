@@ -5,6 +5,8 @@ class ManagerType {
 protected:
 	PtrVector<Child> m_children;
 	const bool m_hasDefault;
+	const bool m_full_mapping = false;
+	mutable unsigned int m_new_children = 0;
 
 	Child* Get(const Id id) {
 		return m_children.at(id); // throws if out-of-bound
@@ -15,13 +17,14 @@ protected:
 	}
 
 public:
-	ManagerType(Child* default_child = nullptr) : m_children(true), m_hasDefault(default_child) {
+	ManagerType(Child* default_child = nullptr, const bool full_mapping = false) : m_children(true), m_hasDefault(default_child), m_full_mapping(full_mapping) {
 		if (m_hasDefault) {
 			m_children.push_back(default_child);
 		}
 	}
 
 	inline size_t size() const { return m_children.size(); }
+	inline unsigned int GetNewChildCount() const { return m_new_children; }
 
 	Id GetId(const char* name) const {
 		for (const Child* child : m_children) {
@@ -51,6 +54,9 @@ public:
 	const char* GetName(const Id id) const {
 		return m_children.at(id)->GetName().c_str();
 	}
+	String GetFullName(const Id id) const {
+		return m_children.at(id)->GetFullName();
+	}
 
 	IdSet SearchIds(const char* word, bool full_name = false) const {
 		if (strlen(word) == 0) {
@@ -70,11 +76,31 @@ public:
 			}
 		}
 		for (const Child* child : m_children) {
-			if (child->CheckKeywords(word)) {
+			if (child->CheckKeywords(word, m_full_mapping)) {
 				results.insert(child->GetId());
 			}
 		}
 		return results;
+	}
+
+	Id GetOrCreateId(const char* name) {
+		if (strlen(name) == 0) {
+			return 0; // NO NAME
+		}
+		// first check full match
+		IdSet ids = SearchIds(name, true);
+		if (!ids.empty()) {
+			return *ids.begin();
+		}
+		// check count
+		size_t s = size();
+		if (s + 1 == INVALID_ID) {
+			throw "too many";
+		}
+		// create new client
+		m_children.push_back(new Child((Id)s, name));
+		++m_new_children;
+		return (Id)s;
 	}
 
 	void Merge(const IdSet froms, const Id to) {
@@ -113,6 +139,7 @@ public:
 			child->StreamOut(out);
 			out << ENDL;
 		}
+		m_new_children = 0;
 	}
 
 	void StreamIn(std::istream& in) {

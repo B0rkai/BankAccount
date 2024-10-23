@@ -191,7 +191,7 @@ void QueryByNumber::SetMax(int32_t max) {
 	if (m_type == INVALID) {
 		m_type = LESS;
 	} else if (m_type == GREATER) {
-		if (m_max > m_min) {
+		if (m_max >= m_min) {
 			m_type = RANGE;
 		} else {
 			m_type = INVALID;
@@ -204,7 +204,7 @@ void QueryByNumber::SetMin(int32_t min) {
 	if (m_type == INVALID) {
 		m_type = GREATER;
 	} else if (m_type == LESS) {
-		if (m_max > m_min) {
+		if (m_max >= m_min) {
 			m_type = RANGE;
 		} else {
 			m_type = INVALID;

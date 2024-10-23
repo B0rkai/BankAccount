@@ -11,8 +11,9 @@ public:
 		SAVED
 	};
 
-	BankAccountFile(const String filename);
+	BankAccountFile(const String& filename);
 	bool Load();
+	static void ExtractSave(const String& filename);
 	bool Save(const bool compress);
 	inline State GetState() const { return m_state; }
 private:

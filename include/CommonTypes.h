@@ -7,16 +7,15 @@
 #include <ostream>
 
 enum class QueryTopic {
-	SUM,
-	TYPE,
-	DATUM,
-	WRITE,
-	CLIENT,
 	ACCOUNT,
+	DATUM,
+	TYPE,
 	AMOUNT,
 	CURRENCY,
+	CLIENT,
+	MEMO,
 	CATEGORY,
-	SUBCATEGORY
+	WRITE
 };
 
 constexpr char COMMA = ',';
@@ -30,12 +29,17 @@ using Id = uint16_t;
 using IdSet = std::set<uint16_t>;
 
 constexpr Id INVALID_ID = 0xffffu;
+constexpr Id UNCATEGORIZED = 0u;
+constexpr Id NO_CLIENT = 0u;
 
 using String		= std::string;
 using StringSet		= std::set<String>;
 using StringVector	= std::vector<String>;
 
 const String cStringEmpty;
+extern const char* cCharArrEmpty;
+
+void Trimm(String& str);
 
 class StringTable : public std::vector<StringVector> {
 public:

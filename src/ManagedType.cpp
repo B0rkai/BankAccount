@@ -1,5 +1,14 @@
 #include "ManagedType.h"
 
+String NamedType::GetFullName() const {
+    if (m_group_name.empty()) {
+        return m_name;
+    }
+    String fn = m_group_name;
+    fn.append("::").append(m_name);
+    return fn;
+}
+
 bool NamedType::HasGroupName() const {
     return !m_group_name.empty();
 }
@@ -40,7 +49,15 @@ void MappedType::Stream(std::istream& in) {
     StreamContainer(in, m_keywords);
 }
 
-bool MappedType::CheckKeywords(const char* text) const {
+bool MappedType::CheckKeywords(const char* text, bool fullmatch) const {
+    if (fullmatch) {
+        for (const String& key : m_keywords) {
+            if (caseInsensitiveStringCompare(text, key)) {
+                return true;
+            }
+        }
+        return false;
+    }
     for (const String& key : m_keywords) {
         if (caseInsensitiveStringContains(text, key)) {
             return true;

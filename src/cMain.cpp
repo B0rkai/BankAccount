@@ -12,7 +12,6 @@
 #include "Query.h"
 #include "WQuery.h"
 #include "BankAccountFile.h"
-#include "DataImporter.h"
 
 String PrettyTable(const StringTable& table) {
 	if (table.empty()) {
@@ -21,20 +20,25 @@ String PrettyTable(const StringTable& table) {
 	std::stringstream ss;
 	ss << "\n";
 	size_t column_count = table.front().size();
+	size_t row_count = table.size();
 	std::vector<size_t> widths(column_count, 0);
 	for (int i = 0; i < column_count; ++i) {
-		for (auto row : table) {
-			if (row.size() <= i) {
+		for (int j = row_count - 1; j >= 0; --j) {
+			if ((table[j].size() <= i) || ((j == 0) && (widths[i] == 0))) {
 				continue;
 			}
-			if (row[i].length() > widths[i]) {
-				widths[i] = row[i].length();
+			if (table[j][i].length() > widths[i]) {
+				widths[i] = table[j][i].length();
 			}
 		}
 	}
 	for (auto& row : table) {
 		int i = 0;
 		for (auto& str : row) {
+			if (widths[i] == 0) {
+				++i;
+				continue;
+			}
 			int intend = widths[i] - str.length();
 			if (table.GetMetaData(i) == StringTable::RIGHT_ALIGNED) {
 				while (intend--) {
@@ -60,6 +64,7 @@ enum CtrIds {
 	MENU_DEBUG_SAVE,
 	CHKBX_DATE_FILTER,
 	MENU_LOAD,
+	MENU_EXTRACT,
 	MENU_SAVE,
 	MENU_CATEGORIZE,
 	MENU_LIST_TYPES,
@@ -73,6 +78,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_BUTTON(SEARCH_BUTT, SearchButtonClicked)
 	EVT_CHECKBOX(CHKBX_DATE_FILTER, DateFilterToggle)
 	EVT_MENU(MENU_LOAD, LoadFile)
+	EVT_MENU(MENU_EXTRACT, LoadFile)
 	EVT_MENU(MENU_SAVE, SaveFile)
 	EVT_MENU(MENU_DEBUG_SAVE, SaveFile)
 	EVT_MENU(MENU_CATEGORIZE, Categorize)
@@ -98,6 +104,7 @@ cMain::cMain()
 	mitem->Enable(false);*/
 	dbmenu1->Append(MENU_SAVE, "Save file");
 	dbmenu1->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
+	dbmenu1->Append(MENU_EXTRACT, "Extract save file");
 	//mitem->Enable(false);
 	dbmenu2->Append(MENU_CATEGORIZE, "Categorize");
 	dbmenu2->Append(MENU_LIST_ACCOUNTS, "List Accounts");
@@ -225,6 +232,10 @@ void cMain::Categorize(wxCommandEvent& evt) {
 
 void cMain::LoadFile(wxCommandEvent& evt) {
 	evt.Skip();
+	if (evt.GetId() == MENU_EXTRACT) {
+		m_bank_file->ExtractSave("save\\BData.baf");
+		return;
+	}
 	m_bank_file.reset(new BankAccountFile("save\\BData.baf"));
 	if (!m_bank_file->Load()) {
 		m_status_bar->SetStatusText("ERROR: Missing data file");
@@ -320,13 +331,15 @@ void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 	result.append(PrettyTable(table));
 	m_search_result_text->SetLabelText(result);
 	m_search_result_text->SetInitialSize();
-	//m_window->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();
-	//m_window->SetSize(rect.GetSize());
 	m_window->SetScrollbars(5,5, rect.width, rect.height);
 }
 
 void cMain::Test(wxCommandEvent& evt) {
 	evt.Skip();
-	StringTable data = ImportFromFile("C:\\Users\\borka\\Downloads\\EUR-hist.xml");
+	StringTable table = m_bank_file->Import("C:\\Users\\borka\\Downloads\\HISTORY_00038695_2024-10-22T19_12_23.xml");
+	m_search_result_text->SetLabelText(PrettyTable(table));
+	m_search_result_text->SetInitialSize();
+	wxRect rect = m_search_result_text->GetRect();
+	m_window->SetScrollbars(5, 5, rect.width, rect.height);
 }

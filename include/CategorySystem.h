@@ -11,9 +11,7 @@ public:
 	CategorySystem();
 	~CategorySystem();
 
-	const Category* GetCategory(const Id id) const;
-	StringTable List() const;
-
 	virtual Id Categorize(const String& text) override;
+	virtual Id Categorize(const StringVector& texts) override;
 };
 

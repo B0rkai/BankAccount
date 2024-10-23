@@ -6,24 +6,44 @@
 
 #include <algorithm>
 
-Account::Account(const char* bank_name, const char* acc_number, const char* acc_name, const CurrencyType curr)
-: NamedType(acc_name), m_bank_name(bank_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)) {}
+Account::Account(const char* acc_number, const char* acc_name, const CurrencyType curr)
+: NamedType(acc_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)) {}
+
+bool Account::PrepareImport(const uint16_t date) {
+	const uint16_t last_date = GetLastRecord()->GetDate();
+	if (last_date < date) {
+		return false; // gap
+	} else { // delete old data on the start day, because export has higher chance to be whole
+		if ((last_date - date) > 5) { // WTF
+			throw "import has more than 5 days overlap with existing data";
+		}
+		do {
+			m_transactions.pop_back();
+		} while (GetLastRecord()->GetDate() >= date);
+		return true;
+	}
+}
 
 size_t Account::Size() const {
 	return m_transactions.size();
 }
 
-void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const Id category_id, const char* memo, const char* desc) {
+void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* memo, const Id category_id, const char* desc) {
 	String* memo_ptr = nullptr;
 	String* desc_ptr = nullptr;
 	if (strlen(memo)) {
 		memo_ptr = &m_memos.emplace_back(memo);
 	}
 	if (strlen(desc)) {
-		desc_ptr = &m_memos.emplace_back(desc);
+		desc_ptr = &m_descriptions.emplace_back(desc);
 	}
-	Transaction& new_tra = m_transactions.emplace_back(this, amount, date, client_id, type_id, memo_ptr, desc_ptr);
-	new_tra.GetCategoryId() = category_id;
+	Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, amount, date, client_id, type_id, memo_ptr);
+	if (category_id) {
+		new_tra.GetCategoryId() = category_id;
+	}
+	if (desc_ptr) {
+		new_tra.SetDiscription(desc_ptr);
+	}
 }
 
 bool Account::RunQuery(Query& query, const Transaction* tr) const {
@@ -60,6 +80,15 @@ const Transaction* Account::GetFirstRecord() const {
 
 const Transaction* Account::GetLastRecord() const {
 	return &m_transactions.back();
+}
+
+const PtrVector<const Transaction> Account::GetLastRecords(unsigned int cnt) const {
+	PtrVector<const Transaction> vec;
+	size_t s = Size();
+	for (int i = s - cnt; i < s; ++i) {
+		vec.push_back(&m_transactions[i]);
+	}
+	return vec;
 }
 
 void Account::Sort() {
@@ -106,6 +135,10 @@ void Account::Stream(std::istream& in) {
 		if (!de.empty()) {
 			m_descriptions.push_back(de);
 		}
-		m_transactions.emplace_back((IAccount*)this, am, da, cli, ty, !me.empty() ? &m_memos.back() : nullptr, !de.empty() ? &m_descriptions.back() : nullptr).GetCategoryId() = ca;
+		Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, am, da, cli, ty, !me.empty() ? &m_memos.back() : nullptr);
+		if (!de.empty()) {
+			new_tra.SetDiscription(&m_descriptions.back());
+		}
+		new_tra.GetCategoryId() = ca;
 	}
 }

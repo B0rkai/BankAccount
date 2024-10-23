@@ -2,9 +2,8 @@
 #include "CommonTypes.h"
 #include "ManagedType.h"
 
-class TransactionType : public NumberedType, public NamedType, public MappedType {
+class TransactionType : public ManagedType {
 public:
 	TransactionType(const Id id, const char* name);
-	void Stream(std::istream& in);
 };
 

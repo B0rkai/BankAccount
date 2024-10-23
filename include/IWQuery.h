@@ -9,6 +9,7 @@
 class IWCategorize {
 public:
 	virtual Id Categorize(const String& text) = 0;
+	virtual Id Categorize(const StringVector& texts) = 0;
 };
 
 class IWAccount {

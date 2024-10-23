@@ -6,65 +6,31 @@
 #include "Client.h"
 #include "Query.h"
 #include "WQuery.h"
+#include "DataImporter.h"
 
 struct data {
 	String name;
 	StringSet keywords;
 };
 
-void AccountManager::AddTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* category, const char* memo, const char* desc) {
+void AccountManager::AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* memo) {
 	if (acc_id >= m_accounts.size()) {
 		throw "invalid account id";
 	}
 	Account* acc = m_accounts[acc_id];
-	IdSet cat_id = m_category_system.SearchIds(category, true); //< TODO: remove?
-	if (cat_id.empty() && cat_id.size() > 1) {
-		throw "invalid category name";
-	}
-	acc->AddTransaction(date, type_id, amount, client_id, *cat_id.begin(), memo, desc);
+	Id category = m_category_system.Categorize({GetTransactionType(type_id), GetClientName(client_id), String(memo)});
+	acc->AddTransaction(date, type_id, amount, client_id, memo, category);
+	m_new_transactions++;
 }
 
-IdSet AccountManager::GetTransactionTypeId(const char* type) const {
-	IdSet res;
-	if(strlen(type) == 0) {
-		return res;
-	}
-	for(const TransactionType& tt : m_transaction_types) {
-		if (tt.CheckName(type)) {
-			return {tt.GetId()}; // perfect match returned alone
-		} else if (tt.CheckKeywords(type)) {
-			res.insert(tt.GetId());
-		}
-	}
-	return res;
+Id AccountManager::CreateOrGetTransactionTypeId(const char* type) {
+	return m_ttype_man.GetOrCreateId(type);
 }
 
-Id AccountManager::CreateOrGetTransactionTypeId(const char* type)
-{
-	if (m_transaction_types.empty()) {
-		m_transaction_types.emplace_back((uint8_t)0, type);
-		return 0;
-	}
-	IdSet id = GetTransactionTypeId(type);
-	if(id.size() == 1) {
-		return *id.begin();
-	}
-	if (id.size() > 1) {
-		throw "invalid transaction type name";
-	}
-	size_t size = m_transaction_types.size();
-	if (size + 1 == INVALID_ID) {
-		// BAD
-		throw "too many transaction types";
-	}
-	m_transaction_types.emplace_back((uint8_t)size, type);
-	return (uint8_t)size;
-}
-
-Id AccountManager::CreateOrGetAccountId(const char* bank_name, const char* account_number, const CurrencyType curr, const char* account_name)
-{
+Id AccountManager::CreateOrGetAccountId(const char* account_number, const CurrencyType curr) {
 	if (m_accounts.empty()) {
-		m_accounts.push_back(new Account(bank_name, account_number, account_name, curr));
+		//m_accounts.push_back(new Account(bank_name, account_number, account_name, curr));
+		throw "Cannot create new account, not yet implemented";
 		return 0;
 	}
 	size_t size = m_accounts.size();
@@ -77,17 +43,11 @@ Id AccountManager::CreateOrGetAccountId(const char* bank_name, const char* accou
 		// BAD
 		throw "too many accounts";
 	}
-	m_accounts.push_back(new Account(bank_name, account_number, account_name, curr));
+	String acc_name = "Account #"; // make default name
+	acc_name.append(std::to_string(m_accounts.size()));
+	m_accounts.push_back(new Account(account_number, acc_name.c_str(), curr));
 	return (uint8_t)size;
 }
-
-//IdSet AccountManager::GetClientId(const char* client_name) const {
-//	return m_client_man.SearchIds(client_name);
-//}
-//
-//IdSet AccountManager::GetCategoryId(const char* subcat) const {
-//	return m_category_system.SearchIds(subcat);
-//}
 
 IdSet AccountManager::GetIds(const QueryTopic topic, const char* name) const {
 	switch (topic) {
@@ -96,7 +56,7 @@ IdSet AccountManager::GetIds(const QueryTopic topic, const char* name) const {
 	case QueryTopic::CATEGORY:
 		return m_category_system.SearchIds(name);
 	case QueryTopic::TYPE:
-		return GetTransactionTypeId(name);
+		return m_ttype_man.SearchIds(name);
 	default:
 		return {};
 	}
@@ -116,23 +76,17 @@ String AccountManager::GetInfo(const QueryTopic topic, const Id id) const {
 }
 
 Id AccountManager::CreateOrGetClientId(const char* client_name, const char* acc_num) {
-	uint16_t id = m_client_man.GetClientId(client_name);
+	Id id = m_client_man.GetOrCreateId(client_name);
 	m_client_man.AddAccountNumber(id, acc_num);
 	return id;
 }
 
 String AccountManager::GetCategoryName(const Id id) const {
-	if(const Category* cat = m_category_system.GetCategory(id)) {
-		return cat->GetInfo();
-	}
-	return "INVALID_CATEGORY";
+	return m_category_system.GetFullName(id);
 }
 
 const char* AccountManager::GetTransactionType(const Id id) const {
-	if(id < m_transaction_types.size()) {
-		return m_transaction_types[id].GetName().c_str();
-	}
-	return "INVALID_TYPE";
+	return m_ttype_man.GetName(id);
 }
 
 const char* AccountManager::GetClientName(const Id id) const {
@@ -158,59 +112,6 @@ StringTable AccountManager::List() const {
 	return table;
 }
 
-StringTable AccountManager::ListTTypes() const {
-	StringTable table;
-	table.push_back({"ID", "Name", "Keywords"});
-	table.push_meta_back(StringTable::RIGHT_ALIGNED); // for id
-	for (const TransactionType& tt : m_transaction_types) {
-		StringVector& row = table.emplace_back();
-		row.push_back(std::to_string(tt.GetId()));
-		row.push_back(tt.GetName());
-		row.push_back(ContainerAsString(tt.GetKeywords()));
-	}
-	return table;
-}
-
-void AccountManager::StreamCategorySystem(std::ostream& out) const {
-	m_category_system.StreamOut(out);
-}
-
-void AccountManager::StreamCategorySystem(std::istream& in) {
-	m_category_system.StreamIn(in);
-}
-
-void AccountManager::StreamClients(std::ostream& out) const {
-	m_client_man.StreamOut(out);
-}
-
-void AccountManager::StreamClients(std::istream& in) {
-	m_client_man.StreamIn(in);
-}
-
-void AccountManager::StreamTransactionTypes(std::ostream& out) const {
-	out << m_transaction_types.size() << ENDL;
-	for (const auto& type : m_transaction_types) {
-		out << type.GetName();
-		out << COMMA;
-		StreamContainer(out, type.GetKeywords());
-		out << ENDL;
-	}
-}
-
-void AccountManager::StreamTransactionTypes(std::istream& in) {
-	int size;
-	in >> size;
-	DumpChar(in); // eat endl
-	m_transaction_types.clear();
-	m_transaction_types.reserve(size);
-	for (int i = 0; i < size; ++i) {
-		String type;
-		StreamString(in, type);
-		auto& tt = m_transaction_types.emplace_back((uint8_t)i, type.c_str());
-		tt.Stream(in);
-	}
-}
-
 void AccountManager::StreamAccounts(std::ostream& out) const {
 	out << m_accounts.size() << ENDL;
 	for (const Account* acc : m_accounts) {
@@ -230,27 +131,28 @@ void AccountManager::StreamAccounts(std::istream& in) {
 		StreamString(in, acc_numb);
 		StreamString(in, acc_name);
 		StreamString(in, curr_name);
-		m_accounts.push_back(new Account(bank_name.c_str(), acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
+		m_accounts.push_back(new Account(acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
+		m_accounts.back()->SetBankName(bank_name.c_str());
 		m_accounts.back()->Stream(in);
 		m_accounts.back()->Sort();
 	}
 }
 
 void AccountManager::Stream(std::ostream& out) const {
-	StreamCategorySystem(out);
-	StreamClients(out);
-	StreamTransactionTypes(out);
+	m_category_system.StreamOut(out);
+	m_client_man.StreamOut(out);
+	m_ttype_man.StreamOut(out);
 	StreamAccounts(out);
 }
 
 void AccountManager::Stream(std::istream& in) {
-	StreamCategorySystem(in);
-	StreamClients(in);
-	StreamTransactionTypes(in);
+	m_category_system.StreamIn(in);
+	m_client_man.StreamIn(in);
+	m_ttype_man.StreamIn(in);
 	StreamAccounts(in);
 }
 
-AccountManager::AccountManager() :m_accounts(true) {}
+AccountManager::AccountManager() :m_accounts(true), m_ttype_man(nullptr, true) {}
 
 AccountManager::~AccountManager() {}
 
@@ -295,43 +197,15 @@ StringTable AccountManager::GetSummary(const QueryTopic topic) {
 	case QueryTopic::ACCOUNT:
 		return List();
 	case QueryTopic::TYPE:
-		return ListTTypes();
+		return m_ttype_man.GetInfos();
 	default:
 		return {};
 	}
 }
 
-void AccountManager::CheckId(const Id& id) {
-	if (m_transaction_types.size() <= id) {
-		throw "invalid transaction id";
-	}
-}
-
-void AccountManager::MergeTypes(const IdSet& from, const Id to) {
-	CheckId(to);
-	{
-		TransactionType& tt = m_transaction_types[to];
-		for (const Id& id : from) {
-			CheckId(id);
-			const auto& type = m_transaction_types[id];
-			for (const String& key : type.GetKeywords()) {
-				tt.AddKeyword(key.c_str());
-			}
-		}
-	}
-	for (const Id& id : from) {
-		for (auto it = m_transaction_types.begin(); it < m_transaction_types.end(); ++it) {
-			if (it->GetId() == id) {
-				m_transaction_types.erase(it);
-				break;
-			}
-		}
-	}
-}
-
 void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id to) {
 	if (topic == QueryTopic::TYPE) {
-		MergeTypes(from, to);
+		m_ttype_man.Merge(from, to);
 	} else if (topic == QueryTopic::CLIENT) {
 		m_client_man.Merge(from, to);
 	} else if (topic == QueryTopic::CATEGORY) {
@@ -357,7 +231,29 @@ String AccountManager::GetClientInfoOfName(const char* name) {
 	return ss.str();
 }
 
-StringTable AccountManager::FormatResultTable(const Query::Result& res) const {
+StringTable AccountManager::Import(const String& filename) {
+	m_new_transactions = 0;
+	RawImportData import_data;
+	ImportFromFile(filename, import_data);
+	if (import_data.data.empty()) {
+		return {};
+	}
+	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.currency);
+	Account* acc = m_accounts[account_id];
+	if (!acc->PrepareImport(import_data.data.front().date)) {
+		return {};
+	}
+	for (auto& raw : import_data.data) {
+		acc->AddTransaction(raw.date, CreateOrGetTransactionTypeId(raw.type.c_str()), raw.amount, CreateOrGetClientId(raw.client.c_str(), raw.client_account_number.c_str()), raw.memo.c_str(), m_category_system.Categorize({raw.type, raw.client, raw.memo}));
+		++m_new_transactions;
+	}
+	auto last_transactions = acc->GetLastRecords(m_new_transactions);
+	StringTable table = FormatResultTable(last_transactions);
+	m_new_transactions = 0;
+	return table;
+}
+
+StringTable AccountManager::FormatResultTable(const PtrVector<const Transaction>& res) const {
 	StringTable table;
 	table.push_back({"Date", "Type", "Amount", "Client", "Memo", "Desc", "Category"});
 	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED});

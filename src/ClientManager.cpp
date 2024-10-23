@@ -65,8 +65,9 @@ StringTable ClientManager::GetInfos() const {
 	StringTable table = ManagerType::GetInfos();
 	table.front().push_back("Account number");
 	size_t s = size();
-	/*for (int i = 0; i < s; ++i) {
-		table[i+1].push_back(ContainerAsString(m_children[i]->GetAccountNumbers(), 2));
-	}*/
+	// Printing account numbers seems to be too much
+	//for (int i = 0; i < s; ++i) {
+	//	table[i+1].push_back(ContainerAsString(m_children[i]->GetAccountNumbers(), 2));
+	//}
 	return table;
 }

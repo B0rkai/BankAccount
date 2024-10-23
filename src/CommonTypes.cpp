@@ -11,6 +11,8 @@ void GetInLowerCase(const String& original, String& lowercase) {
     }
 }
 
+const char* cCharArrEmpty = "";
+
 bool IsEndl(const char& c) {
     return ((c == ENDL) || (c == CRET));
 }

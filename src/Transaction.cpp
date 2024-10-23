@@ -6,8 +6,8 @@
 #include "IAccount.h"
 #include "Currency.h"
 
-Transaction::Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const Id client_id, const Id type_id, String* memo, String* desc)
-	: m_parent(parent), m_amount(amount), m_date(date), m_client_id(client_id), m_type_id(type_id), m_memo_ptr(memo), m_desc_ptr(desc) {}
+Transaction::Transaction(IAccount* parent, const int32_t amount, const uint16_t date, const Id client_id, const Id type_id, String* memo)
+	: m_parent(parent), m_amount(amount), m_date(date), m_client_id(client_id), m_type_id(type_id), m_memo_ptr(memo) {}
 
 StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
     StringVector res;
