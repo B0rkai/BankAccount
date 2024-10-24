@@ -29,6 +29,7 @@ public:
 	void push_back(QueryElement* qe);
 	inline auto begin() { return m_elements.begin(); }
 	inline auto end() { return m_elements.end(); }
+	inline size_t size() const { return m_elements.size(); }
 };
 
 class QueryElement {
@@ -44,7 +45,8 @@ public:
 	inline void AddId(const Id id) { m_ids.emplace(id); }
 	virtual bool CheckTransaction(const Transaction* tr);
 	inline virtual void PreResolve() {};
-	virtual String PrintResult();
+	virtual String GetStringResult() const;
+	virtual StringTable GetTableResult() const;
 	inline virtual bool ReadOnly() const { return true; }
 	inline virtual bool IsOk() const = 0;
 };
@@ -59,6 +61,7 @@ public:
 	QueryByName() = default;
 	virtual ~QueryByName() = default;
 	inline void AddName(const char* name) { m_names.emplace(name); }
+	virtual String GetStringResult() const;
 };
 
 class QueryType : public QueryByName {
@@ -67,14 +70,10 @@ class QueryType : public QueryByName {
 
 class QueryClient : public QueryByName {
 	GETQUERYTOPIC(CLIENT)
-public:
-	virtual String PrintResult();
 };
 
 class QueryCategory : public QueryByName {
 	GETQUERYTOPIC(CATEGORY)
-public:
-	virtual String PrintResult();
 };
 
 class QuerySum : public QueryElement {
@@ -102,8 +101,8 @@ protected:
 public:
 	QueryCurrencySum() = default;
 	virtual ~QueryCurrencySum() = default;
-	virtual String PrintResult();
-	StringTable GetStringResult() const;
+	virtual String GetStringResult();
+	StringTable GetTableResult() const;
 	inline virtual std::map<CurrencyType, Result> GetResults() const { return m_results; }
 };
 
@@ -113,8 +112,8 @@ class QueryCategorySum : public QueryCurrencySum {
 	std::map<Id, String> m_category_names;
 	virtual bool CheckTransaction(const Transaction* tr) override;
 public:
-	virtual String PrintResult();
-	StringTable GetStringResult() const;
+	virtual String GetStringResult();
+	StringTable GetTableResult() const;
 	virtual std::map<CurrencyType, Result> GetResults() const;
 };
 

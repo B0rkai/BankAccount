@@ -15,8 +15,12 @@ void MergeQuery::PreResolve() {
     }
 }
 
-void MergeQuery::AddOtherId(const uint16_t id) {
+void MergeQuery::AddOtherId(const Id id) {
     m_others.insert(id);
+}
+
+void MergeQuery::AddOtherIds(const IdSet ids) {
+    m_others.insert(ids.begin(), ids.end());
 }
 
 bool MergeQuery::CheckTransaction(Transaction* tr) {
@@ -38,6 +42,14 @@ bool MergeQuery::CheckTransaction(Transaction* tr) {
 
 void MergeQuery::Execute(IWAccount* account_if) {
     account_if->Merge(GetTopic(), m_others, m_target_id);
+    // compensate erased records
+    int diff = 0;
+    for (const Id& id : m_others) {
+        if (id < m_target_id) {
+            ++diff;
+        }
+    }
+    m_target_id -= diff;
 }
 
 bool CategorizingQuery::IsOk() const {

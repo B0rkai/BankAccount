@@ -13,6 +13,8 @@
 #include "WQuery.h"
 #include "BankAccountFile.h"
 
+static const char* DEFAULT_SAVE_LOCATION = "save\\BData.baf";
+
 String PrettyTable(const StringTable& table) {
 	if (table.empty()) {
 		return "";
@@ -60,7 +62,8 @@ String PrettyTable(const StringTable& table) {
 }
 
 enum CtrIds {
-	SEARCH_BUTT = 10001,
+	QUERY_BUTT = 10001,
+	MERGE_BUTT,
 	MENU_DEBUG_SAVE,
 	CHKBX_DATE_FILTER,
 	MENU_LOAD,
@@ -75,7 +78,8 @@ enum CtrIds {
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
-	EVT_BUTTON(SEARCH_BUTT, SearchButtonClicked)
+	EVT_BUTTON(QUERY_BUTT, QueryButtonClicked)
+	EVT_BUTTON(MERGE_BUTT, MergeButtonClicked)
 	EVT_CHECKBOX(CHKBX_DATE_FILTER, DateFilterToggle)
 	EVT_MENU(MENU_LOAD, LoadFile)
 	EVT_MENU(MENU_EXTRACT, LoadFile)
@@ -90,40 +94,16 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
-: wxFrame(nullptr, wxID_ANY, "Kaki", wxPoint(100, 100), wxSize(1920, 1080)) {
-	
-	m_menu_bar = new wxMenuBar();
-	wxMenu* dbmenu1 = new wxMenu();
-	wxMenu* dbmenu2 = new wxMenu();
-	m_menu_bar->Append(dbmenu1, "Database");
-	m_menu_bar->Append(dbmenu2, "Query");
-	m_initdb_menu_item = dbmenu1->Append(MENU_LOAD, "Load file*");
-	//m_resetdb_menu_item = dbmenu1->Append(10006, "Reset data");
-	//m_resetdb_menu_item->Enable(false);
-	/*auto mitem = dbmenu1->Append(MENU_LOAD, "Load file");
-	mitem->Enable(false);*/
-	dbmenu1->Append(MENU_SAVE, "Save file");
-	dbmenu1->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
-	dbmenu1->Append(MENU_EXTRACT, "Extract save file");
-	//mitem->Enable(false);
-	dbmenu2->Append(MENU_CATEGORIZE, "Categorize");
-	dbmenu2->Append(MENU_LIST_ACCOUNTS, "List Accounts");
-	dbmenu2->Append(MENU_LIST_TYPES, "List Transaction Types");
-	dbmenu2->Append(MENU_LIST_CLIENTS, "List Clients");
-	dbmenu2->Append(MENU_LIST_CATEGORIES, "List Categories");
-	dbmenu2->Append(MENU_TEST, "TEST");
-
-	SetMenuBar(m_menu_bar);
+: wxFrame(nullptr, wxID_ANY, "Bank Account", wxPoint(100, 100), wxSize(1920, 1080)) {
+	InitMenu();
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
 	m_main_panel->SetBackgroundColour(wxColour(200, 200, 200));
+	InitControls();
 	//wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 	//SetSizer(sizer);
 	//m_status_text = new wxStaticText(this, wxID_ANY, "", wxPoint(744, 10), wxSize(300, 18));
 	//m_but_init_db = new wxButton(this, 10002, "Init database", wxPoint(744, 30), wxSize(110, 25));
-	new wxStaticText(m_main_panel, wxID_ANY, "Client filter", wxPoint(22, 12));
-	m_client_search_text = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(20, 30), wxSize(110, 25));
-	new wxStaticText(m_main_panel, wxID_ANY, "Category filter", wxPoint(22, 62));
-	m_category_search_text = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(20, 80), wxSize(110, 25));
+
 	m_window = new wxScrolledWindow(m_main_panel, wxID_ANY, wxPoint(20, 170), wxSize(1850, 880));
 	wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 	m_window->SetSizer(sizer);
@@ -135,15 +115,6 @@ cMain::cMain()
 	m_search_result_text->SetFont(font);
 	m_search_result_text->SetForegroundColour(wxColour(255, 255, 255));
 	m_window->SetBackgroundColour(wxColour(0, 0, 0));
-	m_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transaction list", wxPoint(210, 30));
-	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by categories", wxPoint(210, 50));
-	m_date_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "filter date", wxPoint(210, 70));
-	m_categorize_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "categorize records", wxPoint(210, 90));
-	m_but_search = new wxButton(m_main_panel, SEARCH_BUTT, "Search", wxPoint(210, 110), wxSize(110, 25));
-	m_date_from_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 0));
-	m_date_from_textctrl->Show(false);
-	m_date_to_textctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(750, 0));
-	m_date_to_textctrl->Show(false);
 	//wxString choices[5] = { "EUR", "USD", "GBP", "CHF", "HUF" };
 	//m_combo = new wxComboBox(this, wxID_ANY, "EUR", wxPoint(30, 140), wxSize(150, 30), wxArrayString(5, choices));
 
@@ -155,8 +126,13 @@ cMain::cMain()
 	m_status_bar->SetStatusText(" --- Database empty! Please initialize! ---");
 }
 
+
 cMain::~cMain() {
 	m_search_result_text->SetLabelText("");
+}
+
+void cMain::Init() {
+	DoLoad();
 }
 
 void cMain::List(wxCommandEvent& evt) {
@@ -185,8 +161,8 @@ void cMain::List(wxCommandEvent& evt) {
 }
 
 void cMain::DateFilterToggle(wxCommandEvent& evt) {
-	m_date_from_textctrl->Show(m_date_chkb->GetValue());
-	m_date_to_textctrl->Show(m_date_chkb->GetValue());
+	m_date_from_calendarctrl->Show(m_use_date_filter_chkb->GetValue());
+	m_date_to_calendarctrl->Show(m_use_date_filter_chkb->GetValue());
 	evt.Skip();
 }
 
@@ -211,10 +187,10 @@ void cMain::Categorize(wxCommandEvent& evt) {
 	}
 	WQuery wq;
 	QueryDate* qdate;
-	if (m_date_chkb->GetValue()) {
+	if (m_use_date_filter_chkb->GetValue()) {
 		qdate = new QueryDate;
-		wxDateTime d1 = m_date_from_textctrl->GetDate();
-		wxDateTime d2 = m_date_to_textctrl->GetDate();
+		wxDateTime d1 = m_date_from_calendarctrl->GetDate();
+		wxDateTime d2 = m_date_to_calendarctrl->GetDate();
 		qdate->SetMin(DMYToExcelSerialDate(d1.GetDay(), d1.GetMonth() + 1, d1.GetYear()));
 		qdate->SetMax(DMYToExcelSerialDate(d2.GetDay(), d2.GetMonth() + 1, d2.GetYear()));
 		wq.push_back((QueryElement*)qdate);
@@ -233,10 +209,14 @@ void cMain::Categorize(wxCommandEvent& evt) {
 void cMain::LoadFile(wxCommandEvent& evt) {
 	evt.Skip();
 	if (evt.GetId() == MENU_EXTRACT) {
-		m_bank_file->ExtractSave("save\\BData.baf");
+		m_bank_file->ExtractSave(DEFAULT_SAVE_LOCATION);
 		return;
 	}
-	m_bank_file.reset(new BankAccountFile("save\\BData.baf"));
+	DoLoad();
+}
+
+void cMain::DoLoad() {
+	m_bank_file.reset(new BankAccountFile(DEFAULT_SAVE_LOCATION));
 	if (!m_bank_file->Load()) {
 		m_status_bar->SetStatusText("ERROR: Missing data file");
 		return;
@@ -252,82 +232,152 @@ void cMain::LoadFile(wxCommandEvent& evt) {
 	m_status_bar->SetStatusText(name);
 }
 
-void cMain::SearchButtonClicked(wxCommandEvent& evt) {
+StringVector ParseMultiValueString(const wxString& val) {
+	StringVector vals;
+	size_t pos = val.find(';');
+	if (pos == String::npos) {
+		vals.emplace_back(val.c_str());
+	} else {
+		size_t prevpos = 0;
+		do {
+			val[pos] = '\0';
+			vals.emplace_back(val.c_str() + prevpos);
+			prevpos = pos + 1;
+		} while ((pos = val.find(';', pos + 1)) != String::npos);
+		vals.emplace_back(val.c_str() + prevpos);
+	}
+	return vals;
+}
+
+void cMain::PrepareQuery(Query& q) {
+	wxString client_filter_value = m_client_filter_textctrl->GetValue();
+	wxString category_filter_value = m_category_filter_textctrl->GetValue();
+	wxString type_filter_value = m_type_filter_textctrl->GetValue();
+	if (!client_filter_value.empty()) {
+		QueryClient* qcli = new QueryClient;
+		StringVector vec = ParseMultiValueString(client_filter_value);
+		for (const String& v : vec) {
+			qcli->AddName(v.c_str());
+		}
+		q.push_back(qcli);
+	}
+	if (!category_filter_value.empty()) {
+		QueryCategory* qcat = new QueryCategory;
+		StringVector vec = ParseMultiValueString(category_filter_value);
+		for (const String& v : vec) {
+			qcat->AddName(v.c_str());
+		}
+		q.push_back(qcat);
+	}
+	if (!type_filter_value.empty()) {
+		QueryType* qtyp = new QueryType;
+		StringVector vec = ParseMultiValueString(type_filter_value);
+		for (const String& v : vec) {
+			qtyp->AddName(v.c_str());
+		}
+		q.push_back(qtyp);
+	}
+	q.SetReturnList(m_show_list_chkb->GetValue());
+	if (m_use_date_filter_chkb->GetValue()) {
+		QueryDate* qdate = new QueryDate;
+		wxDateTime d1 = m_date_from_calendarctrl->GetDate();
+		wxDateTime d2 = m_date_to_calendarctrl->GetDate();
+		qdate->SetMin(DMYToExcelSerialDate(d1.GetDay(), d1.GetMonth() + 1, d1.GetYear()));
+		qdate->SetMax(DMYToExcelSerialDate(d2.GetDay(), d2.GetMonth() + 1, d2.GetYear()));
+		q.push_back((QueryElement*)qdate);
+	}
+	if (m_category_sum_chkb->GetValue()) {
+		q.push_back(new QueryCategorySum);
+	} else {
+		q.push_back(new QueryCurrencySum);
+	}
+}
+
+void cMain::InitMenu() {
+	m_menu_bar = new wxMenuBar();
+	wxMenu* dbmenu1 = new wxMenu();
+	wxMenu* dbmenu2 = new wxMenu();
+	m_menu_bar->Append(dbmenu1, "Database");
+	m_menu_bar->Append(dbmenu2, "Query");
+	m_initdb_menu_item = dbmenu1->Append(MENU_LOAD, "Load file*");
+	//m_resetdb_menu_item = dbmenu1->Append(10006, "Reset data");
+	//m_resetdb_menu_item->Enable(false);
+	/*auto mitem = dbmenu1->Append(MENU_LOAD, "Load file");
+	mitem->Enable(false);*/
+	dbmenu1->Append(MENU_SAVE, "Save file");
+	dbmenu1->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
+	dbmenu1->Append(MENU_EXTRACT, "Extract save file");
+	//mitem->Enable(false);
+	dbmenu2->Append(MENU_CATEGORIZE, "Categorize");
+	dbmenu2->Append(MENU_LIST_ACCOUNTS, "List Accounts");
+	dbmenu2->Append(MENU_LIST_TYPES, "List Transaction Types");
+	dbmenu2->Append(MENU_LIST_CLIENTS, "List Clients");
+	dbmenu2->Append(MENU_LIST_CATEGORIES, "List Categories");
+	dbmenu2->Append(MENU_TEST, "TEST");
+
+	SetMenuBar(m_menu_bar);
+}
+
+void cMain::InitControls() {
+	constexpr int HORIZONTAL_ALIGN_1 = 20;
+	constexpr int HORIZONTAL_ALIGN_2 = 150;
+	constexpr int HORIZONTAL_ALIGN_3 = 770;
+	constexpr int HORIZONTAL_ALIGN_4 = 900;
+	constexpr int VERTICAL_ALIGN_1 = 30;
+	constexpr int VERTICAL_ALIGN_2 = 80;
+	constexpr int VERTICAL_ALIGN_3 = 130;
+
+	const wxSize cDefaultCtrlSize(110, 25);
+
+	new wxStaticText(m_main_panel, wxID_ANY, "Client filter", wxPoint(HORIZONTAL_ALIGN_1, 12));
+	m_client_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Category filter", wxPoint(HORIZONTAL_ALIGN_1, 62));
+	m_category_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Type filter", wxPoint(HORIZONTAL_ALIGN_1, 112));
+	m_type_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+
+	m_show_list_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transaction list", wxPoint(HORIZONTAL_ALIGN_2, 30));
+	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by categories", wxPoint(HORIZONTAL_ALIGN_2, 50));
+	m_use_date_filter_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "filter date", wxPoint(HORIZONTAL_ALIGN_2, 70));
+	//m_categorize_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "categorize records", wxPoint(HORIZONTAL_ALIGN_2, 90));
+	m_query_but = new wxButton(m_main_panel, QUERY_BUTT, "Query", wxPoint(HORIZONTAL_ALIGN_2, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+
+	m_date_from_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(350, 10));
+	m_date_from_calendarctrl->Show(false);
+	m_date_to_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 10));
+	m_date_to_calendarctrl->Show(false);
+
+	wxString merrge_topic_choices[3] = {"Client", "Type", "Category"};
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge topic", wxPoint(HORIZONTAL_ALIGN_3, 12));
+	m_merge_topic_combo = new wxComboBox(m_main_panel, wxID_ANY, "Client", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(3, merrge_topic_choices));
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge from", wxPoint(HORIZONTAL_ALIGN_3, 62));
+	m_merge_from_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge to", wxPoint(HORIZONTAL_ALIGN_3, 112));
+	m_merge_to_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+
+	m_merge_but = new wxButton(m_main_panel, MERGE_BUTT, "Merge", wxPoint(HORIZONTAL_ALIGN_4, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+}
+
+void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
 		m_search_result_text->SetLabelText("First load the database");
 		return;
 	}
 	String result;
-	wxString val1 = m_client_search_text->GetValue();
-	wxString val2 = m_category_search_text->GetValue();
 	Query q;
-	QueryClient* qcli = nullptr;
-	QueryCategory* qcat = nullptr;
-	if (!val1.empty()) {
-		qcli = new QueryClient;
-		size_t pos = val1.find(';');
-		if (pos == String::npos) {
-			qcli->AddName(val1.c_str());
-		} else {
-			size_t prevpos = 0;
-			do {
-				val1[pos] = '\0';
-				qcli->AddName(val1.c_str() + prevpos);
-				prevpos = pos + 1;
-			} while ((pos = val1.find(';', pos + 1)) != String::npos);
-			qcli->AddName(val1.c_str() + prevpos);
-		}
-		q.push_back(qcli);
-	}
-	if (!val2.empty()) {
-		qcat = new QueryCategory;
-		size_t pos = val2.find(';');
-		if (pos == String::npos) {
-			qcat->AddName(val2.c_str());
-		} else {
-			size_t prevpos = 0;
-			do {
-				val2[pos] = '\0';
-				qcat->AddName(val2.c_str() + prevpos);
-				prevpos = pos + 1;
-			} while ((pos = val2.find(';', pos + 1)) != String::npos);
-			qcat->AddName(val2.c_str() + prevpos);
-		}
-		q.push_back(qcat);
-	}
-	q.SetReturnList(m_chkb->GetValue());
-	QueryDate* qdate = nullptr;
-	if (m_date_chkb->GetValue()) {
-		qdate = new QueryDate;
-		wxDateTime d1 = m_date_from_textctrl->GetDate();
-		wxDateTime d2 = m_date_to_textctrl->GetDate();
-		qdate->SetMin(DMYToExcelSerialDate(d1.GetDay(), d1.GetMonth() + 1, d1.GetYear()));
-		qdate->SetMax(DMYToExcelSerialDate(d2.GetDay(), d2.GetMonth() + 1, d2.GetYear()));
-		q.push_back((QueryElement*)qdate);
-	}
-	QueryCategorySum* qsum = nullptr;
-	QueryCurrencySum* qcsum = nullptr;
-	if (m_category_sum_chkb->GetValue()) {
-		qsum = new QueryCategorySum;
-		q.push_back(qsum);
-	} else {
-		qcsum = new QueryCurrencySum;
-		q.push_back(qcsum);
-	}
+	PrepareQuery(q);
 	auto table = m_bank_file->MakeQuery(q);
 
-	if (qcli) {
-		result.append(qcli->PrintResult());
+	for (auto* qe : q) {
+		result.append(qe->GetStringResult());
+		auto table = qe->GetTableResult();
+		if (table.empty()) {
+			continue;
+		}
+		result.append(PrettyTable(table));
 	}
-	if (qcat) {
-		result.append(qcat->PrintResult());
-	}
-	if (qsum) {
-		result.append(PrettyTable(qsum->GetStringResult()));
-	} else {
-		result.append(PrettyTable(qcsum->GetStringResult()));
-	}
+
 	result.append(PrettyTable(table));
 	m_search_result_text->SetLabelText(result);
 	m_search_result_text->SetInitialSize();
@@ -335,10 +385,62 @@ void cMain::SearchButtonClicked(wxCommandEvent& evt) {
 	m_window->SetScrollbars(5,5, rect.width, rect.height);
 }
 
+void cMain::MergeButtonClicked(wxCommandEvent& evt) {
+	wxString merge_from = m_merge_from_textctrl->GetValue();
+	wxString merge_to = m_merge_to_textctrl->GetValue();
+	wxString merge_topic = m_merge_topic_combo->GetValue();
+	IdSet froms;
+	Id to = INVALID_ID;
+	try {
+		to = std::stoul((String)merge_to);
+		StringVector froms_str = ParseMultiValueString(merge_from);
+		for (const String& from_str : froms_str) {
+			Id from = std::stoul(from_str);
+			froms.insert(from);
+		}
+	} catch (...) {
+		// error
+		return;
+	}
+	if (to == INVALID_ID) {
+		// error
+		return;
+	}
+	WQuery wq;
+	if (merge_topic == "Client") {
+		ClientMergeQuery* mq = new ClientMergeQuery;
+		mq->AddTargetId(to);
+		mq->AddOtherIds(froms);
+		wq.AddWElement(mq);
+	} else if (merge_topic == "Type") {
+		TypeMergeQuery* mq = new TypeMergeQuery;
+		mq->AddTargetId(to);
+		mq->AddOtherIds(froms);
+		wq.AddWElement(mq);
+	} else if (merge_topic == "Category") {
+		CategoryMergeQuery* mq = new CategoryMergeQuery;
+		mq->AddTargetId(to);
+		mq->AddOtherIds(froms);
+		wq.AddWElement(mq);
+	} else {
+		// error
+		return;
+	}
+	auto table = m_bank_file->MakeQuery(wq);
+	m_search_result_text->SetLabelText(PrettyTable(table));
+}
+
 void cMain::Test(wxCommandEvent& evt) {
 	evt.Skip();
-	StringTable table = m_bank_file->Import("C:\\Users\\borka\\Downloads\\HISTORY_00038695_2024-10-22T19_12_23.xml");
-	m_search_result_text->SetLabelText(PrettyTable(table));
+	try {
+		StringTable table = m_bank_file->Import("C:\\Users\\borka\\Downloads\\HISTORY_00038695_2024-10-24T02_20_23.xml");
+
+		m_search_result_text->SetLabelText(PrettyTable(table));
+	} catch (const char*& problem) {
+		String error = "ERROR: ";
+		error.append(problem);
+		m_status_bar->SetStatusText(error);
+	}
 	m_search_result_text->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();
 	m_window->SetScrollbars(5, 5, rect.width, rect.height);

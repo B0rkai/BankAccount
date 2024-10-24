@@ -41,8 +41,9 @@ protected:
 public:
     MergeQuery() = default;
     virtual ~MergeQuery() = default;
-    inline void AddTargetId(const uint16_t id) { m_target_id = id; }
-    void AddOtherId(const uint16_t id);
+    inline void AddTargetId(const Id id) { m_target_id = id; }
+    void AddOtherId(const Id id);
+    void AddOtherIds(const IdSet ids);
 };
 
 class ClientMergeQuery : public MergeQuery {

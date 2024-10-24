@@ -69,7 +69,7 @@ String AccountManager::GetInfo(const QueryTopic topic, const Id id) const {
 	case QueryTopic::CATEGORY:
 		return m_category_system.GetInfo(id);
 	case QueryTopic::TYPE:
-		return GetTransactionType(id);
+		return m_ttype_man.GetInfo(id);
 	default:
 		return {};
 	}
@@ -264,6 +264,9 @@ StringTable AccountManager::FormatResultTable(const PtrVector<const Transaction>
 }
 
 StringTable AccountManager::MakeQuery(Query& query) const {
+	if (!query.size()) {
+		return {};
+	}
 	QueryElement::SetResolveIf(this);
 	for(QueryElement* qe : query) {
 		qe->PreResolve();

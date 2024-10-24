@@ -11,10 +11,10 @@ bool QueryByName::IsOk() const {
 	return !m_names.empty();
 }
 
-String QueryClient::PrintResult() {
+String QueryByName::GetStringResult() const {
 	std::stringstream ss;
 	size_t size = GetIds().size();
-	ss << size << " client";
+	ss << size << " record";
 	if (size > 1) {
 		ss << "s";
 	}
@@ -45,21 +45,21 @@ bool QueryCategorySum::CheckTransaction(const Transaction* tr) {
 	return res.CheckTransaction(tr);
 }
 
-String QueryCategorySum::PrintResult() {
+String QueryCategorySum::GetStringResult() {
 	String res = "\n";
 	for (auto& pair : m_subqueries) {
 		res.append(m_category_names[pair.first]).append(": ");
-		res.append(pair.second.PrintResult());
+		res.append(pair.second.GetStringResult());
 	}
 	return res;
 }
 
-StringTable QueryCategorySum::GetStringResult() const {
+StringTable QueryCategorySum::GetTableResult() const {
 	StringTable table;
 	table.push_back({"Category", "Currency", "#", "Income", "Expense", "Sum"});
 	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED});
 	for (auto& pair : m_subqueries) {
-		auto subtable = pair.second.GetStringResult();
+		auto subtable = pair.second.GetTableResult();
 		bool first = true;
 		for (auto& subrow : subtable) {
 			if (first) {
@@ -127,7 +127,7 @@ StringVector QuerySum::GetStringResultRow(const Result& res, const Currency* cur
 	return {std::to_string(res.m_count), curr->PrettyPrint((int32_t)res.m_inc), curr->PrettyPrint((int32_t)res.m_exp), curr->PrettyPrint((int32_t)res.m_sum)};
 }
 
-String QueryCurrencySum::PrintResult() {
+String QueryCurrencySum::GetStringResult() {
 	std::stringstream ss;
 	for (auto& pair : m_results) {
 		Currency* curr = MakeCurrency(pair.first);
@@ -138,7 +138,7 @@ String QueryCurrencySum::PrintResult() {
 	return ss.str();
 }
 
-StringTable QueryCurrencySum::GetStringResult() const {
+StringTable QueryCurrencySum::GetTableResult() const {
 	StringTable table;
 	table.push_back({"Currency", "#", "Income", "Expense", "Sum"});
 	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED});
@@ -163,12 +163,12 @@ bool QueryElement::CheckTransaction(const Transaction* tr) {
 	return false;
 }
 
-String QueryElement::PrintResult() {
-	return String();
+String QueryElement::GetStringResult() const {
+	return String(); // empty
 }
 
-String QueryCategory::PrintResult() {
-	return m_result;
+StringTable QueryElement::GetTableResult() const {
+	return StringTable(); // empty
 }
 
 bool QueryByNumber::Check(const int32_t val) const {

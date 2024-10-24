@@ -44,8 +44,8 @@ public:
 class ManagedType : public NumberedType, public NamedType, public MappedType {
 public:
 	ManagedType(const Id id, const String& name);
-	String GetInfo() const;
-	StringVector GetInfoVector() const;
+	virtual String GetInfo() const;
+	virtual StringVector GetInfoVector() const;
 	virtual void StreamOut(std::ostream& out) const;
 	virtual void StreamIn(std::istream& in);
 };

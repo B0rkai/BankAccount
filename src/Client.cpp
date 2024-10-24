@@ -15,20 +15,27 @@ void Client::StreamOut(std::ostream& out) const {
 	StreamContainer(out, m_account_numbers);
 }
 
+void Client::AddAccountNumber(const AccountNumber& acc) {
+	m_account_numbers.push_back(AccountNumber(acc));
+}
+
 void Client::AddAccountNumber(const char* acc) {
-	if (!strlen(acc)) {
-		return;
-	}
-	(void) m_account_numbers.insert(acc);
+	m_account_numbers.push_back(AccountNumber(acc));
 }
 
 void Client::Merge(const Client* other) {
-	const StringSet& accs = other->GetAccountNumbers();
-	for (const String& acc : accs) {
-		AddAccountNumber(acc.c_str());
+	const AccountNumberSet& accs = other->GetAccountNumbers();
+	for (const AccountNumber& acc : accs) {
+		AddAccountNumber(acc);
 	}
 }
 
 bool Client::CheckAccountNumbers(const char* acc) const {
-	return (bool)m_account_numbers.count(acc);
+	return (bool)m_account_numbers.Check(acc);
+}
+
+String Client::GetInfo() const {
+	String info = ManagedType::GetInfo();
+	info.append(" ").append(ContainerAsString(m_account_numbers));
+	return info;
 }

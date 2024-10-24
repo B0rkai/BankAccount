@@ -8,27 +8,23 @@ ClientManager::~ClientManager() {}
 
 String ClientManager::GetInfo(const Id id) const {
 	String res = ManagerType::GetInfo(id);
-	/*Client* client = m_children[id];
-	if (client) {
-		client->GetAccountNumbers();
-	}*/
 	return res;
 }
 
 StringTable ClientManager::List() const {
 	StringTable table;
 	table.reserve(size() + 1);
-	table.push_back({"ID", "Name", "Account Number 1"});
+	table.push_back({"ID", "Name"});
 	size_t acccolumns = 1;
 	for (const Client* cli : m_children) {
 		StringVector& row = table.emplace_back();
 		row.push_back(std::to_string(cli->GetId()));
 		row.push_back(cli->GetName());
-		auto& accs = cli->GetAccountNumbers();
+		/*auto& accs = cli->GetAccountNumbers();
 		if (accs.size() > acccolumns) {
 			acccolumns = accs.size();
 		}
-		row.insert(row.end(), accs.begin(), accs.end());
+		row.insert(row.end(), accs.begin(), accs.end());*/
 	}
 	for (int i = 1; i < acccolumns; ++i) {
 		String head("Account Number ");

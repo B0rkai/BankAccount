@@ -3,9 +3,10 @@
 #include <set>
 #include "CommonTypes.h"
 #include "ManagedType.h"
+#include "AccountNumber.h"
 
 class Client : public ManagedType {
-	StringSet m_account_numbers;
+	AccountNumberSet m_account_numbers;
 public:
 	Client(const Id id, const char* name);
 
@@ -13,13 +14,15 @@ public:
 	virtual void StreamOut(std::ostream& out) const override;
 
 // Read Access
-	inline const StringSet& GetAccountNumbers() const { return m_account_numbers; }
+	inline const AccountNumberSet& GetAccountNumbers() const { return m_account_numbers; }
 
 // Write Access
+	void AddAccountNumber(const AccountNumber& acc);
 	void AddAccountNumber(const char* acc);
 	void Merge(const Client* other);
 
 // Query
 	bool CheckAccountNumbers(const char* acc) const;
+	virtual String GetInfo() const;
 };
 

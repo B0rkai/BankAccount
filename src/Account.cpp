@@ -85,7 +85,7 @@ const Transaction* Account::GetLastRecord() const {
 const PtrVector<const Transaction> Account::GetLastRecords(unsigned int cnt) const {
 	PtrVector<const Transaction> vec;
 	size_t s = Size();
-	for (int i = s - cnt; i < s; ++i) {
+	for (size_t i = s - cnt; i < s; ++i) {
 		vec.push_back(&m_transactions[i]);
 	}
 	return vec;

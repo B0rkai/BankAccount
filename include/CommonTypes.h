@@ -87,7 +87,7 @@ void StreamContainer(std::ostream& out, const StringContainer& container) {
 	}
 	out << COMMA;
 	bool first = true;
-	for (const auto& str : container) {
+	for (const String str : container) {
 		if (!first) {
 			out << COMMA;
 		} else {
@@ -102,7 +102,7 @@ void StreamContainer(std::ostream& out, const StringContainer& container) {
 }
 
 template<class Container>
-String ContainerAsString(const Container container, int max = -1) {
+String ContainerAsString(const Container& container, int max = -1) {
 	String line("[");
 	bool first = true;
 

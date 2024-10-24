@@ -148,6 +148,7 @@
   <ItemGroup>
     <ClCompile Include="src\Account.cpp" />
     <ClCompile Include="src\AccountManager.cpp" />
+    <ClCompile Include="src\AccountNumber.cpp" />
     <ClCompile Include="src\BankAccountFile.cpp" />
     <ClCompile Include="src\cApp.cpp" />
     <ClCompile Include="src\Category.cpp" />
@@ -168,6 +169,7 @@
   <ItemGroup>
     <ClInclude Include="include\Account.h" />
     <ClInclude Include="include\AccountManager.h" />
+    <ClInclude Include="include\AccountNumber.h" />
     <ClInclude Include="include\BankAccountFile.h" />
     <ClInclude Include="include\cApp.h" />
     <ClInclude Include="include\Category.h" />
