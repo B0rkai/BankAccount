@@ -8,15 +8,15 @@
 #include "IAccount.h"
 #include "Transaction.h"
 #include "ManagedType.h"
+#include "AccountNumber.h"
 
-enum CurrencyType : Id;
+enum CurrencyType : Id::Type;
 class Currency;
 class Query;
 class WQuery;
 
 class Account : public IAccount, public NamedType {
-	String m_bank_name;
-	const String m_acc_number;
+	const AccountNumber m_acc_number;
 	bool m_status = true;
 	Currency* m_curr;
 	std::vector<Transaction> m_transactions;
@@ -26,9 +26,8 @@ class Account : public IAccount, public NamedType {
 public:
 	Account(const char* acc_number, const char* acc_name, const CurrencyType curr);
 
-	inline const char* GetAccNumber() const { return m_acc_number.data(); }
-	inline void SetBankName(const char* bname) { m_bank_name = bname; }
-	inline String GetBankName() const { return m_bank_name; }
+	inline String GetAccNumber() const { return m_acc_number.GetString(); }
+	bool CheckAccNumber(const char* other);
 	bool Status() const { return m_status; }
 
 	bool PrepareImport(const uint16_t date);

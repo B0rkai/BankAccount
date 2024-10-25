@@ -9,7 +9,7 @@ struct CategoryConfig {
 };
 
 CategorySystem::CategorySystem()
-: ManagerType(new Category(0, cUncategorized)) // default category
+	: ManagerType("CATM", "Category System", new Category(0, cUncategorized)) // default category
 {}
 
 CategorySystem::~CategorySystem() {}
@@ -17,6 +17,7 @@ CategorySystem::~CategorySystem() {}
 Id CategorySystem::Categorize(const String& text) {
 	for (const Category* cat : m_children) {
 		if (cat->CheckKeywords(text.c_str())) {
+			m_logger.LogInfo() << "Record categorized to " << cat->GetFullName() << " from '" << text << "'";
 			return cat->GetId();
 		}
 	}

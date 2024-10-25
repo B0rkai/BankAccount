@@ -14,7 +14,7 @@ struct data {
 };
 
 void AccountManager::AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* memo) {
-	if (acc_id >= m_accounts.size()) {
+	if ((Id::Type)acc_id >= m_accounts.size()) {
 		throw "invalid account id";
 	}
 	Account* acc = m_accounts[acc_id];
@@ -35,7 +35,7 @@ Id AccountManager::CreateOrGetAccountId(const char* account_number, const Curren
 	}
 	size_t size = m_accounts.size();
 	for (int i = 0; i < size; ++i) {
-		if (strcmp(account_number, m_accounts[i]->GetAccNumber()) == 0) {
+		if (m_accounts[i]->CheckAccNumber(account_number)) {
 			return i;
 		}
 	}
@@ -103,7 +103,7 @@ StringTable AccountManager::List() const {
 		row.push_back(acc->Status() ? "Open" : "Closed");
 		row.push_back(acc->GetName());
 		row.push_back(acc->GetCurrency()->GetName());
-		row.push_back(acc->GetBankName());
+		row.push_back(acc->GetGroupName());
 		row.push_back(GetDateFormat(acc->GetFirstRecord()->GetDate()));
 		row.push_back(GetDateFormat(acc->GetLastRecord()->GetDate()));
 		row.push_back(std::to_string(acc->Size()));
@@ -132,27 +132,32 @@ void AccountManager::StreamAccounts(std::istream& in) {
 		StreamString(in, acc_name);
 		StreamString(in, curr_name);
 		m_accounts.push_back(new Account(acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
-		m_accounts.back()->SetBankName(bank_name.c_str());
+		m_accounts.back()->SetGroupName(bank_name.c_str());
 		m_accounts.back()->Stream(in);
 		m_accounts.back()->Sort();
+		m_logger.LogInfo() << curr_name << " account " << m_accounts.back()->GetName()  << " (" << m_accounts.back()->GetAccNumber() << ") of " << m_accounts.back()->GetGroupName() << " loaded from file with " << m_accounts.back()->Size() << " transactions";
 	}
 }
 
 void AccountManager::Stream(std::ostream& out) const {
+	m_logger.LogDebug() << "Streaming out to file starts";
 	m_category_system.StreamOut(out);
 	m_client_man.StreamOut(out);
 	m_ttype_man.StreamOut(out);
 	StreamAccounts(out);
+	m_logger.LogDebug() << "Streaming out to file finished";
 }
 
 void AccountManager::Stream(std::istream& in) {
+	m_logger.LogDebug() << "Streaming in from file starts";
 	m_category_system.StreamIn(in);
 	m_client_man.StreamIn(in);
 	m_ttype_man.StreamIn(in);
 	StreamAccounts(in);
+	m_logger.LogDebug() << "Streaming in from file finished";
 }
 
-AccountManager::AccountManager() :m_accounts(true), m_ttype_man(nullptr, true) {}
+AccountManager::AccountManager() :m_accounts(true), m_ttype_man("TTYM", "Transaction Type Manager", nullptr, true), m_logger("ACCM", "Account Manager") {}
 
 AccountManager::~AccountManager() {}
 
@@ -199,7 +204,20 @@ StringTable AccountManager::GetSummary(const QueryTopic topic) {
 	case QueryTopic::TYPE:
 		return m_ttype_man.GetInfos();
 	default:
+		m_logger.LogError() << "AddKeyword() wrong topic";
 		return {};
+	}
+}
+
+void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& keyword) {
+	if (topic == QueryTopic::TYPE) {
+		m_ttype_man.AddKeyword(id, keyword);
+	} else if (topic == QueryTopic::CLIENT) {
+		m_client_man.AddKeyword(id, keyword);
+	} else if (topic == QueryTopic::CATEGORY) {
+		m_category_system.AddKeyword(id, keyword);
+	} else {
+		m_logger.LogError() << "AddKeyword() wrong topic";
 	}
 }
 
@@ -210,6 +228,8 @@ void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id t
 		m_client_man.Merge(from, to);
 	} else if (topic == QueryTopic::CATEGORY) {
 		m_category_system.Merge(from, to);
+	} else {
+		m_logger.LogError() << "AddKeyword() wrong topic";
 	}
 }
 
@@ -249,6 +269,7 @@ StringTable AccountManager::Import(const String& filename) {
 	}
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);
 	StringTable table = FormatResultTable(last_transactions);
+	m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName();
 	m_new_transactions = 0;
 	return table;
 }
@@ -267,6 +288,7 @@ StringTable AccountManager::MakeQuery(Query& query) const {
 	if (!query.size()) {
 		return {};
 	}
+	m_logger.LogDebug() << "Read-only Query execution started";
 	QueryElement::SetResolveIf(this);
 	for(QueryElement* qe : query) {
 		qe->PreResolve();
@@ -275,16 +297,19 @@ StringTable AccountManager::MakeQuery(Query& query) const {
 		acc->MakeQuery(query);
 	}
 	if (!query.ReturnList()) {
+		m_logger.LogDebug() << "Read-only Query execution finished";
 		return {};
 	}
 	std::sort(query.GetResult().begin(), query.GetResult().end(), [](const Transaction* t1, const Transaction* t2) {
 		return (t1->GetDate() < t2->GetDate());
 	});
 	QueryElement::SetResolveIf(nullptr);
+	m_logger.LogDebug() << "Read-only Query execution finished";
 	return FormatResultTable(query.GetResult());
 }
 
 StringTable AccountManager::MakeQuery(WQuery& query) {
+	m_logger.LogDebug() << "Write Query execution started";
 	QueryElement::SetResolveIf(this);
 	WQueryElement::SetResolveIf(this);
 	for (auto* qe : query) {
@@ -300,10 +325,12 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 	QueryElement::SetResolveIf(nullptr);
 	WQueryElement::SetResolveIf(nullptr);
 	if (!query.ReturnList()) {
+		m_logger.LogDebug() << "Write Query execution finished";
 		return {};
 	}
 	std::sort(query.GetResult().begin(), query.GetResult().end(), [](const Transaction* t1, const Transaction* t2) {
 		return (t1->GetDate() < t2->GetDate());
 	});
+	m_logger.LogDebug() << "Write Query execution finished";
 	return FormatResultTable(query.GetResult());
 }

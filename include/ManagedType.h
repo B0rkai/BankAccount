@@ -23,7 +23,8 @@ public:
 	String GetFullName() const;
 	bool HasGroupName() const;
 	virtual bool CheckName(const char* name) const;
-	virtual bool CheckNameContains(const char* name) const;
+	virtual bool CheckNameContains(const char* text) const;
+	virtual bool CheckNameContained(const char* text) const;
 	void Stream(std::ostream& out) const;
 };
 

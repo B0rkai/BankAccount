@@ -9,6 +9,11 @@
 Account::Account(const char* acc_number, const char* acc_name, const CurrencyType curr)
 : NamedType(acc_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)) {}
 
+bool Account::CheckAccNumber(const char* other) {
+	AccountNumber acc(other);
+	return m_acc_number.IsEqual(acc);
+}
+
 bool Account::PrepareImport(const uint16_t date) {
 	const uint16_t last_date = GetLastRecord()->GetDate();
 	if (last_date < date) {
@@ -99,7 +104,7 @@ void Account::Sort() {
 }
 
 void Account::Stream(std::ostream& out) const {
-	StreamString(out, m_bank_name);
+	StreamString(out, GetGroupName());
 	out << COMMA;
 	StreamString(out, m_acc_number);
 	out << COMMA;

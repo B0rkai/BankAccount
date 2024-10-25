@@ -1,5 +1,6 @@
 #pragma once
 #include "Query.h"
+#include "Logger.h"
 
 class WQueryElement;
 class Transaction;
@@ -34,12 +35,13 @@ class MergeQuery : public WQueryElement {
 protected:
     Id m_target_id = INVALID_ID;
     IdSet m_others;
+    Logger m_logger;
     virtual bool IsOk() const;
     virtual void PreResolve();
     virtual bool CheckTransaction(Transaction* tr) override;
     virtual void Execute(IWAccount* client_if) override;
 public:
-    MergeQuery() = default;
+    MergeQuery();
     virtual ~MergeQuery() = default;
     inline void AddTargetId(const Id id) { m_target_id = id; }
     void AddOtherId(const Id id);

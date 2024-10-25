@@ -14,11 +14,18 @@ bool NamedType::HasGroupName() const {
 }
 
 bool NamedType::CheckName(const char* name) const {
-    return caseInsensitiveStringCompare(m_name.c_str(), name) || (!m_group_name.empty() && caseInsensitiveStringCompare(m_group_name.c_str(), name));
+    return caseInsensitiveStringCompare(m_name.c_str(), name); // group name doesn't count if full match is needed
 }
 
-bool NamedType::CheckNameContains(const char* name) const {
-    return caseInsensitiveStringContains(m_name, name) || (!m_group_name.empty() && caseInsensitiveStringContains(m_group_name.c_str(), name));
+bool NamedType::CheckNameContains(const char* text) const {
+    return caseInsensitiveStringContains(m_name, text) || (!m_group_name.empty() && caseInsensitiveStringContains(m_group_name.c_str(), text));
+}
+
+bool NamedType::CheckNameContained(const char* text) const {
+    if (m_name.empty()) {
+        return false;
+    }
+    return caseInsensitiveStringContains(text, m_name);
 }
 
 void NamedType::Stream(std::ostream& out) const {

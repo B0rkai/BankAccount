@@ -12,7 +12,7 @@ struct RawTransactionData {
 	String memo;
 };
 
-enum CurrencyType : Id;
+enum CurrencyType : Id::Type;
 
 struct RawImportData {
 	String account_number;

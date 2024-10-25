@@ -1,7 +1,7 @@
 #include "ClientManager.h"
 
 ClientManager::ClientManager()
-: ManagerType(new Client(0, "")) // NO CLIENT
+: ManagerType("CLIM", "Client Manager", new Client(0, "")) // NO CLIENT
 {}
 
 ClientManager::~ClientManager() {}

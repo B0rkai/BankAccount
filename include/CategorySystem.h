@@ -5,6 +5,7 @@
 #include "Category.h"
 #include "IWQuery.h"
 #include "ManagerType.h"
+#include "Logger.h"
 
 class CategorySystem : public IWCategorize, public ManagerType<Category> {
 public:

@@ -3,6 +3,8 @@
 #include "wx\vscroll.h"
 #include "wx\calctrl.h"
 
+#include "CommonTypes.h"
+
 // wxButton;
 class BankAccountFile;
 class Query;
@@ -31,14 +33,19 @@ class cMain :
     wxCalendarCtrl* m_date_from_calendarctrl = nullptr;
     wxCalendarCtrl* m_date_to_calendarctrl = nullptr;
 
-    wxComboBox* m_merge_topic_combo = nullptr;
+    wxComboBox* m_topic_combo = nullptr;
     wxTextCtrl* m_merge_from_textctrl = nullptr;
     wxTextCtrl* m_merge_to_textctrl = nullptr;
     wxButton* m_merge_but = nullptr;
+    
+    wxTextCtrl* m_keyword_target_textctrl = nullptr;
+    wxTextCtrl* m_keyword_textctrl = nullptr;
+    wxButton* m_add_keyword_but = nullptr;
 
     wxScrolledWindow* m_window = nullptr;
     wxStaticText* m_search_result_text = nullptr;
     std::unique_ptr<BankAccountFile> m_bank_file;
+    void UIOutputText(const String& utf8);
     void PrepareQuery(Query& query);
     void InitMenu();
     void InitControls();
@@ -50,7 +57,9 @@ class cMain :
     void Categorize(wxCommandEvent& evt);
     void QueryButtonClicked(wxCommandEvent& evt);
     void MergeButtonClicked(wxCommandEvent& evt);
+    void AddKeywordButtonClicked(wxCommandEvent& evt);
     void Test(wxCommandEvent& evt);
+    void UpdateStatusBar();
 public:
     cMain();
     ~cMain();

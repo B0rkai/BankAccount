@@ -25,16 +25,37 @@ constexpr char CRET = '\r';
 
 bool IsEndl(const char& c);
 
-using Id = uint16_t;
-using IdSet = std::set<uint16_t>;
-
-constexpr Id INVALID_ID = 0xffffu;
-constexpr Id UNCATEGORIZED = 0u;
-constexpr Id NO_CLIENT = 0u;
-
 using String		= std::string;
 using StringSet		= std::set<String>;
 using StringVector	= std::vector<String>;
+
+class Id {
+	uint16_t _id = 0;
+public:
+	using Type = uint16_t;
+	Id(const Type id) : _id(id) {}
+	Id(const Id&) = default;
+	Id(Id&&) = default;
+	Id& operator=(const Type& t) { _id = t; return *this; }
+	Id& operator=(const Id& id) { _id = id._id; return *this; }
+	operator Type() const { return _id; }
+	operator String() const { return std::to_string(_id); }
+	bool operator==(const Id& id) const { return (_id == id._id); }
+	bool operator==(const Type& t) const { return (_id == t); }
+	bool operator!=(const Id& id) const { return (_id != id._id); }
+	bool operator!=(const Type& t) const { return (_id != t); }
+	bool operator>(const Id& id) const { return _id > id._id; }
+	bool operator>=(const Id& id) const { return _id >= id._id; }
+	bool operator<(const Id& id) const { return _id < id._id; }
+	bool operator<=(const Id& id) const { return _id <= id._id; }
+	Id& operator-=(const Type& n) { _id -= n; return *this; }
+};
+
+using IdSet = std::set<Id>;
+
+constexpr uint16_t INVALID_ID = 0xffffu;
+constexpr uint16_t UNCATEGORIZED = 0u;
+constexpr uint16_t NO_CLIENT = 0u;
 
 const String cStringEmpty;
 extern const char* cCharArrEmpty;
@@ -106,7 +127,7 @@ String ContainerAsString(const Container& container, int max = -1) {
 	String line("[");
 	bool first = true;
 
-	for (auto& key : container) {
+	for (String key : container) {
 		if (max-- == 0) {
 			line.append("...");
 			break;

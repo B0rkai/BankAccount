@@ -11,6 +11,7 @@
 #include "CommonTypes.h"
 #include "Query.h"
 #include "IWQuery.h"
+#include "Logger.h"
 
 class Query;
 class Query::Result;
@@ -23,6 +24,7 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve,
 	ClientManager m_client_man;
 	PtrVector<Account> m_accounts;
 	CategorySystem m_category_system;
+	Logger m_logger;
 	int m_new_transactions = 0;
 
 	virtual void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* memo) override;
@@ -61,6 +63,8 @@ public:
 
 	String GetLastRecordDate() const;
 	StringTable GetSummary(const QueryTopic topic);
+
+	void AddKeyword(const QueryTopic topic, Id id, const String& keyword);
 
 	String GetClientInfoOfName(const char* name);
 

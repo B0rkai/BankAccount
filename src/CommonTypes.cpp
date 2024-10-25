@@ -92,10 +92,10 @@ void StreamString(std::ostream& out, const String& str) {
 }
 
 void Trimm(String& str) {
-    while (str.back() == ' ') {
+    while (!str.empty() && str.back() == ' ') {
         str.pop_back();
     }
-    while (str.front() == ' ') {
+    while (!str.empty() && str.front() == ' ') {
         str.erase(0, 1);
     }
 }

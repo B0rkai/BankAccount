@@ -159,6 +159,7 @@
     <ClCompile Include="src\CommonTypes.cpp" />
     <ClCompile Include="src\Currency.cpp" />
     <ClCompile Include="src\DataImporter.cpp" />
+    <ClCompile Include="src\Logger.cpp" />
     <ClCompile Include="src\ManagerType.cpp" />
     <ClCompile Include="src\Query.cpp" />
     <ClCompile Include="src\Transaction.cpp" />
@@ -185,6 +186,7 @@
     <ClInclude Include="include\IIdResolve.h" />
     <ClInclude Include="include\INameResolve.h" />
     <ClInclude Include="include\IWQuery.h" />
+    <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\ManagedType.h" />
     <ClInclude Include="include\ManagerType.h" />
     <ClInclude Include="include\Query.h" />

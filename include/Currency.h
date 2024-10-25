@@ -1,7 +1,7 @@
 #pragma once
 #include "CommonTypes.h"
 
-enum CurrencyType : Id {
+enum CurrencyType : Id::Type {
 	EUR,
 	USD,
 	GBP,

@@ -4,7 +4,7 @@
 
 #define GETQUERYTOPIC(topic) inline virtual QueryTopic GetTopic() const override { return QueryTopic::topic; }
 
-enum CurrencyType : Id;
+enum CurrencyType : Id::Type;
 class Transaction;
 class INameResolve;
 class Currency;

@@ -1,6 +1,7 @@
 #include <fstream>
 #include <filesystem>
 #include "BankAccountFile.h"
+#include "Logger.h"
 #include "ZipFile.h"
 
 static const char* UNCOMPRESSED_FILE("save\\BankAccount.csv");
@@ -34,12 +35,13 @@ bool BankAccountFile::Load() {
 	if (m_state == SAVED) {
 		return false; // do nothing, it is already synced
 	}
+	LogDebug() << "Load file started";
 	bool compressed = !std::filesystem::exists(UNCOMPRESSED_FILE);
 	if (compressed) {
 		if (!std::filesystem::exists(m_filename)) {
 			return false;
-
 		}
+		LogDebug() << "File " << m_filename << " is compressed";
 		ZipArchive::Ptr archive = ZipFile::Open(m_filename);
 		ZipArchiveEntry::Ptr entry = archive->GetEntry(ENTRY);
 		// if the entry is password protected, it is necessary
@@ -61,6 +63,7 @@ bool BankAccountFile::Load() {
 		std::ifstream in(UNCOMPRESSED_FILE);
 		Stream(in);
 	}
+	LogInfo() << "File " << m_filename << " loaded";
 	m_state = SAVED;
 	return true;
 }
@@ -70,6 +73,7 @@ void BankAccountFile::ExtractSave(const String& filename) {
 }
 
 bool BankAccountFile::Save(const bool compress) {
+	LogDebug() << "File save started (compress = " << std::boolalpha << compress << ")";
 	{
 		std::ofstream out(UNCOMPRESSED_FILE);
 		Stream(out);
@@ -78,6 +82,7 @@ bool BankAccountFile::Save(const bool compress) {
 		ZipSave(m_filename);
 		std::remove(UNCOMPRESSED_FILE);
 	}
+	LogDebug() << "File " << m_filename << " saved";
 	m_state = SAVED;
 	return true;
 }

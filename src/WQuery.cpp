@@ -29,6 +29,7 @@ bool MergeQuery::CheckTransaction(Transaction* tr) {
     for (const Id& id : m_others) {
         if (id == client_id) {
             client_id = m_target_id;
+            m_logger.LogInfo() << "Merge changed record: " << ContainerAsString(tr->PrintDebug(s_resolve_if));
             return true;
         } else if (id < client_id) {
             ++diff;
@@ -49,8 +50,13 @@ void MergeQuery::Execute(IWAccount* account_if) {
             ++diff;
         }
     }
-    m_target_id -= diff;
+    if (diff) {
+        m_logger.LogDebug() << "Merge to ID number is updated with erased records (" << m_target_id << " -> " << m_target_id - diff << ")";
+        m_target_id -= diff;
+    }
 }
+
+MergeQuery::MergeQuery() : m_logger("QMER", "Merge Query") {}
 
 bool CategorizingQuery::IsOk() const {
     return (bool)if_categorize;

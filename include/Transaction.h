@@ -4,7 +4,7 @@
 
 class IIdResolve;
 class Currency;
-enum CurrencyType : Id;
+enum CurrencyType : Id::Type;
 class IAccount;
 
 class Transaction {

@@ -6,7 +6,6 @@
 #include "wx/wx.h"
 #include "wx/windowid.h"
 
-#include "CommonTypes.h"
 #include "cMain.h"
 #include "Currency.h"
 #include "Query.h"
@@ -64,6 +63,7 @@ String PrettyTable(const StringTable& table) {
 enum CtrIds {
 	QUERY_BUTT = 10001,
 	MERGE_BUTT,
+	KEYWORD_BUTT,
 	MENU_DEBUG_SAVE,
 	CHKBX_DATE_FILTER,
 	MENU_LOAD,
@@ -80,6 +80,7 @@ enum CtrIds {
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_BUTTON(QUERY_BUTT, QueryButtonClicked)
 	EVT_BUTTON(MERGE_BUTT, MergeButtonClicked)
+	EVT_BUTTON(KEYWORD_BUTT, AddKeywordButtonClicked)
 	EVT_CHECKBOX(CHKBX_DATE_FILTER, DateFilterToggle)
 	EVT_MENU(MENU_LOAD, LoadFile)
 	EVT_MENU(MENU_EXTRACT, LoadFile)
@@ -128,7 +129,7 @@ cMain::cMain()
 
 
 cMain::~cMain() {
-	m_search_result_text->SetLabelText("");
+	UIOutputText("");
 }
 
 void cMain::Init() {
@@ -138,18 +139,18 @@ void cMain::Init() {
 void cMain::List(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
-		m_search_result_text->SetLabelText("First load the database");
+		UIOutputText("First load the database");
 		return;
 	}
 	int id = evt.GetId();
 	if (id == MENU_LIST_CLIENTS) {
-		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::CLIENT)));
+		UIOutputText(PrettyTable(m_bank_file->GetSummary(QueryTopic::CLIENT)));
 	} else if (id == MENU_LIST_CATEGORIES) {
-		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::CATEGORY)));
+		UIOutputText(PrettyTable(m_bank_file->GetSummary(QueryTopic::CATEGORY)));
 	} else if (id == MENU_LIST_ACCOUNTS) {
-		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::ACCOUNT)));
+		UIOutputText(PrettyTable(m_bank_file->GetSummary(QueryTopic::ACCOUNT)));
 	} else if (id == MENU_LIST_TYPES) {
-		m_search_result_text->SetLabelText(PrettyTable(m_bank_file->GetSummary(QueryTopic::TYPE)));
+		UIOutputText(PrettyTable(m_bank_file->GetSummary(QueryTopic::TYPE)));
 	} else {
 		return;
 	}
@@ -169,7 +170,7 @@ void cMain::DateFilterToggle(wxCommandEvent& evt) {
 void cMain::SaveFile(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
-		m_search_result_text->SetLabelText("First load the database");
+		UIOutputText("First load the database");
 		return;
 	}
 	m_bank_file->Save(evt.GetId() == MENU_SAVE);
@@ -178,11 +179,11 @@ void cMain::SaveFile(wxCommandEvent& evt) {
 void cMain::Categorize(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
-		m_search_result_text->SetLabelText("First load the database");
+		UIOutputText("First load the database");
 		return;
 	}
 	if (!m_categorize_chkb->GetValue()) {
-		m_search_result_text->SetLabelText("No Query");
+		UIOutputText("No Query");
 		return;
 	}
 	WQuery wq;
@@ -203,7 +204,7 @@ void cMain::Categorize(wxCommandEvent& evt) {
 	//cmq->AddOtherId(411);
 	//wq.AddWElement(cmq);
 	auto table = m_bank_file->MakeQuery(wq);
-	m_search_result_text->SetLabelText(PrettyTable(table));
+	UIOutputText(PrettyTable(table));
 }
 
 void cMain::LoadFile(wxCommandEvent& evt) {
@@ -215,6 +216,12 @@ void cMain::LoadFile(wxCommandEvent& evt) {
 	DoLoad();
 }
 
+void cMain::UpdateStatusBar() {
+	std::stringstream str;
+	str << " --- " << m_bank_file->CountTransactions() << " records, " << m_bank_file->CountAccounts() << " accounts, " << m_bank_file->CountClients() << " clients, " << m_bank_file->CountCategories() << " categories --- ";
+	m_status_bar->SetStatusText(str.str());
+}
+
 void cMain::DoLoad() {
 	m_bank_file.reset(new BankAccountFile(DEFAULT_SAVE_LOCATION));
 	if (!m_bank_file->Load()) {
@@ -223,13 +230,7 @@ void cMain::DoLoad() {
 	}
 	m_initdb_menu_item->Enable(false);
 	//m_resetdb_menu_item->Enable(true);
-	std::stringstream str;
-	str << " --- " << m_bank_file->CountTransactions() << " records, " << m_bank_file->CountAccounts() << " accounts, " << m_bank_file->CountClients() << " clients, " << m_bank_file->CountCategories() << " categories loaded.";
-	str << " Last record date: " << m_bank_file->GetLastRecordDate() << " --- ";
-	char buf[120];
-	str.getline(buf, 120);
-	String name(buf);
-	m_status_bar->SetStatusText(name);
+	UpdateStatusBar();
 }
 
 StringVector ParseMultiValueString(const wxString& val) {
@@ -247,6 +248,10 @@ StringVector ParseMultiValueString(const wxString& val) {
 		vals.emplace_back(val.c_str() + prevpos);
 	}
 	return vals;
+}
+
+void cMain::UIOutputText(const String& utf8) {
+	m_search_result_text->SetLabelText(wxString::FromUTF8(utf8.c_str()));
 }
 
 void cMain::PrepareQuery(Query& q) {
@@ -323,6 +328,7 @@ void cMain::InitControls() {
 	constexpr int HORIZONTAL_ALIGN_2 = 150;
 	constexpr int HORIZONTAL_ALIGN_3 = 770;
 	constexpr int HORIZONTAL_ALIGN_4 = 900;
+	constexpr int HORIZONTAL_ALIGN_5 = 1030;
 	constexpr int VERTICAL_ALIGN_1 = 30;
 	constexpr int VERTICAL_ALIGN_2 = 80;
 	constexpr int VERTICAL_ALIGN_3 = 130;
@@ -347,21 +353,28 @@ void cMain::InitControls() {
 	m_date_to_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 10));
 	m_date_to_calendarctrl->Show(false);
 
-	wxString merrge_topic_choices[3] = {"Client", "Type", "Category"};
-	new wxStaticText(m_main_panel, wxID_ANY, "Merge topic", wxPoint(HORIZONTAL_ALIGN_3, 12));
-	m_merge_topic_combo = new wxComboBox(m_main_panel, wxID_ANY, "Client", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(3, merrge_topic_choices));
-	new wxStaticText(m_main_panel, wxID_ANY, "Merge from", wxPoint(HORIZONTAL_ALIGN_3, 62));
-	m_merge_from_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_2), cDefaultCtrlSize);
-	new wxStaticText(m_main_panel, wxID_ANY, "Merge to", wxPoint(HORIZONTAL_ALIGN_3, 112));
-	m_merge_to_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge from IDs", wxPoint(HORIZONTAL_ALIGN_3, 12));
+	m_merge_from_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge to ID", wxPoint(HORIZONTAL_ALIGN_3, 62));
+	m_merge_to_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+	m_merge_but = new wxButton(m_main_panel, MERGE_BUTT, "Merge", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
-	m_merge_but = new wxButton(m_main_panel, MERGE_BUTT, "Merge", wxPoint(HORIZONTAL_ALIGN_4, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+	wxString merrge_topic_choices[3] = {"Client", "Type", "Category"};
+	new wxStaticText(m_main_panel, wxID_ANY, "Topic Selector", wxPoint(HORIZONTAL_ALIGN_4, 12));
+	m_topic_combo = new wxComboBox(m_main_panel, wxID_ANY, "Client", wxPoint(HORIZONTAL_ALIGN_4, VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(3, merrge_topic_choices));
+
+	new wxStaticText(m_main_panel, wxID_ANY, "Add keyword to ID", wxPoint(HORIZONTAL_ALIGN_5, 12));
+	m_keyword_target_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Keyword", wxPoint(HORIZONTAL_ALIGN_5, 62));
+	m_keyword_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+
+	m_add_keyword_but = new wxButton(m_main_panel, KEYWORD_BUTT, "Add keyword", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 }
 
 void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
-		m_search_result_text->SetLabelText("First load the database");
+		UIOutputText("First load the database");
 		return;
 	}
 	String result;
@@ -379,7 +392,7 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 	}
 
 	result.append(PrettyTable(table));
-	m_search_result_text->SetLabelText(result);
+	UIOutputText(result);
 	m_search_result_text->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();
 	m_window->SetScrollbars(5,5, rect.width, rect.height);
@@ -388,7 +401,7 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 void cMain::MergeButtonClicked(wxCommandEvent& evt) {
 	wxString merge_from = m_merge_from_textctrl->GetValue();
 	wxString merge_to = m_merge_to_textctrl->GetValue();
-	wxString merge_topic = m_merge_topic_combo->GetValue();
+	wxString merge_topic = m_topic_combo->GetValue();
 	IdSet froms;
 	Id to = INVALID_ID;
 	try {
@@ -427,15 +440,34 @@ void cMain::MergeButtonClicked(wxCommandEvent& evt) {
 		return;
 	}
 	auto table = m_bank_file->MakeQuery(wq);
-	m_search_result_text->SetLabelText(PrettyTable(table));
+	UIOutputText(PrettyTable(table));
+	UpdateStatusBar();
+}
+
+void cMain::AddKeywordButtonClicked(wxCommandEvent& evt) {
+ 	evt.Skip();
+	String merge_topic = (String)m_topic_combo->GetValue();
+	String id_str = (String)m_keyword_target_textctrl->GetValue();
+	String keyword = (String)m_keyword_textctrl->GetValue();
+	Id id(std::stoul(id_str));
+	QueryTopic topic = QueryTopic(0xFF); // invalid
+	if (merge_topic == "Client") {
+		topic = QueryTopic::CLIENT;
+	} else if (merge_topic == "Type") {
+		topic = QueryTopic::TYPE;
+	} else if (merge_topic == "Category") {
+		topic = QueryTopic::CATEGORY;
+	} else {
+		return;
+	}
+	m_bank_file->AddKeyword(topic, id, keyword);
 }
 
 void cMain::Test(wxCommandEvent& evt) {
 	evt.Skip();
 	try {
 		StringTable table = m_bank_file->Import("C:\\Users\\borka\\Downloads\\HISTORY_00038695_2024-10-24T02_20_23.xml");
-
-		m_search_result_text->SetLabelText(PrettyTable(table));
+		UIOutputText(PrettyTable(table));
 	} catch (const char*& problem) {
 		String error = "ERROR: ";
 		error.append(problem);
@@ -444,4 +476,5 @@ void cMain::Test(wxCommandEvent& evt) {
 	m_search_result_text->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();
 	m_window->SetScrollbars(5, 5, rect.width, rect.height);
+	UpdateStatusBar();
 }
