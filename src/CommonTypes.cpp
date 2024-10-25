@@ -2,14 +2,6 @@
 #include <iomanip>
 #include <sstream>
 
-// From: https://stackoverflow.com/questions/56717088/algorithm-for-converting-serial-date-excel-to-year-month-day-in-c
-
-void GetInLowerCase(const String& original, String& lowercase) {
-    lowercase.clear();
-    for (const char& c : original) {
-        lowercase.push_back(static_cast<char>(tolower(static_cast<unsigned char>(c))));
-    }
-}
 
 const char* cCharArrEmpty = "";
 
@@ -17,40 +9,14 @@ bool IsEndl(const char& c) {
     return ((c == ENDL) || (c == CRET));
 }
 
-bool caseInsensitiveStringCompare(const char* str1, const char* str2) {
-    if (strlen(str1) != strlen(str2)) {
-        return false;
-    }
-    while (*str1 != 0) {
-        if (tolower(static_cast<unsigned char>(*str1)) != tolower(static_cast<unsigned char>(*str2))) {
-            return false;
-        }
-        ++str1;
-        ++str2;
-    }
-    return true;
-}
-
-bool caseInsensitiveStringContains(const char* string, const char* sub) {
-    String original(string);
-    String substring(sub);
-    return caseInsensitiveStringContains(original, substring);
-}
-
-bool caseInsensitiveStringCompare(const String& str1, const String& str2) {
-    return caseInsensitiveStringCompare(str1.c_str(), str2.c_str());
-}
-
 bool caseInsensitiveStringContains(const String& string, const String& sub) {
     if (string.length() <= sub.length()) {
-        return caseInsensitiveStringCompare(string, sub);
+        return string.IsSameAs(sub, false);
     }
-    String lwc_string;
-    String lwc_sub;
-    GetInLowerCase(string, lwc_string);
-    GetInLowerCase(sub, lwc_sub);
-    return (lwc_string.find(lwc_sub) != String::npos);
+    return (string.Lower().find(sub.Lower()) != String::npos);
 }
+
+// From: https://stackoverflow.com/questions/56717088/algorithm-for-converting-serial-date-excel-to-year-month-day-in-c
 
 void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear) {
     // Modified Julian to DMY calculation with an addition of 2415019
@@ -84,27 +50,18 @@ void DumpChar(std::istream& in) {
 
 void StreamString(std::ostream& out, const String& str) {
     if (str.find(',') != String::npos) {
-        out << DQUOTE << str << DQUOTE;
+        out << DQUOTE << str.utf8_str() << DQUOTE;
         return;
     }
-    out << str;
-
-}
-
-void Trimm(String& str) {
-    while (!str.empty() && str.back() == ' ') {
-        str.pop_back();
-    }
-    while (!str.empty() && str.front() == ' ') {
-        str.erase(0, 1);
-    }
+    out << str.utf8_str();
 }
 
 // eats following comma, but not endl
-void StreamString(std::istream& in, String& str) {
+void StreamString(std::istream& in, String& out) {
     char dump = NULL;
     char c;
-    str.clear();
+    out.clear();
+    std::string str;
     in >> std::noskipws >> c;
     bool quoted = (c == DQUOTE);
     if (quoted) {
@@ -124,9 +81,9 @@ void StreamString(std::istream& in, String& str) {
     if (quoted && (in.peek() == ',')) {
         in >> dump; // eat comma
     }
-    if (!str.empty()) {
-        Trimm(str);
-    }
+    out = wxString::FromUTF8(str.c_str());
+    out.Trim(false);
+    out.Trim(true);
 }
 
 String GetDateFormat(const uint16_t date) {

@@ -13,9 +13,9 @@ struct data {
 	StringSet keywords;
 };
 
-void AccountManager::AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* memo) {
+void AccountManager::AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo) {
 	if ((Id::Type)acc_id >= m_accounts.size()) {
-		throw "invalid account id";
+		m_logger.LogError() << "Cannot add new transaction, invalid account id";
 	}
 	Account* acc = m_accounts[acc_id];
 	Id category = m_category_system.Categorize({GetTransactionType(type_id), GetClientName(client_id), String(memo)});
@@ -23,14 +23,14 @@ void AccountManager::AddNewTransaction(const Id acc_id, const uint16_t date, con
 	m_new_transactions++;
 }
 
-Id AccountManager::CreateOrGetTransactionTypeId(const char* type) {
+Id AccountManager::CreateOrGetTransactionTypeId(const String& type) {
 	return m_ttype_man.GetOrCreateId(type);
 }
 
-Id AccountManager::CreateOrGetAccountId(const char* account_number, const CurrencyType curr) {
+Id AccountManager::CreateOrGetAccountId(const String& account_number, const CurrencyType curr) {
 	if (m_accounts.empty()) {
 		//m_accounts.push_back(new Account(bank_name, account_number, account_name, curr));
-		throw "Cannot create new account, not yet implemented";
+		m_logger.LogError() << "NOT IMPLEMENTED: Cannot create new account :(";
 		return 0;
 	}
 	size_t size = m_accounts.size();
@@ -49,7 +49,7 @@ Id AccountManager::CreateOrGetAccountId(const char* account_number, const Curren
 	return (uint8_t)size;
 }
 
-IdSet AccountManager::GetIds(const QueryTopic topic, const char* name) const {
+IdSet AccountManager::GetIds(const QueryTopic topic, const String& name) const {
 	switch (topic) {
 	case QueryTopic::CLIENT:
 		return m_client_man.SearchIds(name);
@@ -75,7 +75,7 @@ String AccountManager::GetInfo(const QueryTopic topic, const Id id) const {
 	}
 }
 
-Id AccountManager::CreateOrGetClientId(const char* client_name, const char* acc_num) {
+Id AccountManager::CreateOrGetClientId(const String& client_name, const String& acc_num) {
 	Id id = m_client_man.GetOrCreateId(client_name);
 	m_client_man.AddAccountNumber(id, acc_num);
 	return id;
@@ -85,11 +85,11 @@ String AccountManager::GetCategoryName(const Id id) const {
 	return m_category_system.GetFullName(id);
 }
 
-const char* AccountManager::GetTransactionType(const Id id) const {
+String AccountManager::GetTransactionType(const Id id) const {
 	return m_ttype_man.GetName(id);
 }
 
-const char* AccountManager::GetClientName(const Id id) const {
+String AccountManager::GetClientName(const Id id) const {
 	return m_client_man.GetName(id);
 }
 
@@ -135,7 +135,7 @@ void AccountManager::StreamAccounts(std::istream& in) {
 		m_accounts.back()->SetGroupName(bank_name.c_str());
 		m_accounts.back()->Stream(in);
 		m_accounts.back()->Sort();
-		m_logger.LogInfo() << curr_name << " account " << m_accounts.back()->GetName()  << " (" << m_accounts.back()->GetAccNumber() << ") of " << m_accounts.back()->GetGroupName() << " loaded from file with " << m_accounts.back()->Size() << " transactions";
+		m_logger.LogInfo() << curr_name << " account " << m_accounts.back()->GetName().utf8_str() << " (" << m_accounts.back()->GetAccNumber() << ") of " << m_accounts.back()->GetGroupName().utf8_str() << " loaded from file with " << m_accounts.back()->Size() << " transactions";
 	}
 }
 
@@ -157,7 +157,7 @@ void AccountManager::Stream(std::istream& in) {
 	m_logger.LogDebug() << "Streaming in from file finished";
 }
 
-AccountManager::AccountManager() :m_accounts(true), m_ttype_man("TTYM", "Transaction Type Manager", nullptr, true), m_logger("ACCM", "Account Manager") {}
+AccountManager::AccountManager() :m_accounts(true), m_ttype_man("TTYM", "Transaction Type Manager", nullptr, true), m_logger(Logger::GetRef("ACCM", "Account Manager")) {}
 
 AccountManager::~AccountManager() {}
 
@@ -233,7 +233,7 @@ void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id t
 	}
 }
 
-String AccountManager::GetClientInfoOfName(const char* name) {
+String AccountManager::GetClientInfoOfName(const String& name) {
 	auto results = GetIds(QueryTopic::CLIENT, name);
 	if (results.empty()) {
 		return "No client found";
@@ -269,7 +269,7 @@ StringTable AccountManager::Import(const String& filename) {
 	}
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);
 	StringTable table = FormatResultTable(last_transactions);
-	m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName();
+	m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName().utf8_str();
 	m_new_transactions = 0;
 	return table;
 }

@@ -10,6 +10,8 @@
 #include "ManagedType.h"
 #include "AccountNumber.h"
 
+class Logger;
+
 enum CurrencyType : Id::Type;
 class Currency;
 class Query;
@@ -22,7 +24,9 @@ class Account : public IAccount, public NamedType {
 	std::vector<Transaction> m_transactions;
 	std::list<String> m_memos;
 	std::list<String> m_descriptions;
+	Logger& m_logger;
 	bool RunQuery(Query& query, const Transaction* tr) const;
+	virtual const String& GetAccName() const override;
 public:
 	Account(const char* acc_number, const char* acc_name, const CurrencyType curr);
 

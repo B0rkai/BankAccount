@@ -51,12 +51,12 @@ void MergeQuery::Execute(IWAccount* account_if) {
         }
     }
     if (diff) {
-        m_logger.LogDebug() << "Merge to ID number is updated with erased records (" << m_target_id << " -> " << m_target_id - diff << ")";
+        m_logger.LogDebug() << "Merge to ID number is updated with erased records (" << (Id::Type)m_target_id << " -> " << (Id::Type)m_target_id - diff << ")";
         m_target_id -= diff;
     }
 }
 
-MergeQuery::MergeQuery() : m_logger("QMER", "Merge Query") {}
+MergeQuery::MergeQuery() : m_logger(Logger::GetRef("QMER", "Merge Query")) {}
 
 bool CategorizingQuery::IsOk() const {
     return (bool)if_categorize;

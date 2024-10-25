@@ -4,17 +4,46 @@
 #include "Logger.h"
 #include "ZipFile.h"
 
-static const char* UNCOMPRESSED_FILE("save\\BankAccount.csv");
+static const char* DEFAULT_UNCOMPRESSED_FILE_PATH("db\\BankAccount.txt");
 static const char* PASSWORD = "pass";
 static const char* ENTRY = "save.data";
 
-static void ZipSave(const String& filename) {
-	ZipArchive::Ptr archive = ZipFile::Open(filename);
+bool MakeBackup(const String& file_from) {
+	String backup = file_from;
+	backup.RemoveLast(3).Append("backup");
+	std::filesystem::copy((std::string)file_from, (std::string)backup, std::filesystem::copy_options::update_existing);
+	return true;
+}
 
+bool LoadBackup(const String& file_to) {
+	String backup = file_to;
+	backup.RemoveLast(3).Append("backup");
+	std::filesystem::copy((std::string)backup, (std::string)file_to, std::filesystem::copy_options::update_existing);
+	return true;
+}
+
+static void ZipSave(const String& filename) {
+	ZipArchive::Ptr archive = ZipFile::Open((std::string)filename);
+	if (!archive) {
+		LogError() << "SAVE FAILED! BFA database file '" << filename.utf8_str() << "' cannot be opened";
+		return;
+	}
 	std::ifstream contentStream;
-	contentStream.open(UNCOMPRESSED_FILE, std::ios::binary);
-	archive->RemoveEntry(ENTRY);
+	contentStream.open(DEFAULT_UNCOMPRESSED_FILE_PATH, std::ios::binary);
+	if (!contentStream.is_open()) {
+		LogError() << "SAVE FAILED! stream output file '" << DEFAULT_UNCOMPRESSED_FILE_PATH << "' cannot be opened";
+		return;
+	}
+	MakeBackup(filename);
+	if (archive->GetEntry(ENTRY)) {
+		archive->RemoveEntry(ENTRY);
+	}
 	ZipArchiveEntry::Ptr entry = archive->CreateEntry(ENTRY);
+	if (!entry) {
+		LogError() << "SAVE FAILED! Cannot modify BFA database file.";
+		LoadBackup(filename);
+		return;
+	}
 
 	entry->SetPassword(PASSWORD);
 
@@ -22,10 +51,14 @@ static void ZipSave(const String& filename) {
 	// this method is only useful for password protected files
 	entry->UseDataDescriptor();
 
-	entry->SetCompressionStream(contentStream);
+	if (!entry->SetCompressionStream(contentStream)) {
+		LogError() << "SAVE FAILED! Cannot create compression stream.";
+		LoadBackup(filename);
+		return;
+	}
 
 	// data from contentStream are pumped here
-	ZipFile::SaveAndClose(archive, filename);
+	ZipFile::SaveAndClose(archive, (std::string)filename);
 }
 
 BankAccountFile::BankAccountFile(const String& filename)
@@ -35,14 +68,13 @@ bool BankAccountFile::Load() {
 	if (m_state == SAVED) {
 		return false; // do nothing, it is already synced
 	}
-	LogDebug() << "Load file started";
-	bool compressed = !std::filesystem::exists(UNCOMPRESSED_FILE);
+	bool compressed = !std::filesystem::exists(DEFAULT_UNCOMPRESSED_FILE_PATH);
 	if (compressed) {
-		if (!std::filesystem::exists(m_filename)) {
+		if (!std::filesystem::exists((std::string)m_filename)) {
 			return false;
 		}
-		LogDebug() << "File " << m_filename << " is compressed";
-		ZipArchive::Ptr archive = ZipFile::Open(m_filename);
+		LogDebug() << "Loading BAF database file from: " << (std::string)m_filename;
+		ZipArchive::Ptr archive = ZipFile::Open((std::string)m_filename);
 		ZipArchiveEntry::Ptr entry = archive->GetEntry(ENTRY);
 		// if the entry is password protected, it is necessary
 		// to set the password before getting a decompression stream
@@ -58,31 +90,35 @@ bool BankAccountFile::Load() {
 		{
 			Stream(*decompressStream);
 		}
+		LogInfo() << "Database loaded from saved file";
 	} else {
-
-		std::ifstream in(UNCOMPRESSED_FILE);
+		LogDebug() << "Loading from plain csv file: " << DEFAULT_UNCOMPRESSED_FILE_PATH;
+		std::ifstream in(DEFAULT_UNCOMPRESSED_FILE_PATH);
 		Stream(in);
+		LogWarn() << "Database loaded from open csv file!! Please save it as encrypted BAF database file!";
+
 	}
-	LogInfo() << "File " << m_filename << " loaded";
 	m_state = SAVED;
 	return true;
 }
 
 void BankAccountFile::ExtractSave(const String& filename) {
-	ZipFile::ExtractEncryptedFile(filename, ENTRY, UNCOMPRESSED_FILE, PASSWORD);
+	ZipFile::ExtractEncryptedFile((std::string)filename, ENTRY, DEFAULT_UNCOMPRESSED_FILE_PATH, PASSWORD);
 }
 
 bool BankAccountFile::Save(const bool compress) {
 	LogDebug() << "File save started (compress = " << std::boolalpha << compress << ")";
 	{
-		std::ofstream out(UNCOMPRESSED_FILE);
+		std::ofstream out(DEFAULT_UNCOMPRESSED_FILE_PATH);
 		Stream(out);
 	}
 	if (compress) {
 		ZipSave(m_filename);
-		std::remove(UNCOMPRESSED_FILE);
+		std::remove(DEFAULT_UNCOMPRESSED_FILE_PATH);
+		LogInfo() << "BAF database file saved into: " << m_filename;
+	} else {
+		LogWarn() << "Databese saved into plain csv file!!";
 	}
-	LogDebug() << "File " << m_filename << " saved";
 	m_state = SAVED;
 	return true;
 }

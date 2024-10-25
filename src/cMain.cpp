@@ -12,7 +12,7 @@
 #include "WQuery.h"
 #include "BankAccountFile.h"
 
-static const char* DEFAULT_SAVE_LOCATION = "save\\BData.baf";
+static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
 String PrettyTable(const StringTable& table) {
 	if (table.empty()) {
@@ -33,6 +33,7 @@ String PrettyTable(const StringTable& table) {
 			}
 		}
 	}
+	size_t row_idx = 0;
 	for (auto& row : table) {
 		int i = 0;
 		for (auto& str : row) {
@@ -56,6 +57,10 @@ String PrettyTable(const StringTable& table) {
 			++i;
 		}
 		ss << "\n";
+		if (++row_idx == 200) {
+			ss << "...";
+			break;
+		}
 	}
 	return ss.str();
 }
@@ -100,10 +105,6 @@ cMain::cMain()
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
 	m_main_panel->SetBackgroundColour(wxColour(200, 200, 200));
 	InitControls();
-	//wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
-	//SetSizer(sizer);
-	//m_status_text = new wxStaticText(this, wxID_ANY, "", wxPoint(744, 10), wxSize(300, 18));
-	//m_but_init_db = new wxButton(this, 10002, "Init database", wxPoint(744, 30), wxSize(110, 25));
 
 	m_window = new wxScrolledWindow(m_main_panel, wxID_ANY, wxPoint(20, 170), wxSize(1850, 880));
 	wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
@@ -116,9 +117,6 @@ cMain::cMain()
 	m_search_result_text->SetFont(font);
 	m_search_result_text->SetForegroundColour(wxColour(255, 255, 255));
 	m_window->SetBackgroundColour(wxColour(0, 0, 0));
-	//wxString choices[5] = { "EUR", "USD", "GBP", "CHF", "HUF" };
-	//m_combo = new wxComboBox(this, wxID_ANY, "EUR", wxPoint(30, 140), wxSize(150, 30), wxArrayString(5, choices));
-
 
 	m_status_bar = new wxStatusBar(this, wxID_ANY, wxST_SIZEGRIP);
 	SetStatusBar(m_status_bar);
@@ -155,9 +153,7 @@ void cMain::List(wxCommandEvent& evt) {
 		return;
 	}
 	m_search_result_text->SetInitialSize();
-	//m_window->SetInitialSize();
 	wxRect rect = m_search_result_text->GetRect();
-	//m_window->SetSize(rect.GetSize());
 	m_window->SetScrollbars(5, 5, rect.width, rect.height);
 }
 
@@ -199,10 +195,6 @@ void cMain::Categorize(wxCommandEvent& evt) {
 	CategorizingQuery* cq = new CategorizingQuery;
 	cq->SetFlags(CategorizingQuery::AUTOMATIC);
 	wq.AddWElement(cq);
-	//ClientMergeQuery* cmq = new ClientMergeQuery;
-	//cmq->AddTargetId(333);
-	//cmq->AddOtherId(411);
-	//wq.AddWElement(cmq);
 	auto table = m_bank_file->MakeQuery(wq);
 	UIOutputText(PrettyTable(table));
 }
@@ -210,7 +202,7 @@ void cMain::Categorize(wxCommandEvent& evt) {
 void cMain::LoadFile(wxCommandEvent& evt) {
 	evt.Skip();
 	if (evt.GetId() == MENU_EXTRACT) {
-		m_bank_file->ExtractSave(DEFAULT_SAVE_LOCATION);
+		BankAccountFile::ExtractSave(DEFAULT_SAVE_LOCATION);
 		return;
 	}
 	DoLoad();
@@ -226,6 +218,7 @@ void cMain::DoLoad() {
 	m_bank_file.reset(new BankAccountFile(DEFAULT_SAVE_LOCATION));
 	if (!m_bank_file->Load()) {
 		m_status_bar->SetStatusText("ERROR: Missing data file");
+		LogWarn() << "Database missing! Load DAF database file, or import new datasets!";
 		return;
 	}
 	m_initdb_menu_item->Enable(false);
@@ -250,8 +243,8 @@ StringVector ParseMultiValueString(const wxString& val) {
 	return vals;
 }
 
-void cMain::UIOutputText(const String& utf8) {
-	m_search_result_text->SetLabelText(wxString::FromUTF8(utf8.c_str()));
+void cMain::UIOutputText(const String& str) {
+	m_search_result_text->SetLabelText(str);
 }
 
 void cMain::PrepareQuery(Query& q) {
@@ -305,14 +298,9 @@ void cMain::InitMenu() {
 	m_menu_bar->Append(dbmenu1, "Database");
 	m_menu_bar->Append(dbmenu2, "Query");
 	m_initdb_menu_item = dbmenu1->Append(MENU_LOAD, "Load file*");
-	//m_resetdb_menu_item = dbmenu1->Append(10006, "Reset data");
-	//m_resetdb_menu_item->Enable(false);
-	/*auto mitem = dbmenu1->Append(MENU_LOAD, "Load file");
-	mitem->Enable(false);*/
 	dbmenu1->Append(MENU_SAVE, "Save file");
 	dbmenu1->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
 	dbmenu1->Append(MENU_EXTRACT, "Extract save file");
-	//mitem->Enable(false);
 	dbmenu2->Append(MENU_CATEGORIZE, "Categorize");
 	dbmenu2->Append(MENU_LIST_ACCOUNTS, "List Accounts");
 	dbmenu2->Append(MENU_LIST_TYPES, "List Transaction Types");
@@ -345,7 +333,6 @@ void cMain::InitControls() {
 	m_show_list_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transaction list", wxPoint(HORIZONTAL_ALIGN_2, 30));
 	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by categories", wxPoint(HORIZONTAL_ALIGN_2, 50));
 	m_use_date_filter_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "filter date", wxPoint(HORIZONTAL_ALIGN_2, 70));
-	//m_categorize_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "categorize records", wxPoint(HORIZONTAL_ALIGN_2, 90));
 	m_query_but = new wxButton(m_main_panel, QUERY_BUTT, "Query", wxPoint(HORIZONTAL_ALIGN_2, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
 	m_date_from_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(350, 10));
@@ -403,12 +390,14 @@ void cMain::MergeButtonClicked(wxCommandEvent& evt) {
 	wxString merge_to = m_merge_to_textctrl->GetValue();
 	wxString merge_topic = m_topic_combo->GetValue();
 	IdSet froms;
-	Id to = INVALID_ID;
+	unsigned long _id;
+	merge_to.ToULong(&_id);
+	Id to(_id);
 	try {
-		to = std::stoul((String)merge_to);
 		StringVector froms_str = ParseMultiValueString(merge_from);
 		for (const String& from_str : froms_str) {
-			Id from = std::stoul(from_str);
+			from_str.ToULong(&_id);
+			Id from(_id);
 			froms.insert(from);
 		}
 	} catch (...) {
@@ -449,7 +438,9 @@ void cMain::AddKeywordButtonClicked(wxCommandEvent& evt) {
 	String merge_topic = (String)m_topic_combo->GetValue();
 	String id_str = (String)m_keyword_target_textctrl->GetValue();
 	String keyword = (String)m_keyword_textctrl->GetValue();
-	Id id(std::stoul(id_str));
+	unsigned long _id;
+	id_str.ToULong(&_id);
+	Id id(_id);
 	QueryTopic topic = QueryTopic(0xFF); // invalid
 	if (merge_topic == "Client") {
 		topic = QueryTopic::CLIENT;
@@ -466,7 +457,7 @@ void cMain::AddKeywordButtonClicked(wxCommandEvent& evt) {
 void cMain::Test(wxCommandEvent& evt) {
 	evt.Skip();
 	try {
-		StringTable table = m_bank_file->Import("C:\\Users\\borka\\Downloads\\HISTORY_00038695_2024-10-24T02_20_23.xml");
+		StringTable table = m_bank_file->Import(L"C:\\Users\\borka\\Downloads\\HISTORY_00038695_2024-10-24T02_20_23.xml");
 		UIOutputText(PrettyTable(table));
 	} catch (const char*& problem) {
 		String error = "ERROR: ";

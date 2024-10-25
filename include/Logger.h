@@ -2,6 +2,7 @@
 #include "CommonTypes.h"
 #include <ostream>
 #include <sstream>
+#include <unordered_map>
 
 class Logger;
 
@@ -31,40 +32,37 @@ class Log {
     Log();
     Log(const char* level);
     Log(const char* comp, const char* level);
+    Log(const Log&);
+protected:
+    static bool s_initialized;
+    std::ostringstream m_temp_stream;
 public:
     virtual ~Log();
     //static LogLevel& ReportingLevel();
     template <class T>
     std::ostringstream& operator<<(const T& something) {
-        os << something;
-        return os;
+        m_temp_stream << something;
+        return m_temp_stream;
     }
-protected:
-    std::ostringstream os;
-private:
-    Log(const Log&);
-    //Log& operator =(const Log&);
-private:
-    //LogLevel messageLevel;
+    static bool Initialized() { return s_initialized; }
+    static void InitLoggingSystem();
 };
 
+class LoggerMap : public std::unordered_map<std::string, Logger*> {
+public:
+    virtual ~LoggerMap();
+};
 
 class Logger {
-    const String m_comp_name;
-    const String m_comp_id;
-public:
+    const char* m_comp_name;
+    const char* m_comp_id;
+    static LoggerMap s_map;
     Logger(const char* id, const char* component_name);
+public:
+    ~Logger();
+    static Logger& GetRef(const char* id, const char* component_name);
     CONSTLOGFUNC_DECL(Debug);
     CONSTLOGFUNC_DECL(Info);
     CONSTLOGFUNC_DECL(Warn);
     CONSTLOGFUNC_DECL(Error);
 };
-
-//std::ostringstream& Log::Get(LogLevel level) {
-//    os << "- " << NowTime();
-//    os << " " << ToString(level) << ": ";
-//    os << std::string(level > logDEBUG ? 0 : level - logDEBUG, '\t');
-//    messageLevel = level;
-//    return os;
-//}
-

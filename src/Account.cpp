@@ -7,7 +7,7 @@
 #include <algorithm>
 
 Account::Account(const char* acc_number, const char* acc_name, const CurrencyType curr)
-: NamedType(acc_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)) {}
+: NamedType(acc_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")) {}
 
 bool Account::CheckAccNumber(const char* other) {
 	AccountNumber acc(other);
@@ -20,7 +20,8 @@ bool Account::PrepareImport(const uint16_t date) {
 		return false; // gap
 	} else { // delete old data on the start day, because export has higher chance to be whole
 		if ((last_date - date) > 5) { // WTF
-			throw "import has more than 5 days overlap with existing data";
+			m_logger.LogError() << "Import Aborted! Please import data what has 5 or less days overlap with already loaded data! (last record date on " << GetFullName().utf8_str() << " is " << GetDateFormat(GetLastRecord()->GetDate()) << ")";
+			return false;
 		}
 		do {
 			m_transactions.pop_back();
@@ -60,6 +61,10 @@ bool Account::RunQuery(Query& query, const Transaction* tr) const {
 		}
 	}
 	return match;
+}
+
+const String& Account::GetAccName() const {
+	return GetName();
 }
 
 void Account::MakeQuery(Query& query) const {

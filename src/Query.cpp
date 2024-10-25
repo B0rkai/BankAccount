@@ -245,8 +245,8 @@ void QueryByName::PreResolve() {
 		IdSet ids = s_resolve_if->GetIds(GetTopic(), name.c_str());
 		for (auto id : ids) {
 			AddId(id);
-			m_result.push_back(ENDL);
-			m_result.append(s_resolve_if->GetInfo(GetTopic(), id));
+			m_result.Append(ENDL);
+			m_result.Append(s_resolve_if->GetInfo(GetTopic(), id));
 		}
 	}
 	m_names.clear();

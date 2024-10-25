@@ -24,19 +24,19 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve,
 	ClientManager m_client_man;
 	PtrVector<Account> m_accounts;
 	CategorySystem m_category_system;
-	Logger m_logger;
+	Logger& m_logger;
 	int m_new_transactions = 0;
 
-	virtual void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* memo) override;
-	virtual Id CreateOrGetTransactionTypeId(const char* type) override;
-	virtual Id CreateOrGetAccountId(const char* account_number, const CurrencyType curr) override;
-	virtual Id CreateOrGetClientId(const char* client_name, const char* client_account_number) override;
+	virtual void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo) override;
+	virtual Id CreateOrGetTransactionTypeId(const String& type) override;
+	virtual Id CreateOrGetAccountId(const String& account_number, const CurrencyType curr) override;
+	virtual Id CreateOrGetClientId(const String& client_name, const String& client_account_number) override;
 
 	virtual String GetCategoryName(const Id id) const override;
-	virtual const char* GetTransactionType(const Id id) const override;
-	virtual const char* GetClientName(const Id id) const override;
+	virtual String GetTransactionType(const Id id) const override;
+	virtual String GetClientName(const Id id) const override;
 
-	virtual IdSet GetIds(const QueryTopic topic, const char* name) const override;
+	virtual IdSet GetIds(const QueryTopic topic, const String& name) const override;
 	virtual String GetInfo(const QueryTopic topic, const Id id) const override;
 
 	virtual void Merge(const QueryTopic topic, const IdSet& from, const Id to) override;
@@ -66,7 +66,7 @@ public:
 
 	void AddKeyword(const QueryTopic topic, Id id, const String& keyword);
 
-	String GetClientInfoOfName(const char* name);
+	String GetClientInfoOfName(const String& name);
 
 	StringTable Import(const String& filename);
 

@@ -4,7 +4,7 @@
 class IDataBase;
 
 struct RawTransactionData {
-	int32_t amount;
+	long amount;
 	uint16_t date;
 	String type;
 	String client;

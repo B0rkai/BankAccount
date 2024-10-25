@@ -5,6 +5,7 @@
 #include <string>
 #include <istream>
 #include <ostream>
+#include "wx/string.h"
 
 enum class QueryTopic {
 	ACCOUNT,
@@ -25,7 +26,7 @@ constexpr char CRET = '\r';
 
 bool IsEndl(const char& c);
 
-using String		= std::string;
+using String		= wxString;
 using StringSet		= std::set<String>;
 using StringVector	= std::vector<String>;
 
@@ -39,7 +40,7 @@ public:
 	Id& operator=(const Type& t) { _id = t; return *this; }
 	Id& operator=(const Id& id) { _id = id._id; return *this; }
 	operator Type() const { return _id; }
-	operator String() const { return std::to_string(_id); }
+	operator String() const { return wxString::Format("%d",_id); }
 	bool operator==(const Id& id) const { return (_id == id._id); }
 	bool operator==(const Type& t) const { return (_id == t); }
 	bool operator!=(const Id& id) const { return (_id != id._id); }
@@ -59,8 +60,6 @@ constexpr uint16_t NO_CLIENT = 0u;
 
 const String cStringEmpty;
 extern const char* cCharArrEmpty;
-
-void Trimm(String& str);
 
 class StringTable : public std::vector<StringVector> {
 public:
@@ -115,10 +114,10 @@ void StreamContainer(std::ostream& out, const StringContainer& container) {
 			first = false;
 		}
 		if (str.find(',') != String::npos) {
-			out << DQUOTE << str << DQUOTE;
+			out << DQUOTE << str.utf8_str() << DQUOTE;
 			continue;
 		}
-		out << str;
+		out << str.utf8_str();
 	}
 }
 
@@ -129,23 +128,20 @@ String ContainerAsString(const Container& container, int max = -1) {
 
 	for (String key : container) {
 		if (max-- == 0) {
-			line.append("...");
+			line.Append("...");
 			break;
 		}
 		if (!first) {
-			line.append("|");
+			line.Append("|");
 		} else {
 			first = false;
 		}
-		line.append(key);
+		line.Append(key);
 	}
-	line.append("]");
+	line.Append("]");
 	return line;
 }
 
-bool caseInsensitiveStringCompare(const char* str1, const char* str2);
-bool caseInsensitiveStringCompare(const String& str1, const String& str2);
-bool caseInsensitiveStringContains(const char* string, const char* sub);
 bool caseInsensitiveStringContains(const String& string, const String& sub);
 
 void DumpChar(std::istream& in);

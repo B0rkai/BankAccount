@@ -18,22 +18,22 @@ bool IsAlNum(const char& c) {
 AccountNumber::AccountNumber(const String& acc_num) {
 	int counter = 0;
 	bool iban = true;
-	for (const char& c : acc_num) {
+	for (const auto& c : acc_num) {
 		if (!IsAlNum(c)) {
 			continue; // skip
 		}
 		if (iban && IsAlpha(c) && counter < 2) {
-			m_iban_prefix.push_back(c);
+			m_iban_prefix.Append(c);
 			++counter;
 		} else if (iban && IsDigit(c) && counter >= 2) {
-			m_iban_prefix.push_back(c);
+			m_iban_prefix.Append(c);
 			++counter;
 			if (counter == 4) {
 				iban = false;
 			}
 		} else if (IsDigit(c)) {
 			iban = false;
-			m_numbers.push_back(c);
+			m_numbers.Append(c);
 		}
 	}
 }
@@ -45,23 +45,23 @@ String AccountNumber::GetString() const {
 	String ret;
 	int counter = 0;
 	if (!m_iban_prefix.empty()) {
-		ret.append(m_iban_prefix).push_back(' ');
-		for (const char& c : m_numbers) {
+		ret.append(m_iban_prefix).Append(L' ');
+		for (const auto& c : m_numbers) {
 			if (counter == 4) {
-				ret.push_back(' ');
+				ret.Append(L' ');
 				counter = 0;
 			}
-			ret.push_back(c);
+			ret.Append(c);
 			++counter;
 		}
 		return ret;
 	}
-	for (const char& c : m_numbers) {
+	for (const auto& c : m_numbers) {
 		if (counter == 8) {
-			ret.push_back('-');
+			ret.Append(L'-');
 			counter = 0;
 		}
-		ret.push_back(c);
+		ret.Append(c);
 		++counter;
 	}
 	return ret;

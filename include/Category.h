@@ -8,6 +8,6 @@ extern const char* cUncategorized;
 
 class Category : public ManagedType {
 public:
-	Category(const Id id, const char* group, const char* name);
-	Category(const Id id, const char* name);
+	Category(const Id id, const String& group, const String& name);
+	Category(const Id id, const String& name);
 };

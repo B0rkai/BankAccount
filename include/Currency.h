@@ -24,7 +24,6 @@ public:
 	Currency(const String s, const String n, const String sn, char d, char sep, bool c, bool p)
 		: m_sign(s), m_name(n), m_short_name(sn), m_decimal(d), m_separator(sep), m_cents(c), m_sign_prefix(p) {}
 	String PrettyPrint(const int32_t val) const;
-	int32_t ParseAmount(const char* amount) const;
 	inline const char* GetName() const { return m_name.c_str(); }
 	inline const char* GetShortName() const { return m_short_name.c_str(); }
 	virtual CurrencyType Type() const = 0;

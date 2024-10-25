@@ -13,15 +13,15 @@ bool NamedType::HasGroupName() const {
     return !m_group_name.empty();
 }
 
-bool NamedType::CheckName(const char* name) const {
-    return caseInsensitiveStringCompare(m_name.c_str(), name); // group name doesn't count if full match is needed
+bool NamedType::CheckName(const String& name) const {
+    return (m_name.CmpNoCase(name) == 0); // group name doesn't count if full match is needed
 }
 
-bool NamedType::CheckNameContains(const char* text) const {
+bool NamedType::CheckNameContains(const String& text) const {
     return caseInsensitiveStringContains(m_name, text) || (!m_group_name.empty() && caseInsensitiveStringContains(m_group_name.c_str(), text));
 }
 
-bool NamedType::CheckNameContained(const char* text) const {
+bool NamedType::CheckNameContained(const String& text) const {
     if (m_name.empty()) {
         return false;
     }
@@ -40,7 +40,7 @@ void NamedType::Stream(std::ostream& out) const {
     StreamString(out, m_name);
 }
 
-void MappedType::AddKeyword(const char* acc) {
+void MappedType::AddKeyword(const String& acc) {
     (void) m_keywords.insert(acc);
 }
 
@@ -56,10 +56,10 @@ void MappedType::Stream(std::istream& in) {
     StreamContainer(in, m_keywords);
 }
 
-bool MappedType::CheckKeywords(const char* text, bool fullmatch) const {
+bool MappedType::CheckKeywords(const String& text, bool fullmatch) const {
     if (fullmatch) {
         for (const String& key : m_keywords) {
-            if (caseInsensitiveStringCompare(text, key)) {
+            if (text.CmpNoCase(key) == 0) {
                 return true;
             }
         }
@@ -74,7 +74,7 @@ bool MappedType::CheckKeywords(const char* text, bool fullmatch) const {
 }
 
 void NumberedType::Stream(std::ostream& out) const {
-    out << m_id;
+    out << static_cast<Id::Type>(m_id);
 }
 
 ManagedType::ManagedType(const Id id, const String& name)

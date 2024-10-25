@@ -18,27 +18,29 @@ enum ImportColumnsGranit {
 };
 
 void XMLParser(const String& filename, StringTable& data) {
-	std::ifstream in(filename);
+	std::ifstream in(static_cast<const char*>(filename));
 	(void)data.emplace_back();
+	wxMBConvStrictUTF8 conv;
 	char buffer[1000];
 	while (!in.eof()) {
 		in.getline(buffer, 1000);
-		String line(buffer);
-		size_t pos = line.find("<Data");
+		String line(buffer, conv);
+		size_t pos = line.find(L"<Data");
 		if (pos == String::npos) {
 			continue;
 		}
 		if (data.back().size() == Column_SIZE) {
 			(void)data.emplace_back();
 		}
-		size_t vstart = line.find(">", pos) + 1;
-		size_t vend = line.find("<", vstart);
+		size_t vstart = line.find(L">", pos) + 1;
+		size_t vend = line.find(L"<", vstart);
 		if (vend == String::npos) {
 			(void)data.back().emplace_back();
 			continue;
 		}
-		String field(buffer + vstart, vend - vstart);
-		Trimm(field);
+		String field(line, vstart, vend - vstart);
+		field.Trim(false);
+		field.Trim(true);
 		(void)data.back().push_back(field);
 	}
 }
@@ -47,11 +49,10 @@ uint16_t ParseDateFormat(String formatted) {
 	constexpr char DASH('-');
 	size_t pos1 = formatted.find(DASH);
 	size_t pos2 = formatted.find(DASH, pos1+1);
-	formatted[pos1] = '\0'; // do we need this?
-	formatted[pos2] = '\0';
-	int year = std::stoi(formatted);
-	int month = std::stoi(&formatted[pos1 + 1]);
-	int day = std::stoi(&formatted[pos2 + 1]);
+	long year, month, day;
+	formatted.SubString(0, pos1 - 1).ToLong(&year);
+	formatted.SubString(pos1+1, pos2 - 1).ToLong(&month);
+	formatted.SubString(pos2+1, wxString::npos).ToLong(&day);
 	return DMYToExcelSerialDate(day, month, year);
 }
 
@@ -74,7 +75,7 @@ void ImportFromFile(const String& filename, RawImportData& import_data) {
 		}
 		raw.date = ParseDateFormat((*rit)[Column_DATE]);
 		raw.type = (*rit)[Column_TYPE];
-		raw.amount = std::stoul((*rit)[Column_AMOUNT]);
+		(*rit)[Column_AMOUNT].ToLong(&raw.amount);
 		raw.memo = (*rit)[Column_MEMO];
 		if (++cnt == (size - 1)) {
 			break;

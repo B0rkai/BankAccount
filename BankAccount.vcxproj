@@ -129,6 +129,8 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Program Files (x86)\OpenXLSX.Library\include\OpenXLSX\headers;C:\Program Files (x86)\OpenXLSX.Library\include\OpenXLSX</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <Optimization>Full</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

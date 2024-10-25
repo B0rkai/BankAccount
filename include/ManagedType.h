@@ -18,13 +18,13 @@ class NamedType {
 public:
 	inline NamedType(const String& name) : m_name(name) {}
 	inline const String& GetName() const { return m_name; }
-	inline void SetGroupName(const char* group) { m_group_name = group; }
+	inline void SetGroupName(const String& group) { m_group_name = group; }
 	inline const String& GetGroupName() const { return m_group_name; }
 	String GetFullName() const;
 	bool HasGroupName() const;
-	virtual bool CheckName(const char* name) const;
-	virtual bool CheckNameContains(const char* text) const;
-	virtual bool CheckNameContained(const char* text) const;
+	virtual bool CheckName(const String& name) const;
+	virtual bool CheckNameContains(const String& text) const;
+	virtual bool CheckNameContained(const String& text) const;
 	void Stream(std::ostream& out) const;
 };
 
@@ -34,8 +34,8 @@ protected:
 	inline StringSet& GetKeywords() { return m_keywords; }
 public:
 	inline const StringSet& GetKeywords() const { return m_keywords; }
-	bool CheckKeywords(const char* text, bool fullmatch = false) const;
-	void AddKeyword(const char* acc);
+	bool CheckKeywords(const String& text, bool fullmatch = false) const;
+	void AddKeyword(const String& acc);
 	void Merge(const MappedType* other);
 	virtual void DoMerge(const MappedType* other) {}; // optional for extra data
 	void Stream(std::ostream& out) const;

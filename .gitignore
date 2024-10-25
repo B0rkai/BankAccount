@@ -367,4 +367,5 @@ external/**.lib
 external/**/*.h
 
 # program files
-save/**
+log/**
+db/**

@@ -12,9 +12,9 @@ Transaction::Transaction(IAccount* parent, const int32_t amount, const uint16_t 
 StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
     StringVector res;
     res.push_back(GetDateFormat(m_date));
-    res.emplace_back(resif->GetTransactionType(m_type_id));
+    res.push_back(resif->GetTransactionType(m_type_id));
     res.push_back(m_parent->GetCurrency()->PrettyPrint(m_amount));
-    res.emplace_back(resif->GetClientName(m_client_id));
+    res.push_back(resif->GetClientName(m_client_id));
     if (m_memo_ptr) {
         res.emplace_back(*m_memo_ptr);
     } else {
@@ -62,7 +62,7 @@ CurrencyType Transaction::GetCurrencyType() const {
 }
 
 void Transaction::Stream(std::ostream& out) const {
-    out << m_amount << COMMA << m_date << COMMA << m_client_id << COMMA << m_type_id << COMMA << m_category_id << COMMA;
+    out << m_amount << COMMA << m_date << COMMA << (Id::Type)m_client_id << COMMA << (Id::Type)m_type_id << COMMA << (Id::Type)m_category_id << COMMA;
     if (m_memo_ptr) {
         StreamString(out, *m_memo_ptr);
     }

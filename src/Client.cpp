@@ -1,8 +1,8 @@
 #include <sstream>
 #include "Client.h"
 
-Client::Client(const Id id, const char* name)
-: ManagedType(id, name) {}
+Client::Client(const Id id, const String& name)
+	: ManagedType(id, name) {}
 
 void Client::StreamIn(std::istream& in) {
 	ManagedType::StreamIn(in);
@@ -19,7 +19,7 @@ void Client::AddAccountNumber(const AccountNumber& acc) {
 	m_account_numbers.push_back(AccountNumber(acc));
 }
 
-void Client::AddAccountNumber(const char* acc) {
+void Client::AddAccountNumber(const String& acc) {
 	m_account_numbers.push_back(AccountNumber(acc));
 }
 
@@ -30,7 +30,7 @@ void Client::Merge(const Client* other) {
 	}
 }
 
-bool Client::CheckAccountNumbers(const char* acc) const {
+bool Client::CheckAccountNumbers(const String& acc) const {
 	return (bool)m_account_numbers.Check(acc);
 }
 

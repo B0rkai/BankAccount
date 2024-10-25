@@ -7,7 +7,7 @@ protected:
 	PtrVector<Child> m_children;
 	const bool m_hasDefault;
 	const bool m_full_mapping = false;
-	Logger m_logger;
+	Logger& m_logger;
 	mutable unsigned int m_new_children = 0;
 
 	Child* Get(const Id id) {
@@ -20,7 +20,7 @@ protected:
 
 public:
 	ManagerType(const char* log_id, const char* log_name, Child* default_child = nullptr, const bool full_mapping = false)
-	: m_children(true), m_hasDefault(default_child), m_full_mapping(full_mapping), m_logger(log_id, log_name) {
+	: m_children(true), m_hasDefault(default_child), m_full_mapping(full_mapping), m_logger(Logger::GetRef(log_id, log_name)) {
 		if (m_hasDefault) {
 			m_children.push_back(default_child);
 		}
@@ -54,14 +54,14 @@ public:
 		return table;
 	}
 
-	const char* GetName(const Id id) const {
-		return m_children.at(id)->GetName().c_str();
+	String GetName(const Id id) const {
+		return m_children.at(id)->GetName();
 	}
 	String GetFullName(const Id id) const {
 		return m_children.at(id)->GetFullName();
 	}
 
-	IdSet SearchIds(const char* word, bool full_name = false) const {
+	IdSet SearchIds(const String& word, bool full_name = false) const {
 		if (strlen(word) == 0) {
 			return {}; // cannot match
 		}
@@ -74,14 +74,14 @@ public:
 		if (!full_name) {
 			for (const Child* child : m_children) {
 				if (child->CheckNameContains(word)) {
-					m_logger.LogDebug() << "NameContains() match of ID: " << child->GetId() << " " << child->GetName() << " with '" << word << "'";
+					m_logger.LogDebug() << "NameContains() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
 					results.insert(child->GetId());
 				}
 			}
 		}
 		for (const Child* child : m_children) {
 			if (child->CheckKeywords(word, m_full_mapping)) {
-				m_logger.LogDebug() << "CheckKeywords() match of ID: " << child->GetId() << " " << child->GetName() << " with '" << word << "'";
+				m_logger.LogDebug() << "CheckKeywords() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
 				results.insert(child->GetId());
 			}
 		}
@@ -91,14 +91,14 @@ public:
 		// last resort
 		for (const Child* child : m_children) {
 			if (child->CheckNameContained(word)) {
-				m_logger.LogWarn() << "CheckNameContained() match of ID: " << child->GetId() << " " << child->GetName() << " with '" << word << "'";
+				m_logger.LogWarn() << "CheckNameContained() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
 				results.insert(child->GetId());
 			}
 		}
 		return results;
 	}
 
-	Id GetOrCreateId(const char* name) {
+	Id GetOrCreateId(const String& name) {
 		if (strlen(name) == 0) {
 			return 0; // NO NAME
 		}
@@ -107,7 +107,7 @@ public:
 		if (ids.size() == 1) {
 			return *ids.begin();
 		} else if (ids.size() > 1) {
-			m_logger.LogWarn() << "Multiple choices for '" << name << "' are: " << ContainerAsString(ids);
+			m_logger.LogWarn() << "Multiple choices for '" << name.utf8_str() << "' are: " << ContainerAsString(ids);
 		}
 		// check count
 		size_t s = size();
@@ -117,14 +117,14 @@ public:
 		}
 		// create new client
 		m_children.push_back(new Child((Id)s, name));
-		m_logger.LogDebug() << "NEW child of ID: " << s << " '" << name << "'  created";
+		m_logger.LogDebug() << "NEW child of ID: " << s << " '" << name.utf8_str() << "'  created";
 		++m_new_children;
 		return (Id)s;
 	}
 
 	void AddKeyword(const Id id, const String& keyword) {
-		m_children.at(id)->AddKeyword(keyword.c_str());
-		m_logger.LogInfo() << "Keyword '" << keyword << "' added to ID " << id;
+		m_children.at(id)->AddKeyword(keyword);
+		m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id;
 	}
 
 	void Merge(const IdSet froms, const Id to) {
@@ -142,7 +142,7 @@ public:
 			// need to iterate, because direct access will be broken after the first erase
 			for (auto it = m_children.begin(); it < m_children.end(); ++it) {
 				if ((*it)->GetId() == from) {
-					m_logger.LogInfo() << "ID: " << (*it)->GetId() << " " << (*it)->GetName() << " is erased";
+					m_logger.LogInfo() << "ID: " << (Id::Type)((*it)->GetId()) << " " << (*it)->GetName().utf8_str() << " is erased";
 					m_children.erase(it);
 					break;
 				}
@@ -181,11 +181,11 @@ public:
 			if (namecount == 2) {
 				StreamString(in, groupname);
 				StreamString(in, name);
-				m_children.push_back(new Child(id, name.c_str()));
-				m_children.back()->SetGroupName(groupname.c_str());
+				m_children.push_back(new Child(id, name));
+				m_children.back()->SetGroupName(groupname);
 			} else if (namecount == 1) {
 				StreamString(in, name);
-				m_children.push_back(new Child(id, name.c_str()));
+				m_children.push_back(new Child(id, name));
 			} else {
 				m_logger.LogError() << "namecount out of range (1-2)";
 				throw;

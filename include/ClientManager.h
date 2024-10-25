@@ -15,8 +15,8 @@ public:
 	~ClientManager();
 
 	// create new client if not found
-	Id GetClientId(const char* name);
-	void AddAccountNumber(const Id id, const char* acc_number);
+	Id GetClientId(const String& name);
+	void AddAccountNumber(const Id id, const String& acc_number);
 
 	virtual StringTable GetInfos() const override;
 

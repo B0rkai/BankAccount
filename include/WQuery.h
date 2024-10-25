@@ -35,7 +35,7 @@ class MergeQuery : public WQueryElement {
 protected:
     Id m_target_id = INVALID_ID;
     IdSet m_others;
-    Logger m_logger;
+    Logger& m_logger;
     virtual bool IsOk() const;
     virtual void PreResolve();
     virtual bool CheckTransaction(Transaction* tr) override;

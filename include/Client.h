@@ -8,7 +8,7 @@
 class Client : public ManagedType {
 	AccountNumberSet m_account_numbers;
 public:
-	Client(const Id id, const char* name);
+	Client(const Id id, const String& name);
 
 	virtual void StreamIn(std::istream& in) override;
 	virtual void StreamOut(std::ostream& out) const override;
@@ -18,11 +18,11 @@ public:
 
 // Write Access
 	void AddAccountNumber(const AccountNumber& acc);
-	void AddAccountNumber(const char* acc);
+	void AddAccountNumber(const String& acc);
 	void Merge(const Client* other);
 
 // Query
-	bool CheckAccountNumbers(const char* acc) const;
+	bool CheckAccountNumbers(const String& acc) const;
 	virtual String GetInfo() const;
 };
 
