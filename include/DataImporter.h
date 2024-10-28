@@ -10,6 +10,7 @@ struct RawTransactionData {
 	String client;
 	String client_account_number;
 	String memo;
+	String cat;
 };
 
 enum CurrencyType : Id::Type;

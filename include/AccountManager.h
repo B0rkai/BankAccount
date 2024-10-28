@@ -18,6 +18,7 @@ class Query::Result;
 class WQuery;
 class Account;
 class Client;
+struct RawTransactionData;
 
 class AccountManager : public IDataBase, public IIdResolve, public INameResolve, public IWAccount {
 	ManagerType<TransactionType> m_ttype_man;
@@ -38,6 +39,7 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve,
 
 	virtual IdSet GetIds(const QueryTopic topic, const String& name) const override;
 	virtual String GetInfo(const QueryTopic topic, const Id id) const override;
+	virtual String GetName(const QueryTopic topic, const Id id) const override;
 
 	virtual void Merge(const QueryTopic topic, const IdSet& from, const Id to) override;
 	inline virtual IWCategorize* GetCategorizingInterface() override { return &m_category_system; }
@@ -50,6 +52,7 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve,
 	void StreamAccounts(std::ostream& out) const;
 	void StreamAccounts(std::istream& in);
 
+	void ProcessOne(Account* acc, const RawTransactionData& data);
 protected:
 	void Stream(std::ostream& out) const;
 	void Stream(std::istream& in);

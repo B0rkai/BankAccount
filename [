@@ -1,0 +1,44 @@
+[2024.10.28][01:36:49.278][MAIN][INFO]: Logging system initialized
+[2024.10.28][01:36:49.279][TTYM][DEBUG]: Logger object of Transaction Type Manager is created
+[2024.10.28][01:36:49.279][CLIM][DEBUG]: Logger object of Client Manager is created
+[2024.10.28][01:36:49.279][CATM][DEBUG]: Logger object of Category System is created
+[2024.10.28][01:36:49.279][ACCM][DEBUG]: Logger object of Account Manager is created
+[2024.10.28][01:36:49.279][MAIN][DEBUG]: Loading BAF database file from: db\BData.baf
+[2024.10.28][01:36:49.280][ACCM][DEBUG]: Streaming in from file starts
+[2024.10.28][01:36:49.281][CATM][DEBUG]: 34 children loaded from file
+[2024.10.28][01:36:49.283][CLIM][DEBUG]: 840 children loaded from file
+[2024.10.28][01:36:49.283][TTYM][DEBUG]: 22 children loaded from file
+[2024.10.28][01:36:49.283][ACCO][DEBUG]: Logger object of Bank Account object is created
+[2024.10.28][01:36:49.292][ACCM][INFO]: HUF account Régi (11773377-04983110) of OTP loaded from file with 2894 transactions
+[2024.10.28][01:36:49.301][ACCM][INFO]: HUF account Fő (12100011-17882600) of Gránit Bank loaded from file with 5026 transactions
+[2024.10.28][01:36:49.302][ACCM][INFO]: HUF account EV (12100011-10666254) of Gránit Bank loaded from file with 480 transactions
+[2024.10.28][01:36:49.302][ACCM][INFO]: EUR account Deviza (12100011-19018713) of Gránit Bank loaded from file with 69 transactions
+[2024.10.28][01:36:49.302][ACCM][DEBUG]: Streaming in from file finished
+[2024.10.28][01:36:49.302][MAIN][INFO]: Database loaded from saved file
+[2024.10.28][01:37:08.074][TTYM][DEBUG]: Logger object of Transaction Type Manager is destroyed
+[2024.10.28][01:37:08.075][CLIM][DEBUG]: Logger object of Client Manager is destroyed
+[2024.10.28][01:37:08.075][CATM][DEBUG]: Logger object of Category System is destroyed
+[2024.10.28][01:37:08.075][ACCM][DEBUG]: Logger object of Account Manager is destroyed
+[2024.10.28][01:37:08.075][ACCO][DEBUG]: Logger object of Bank Account object is destroyed
+[2024.10.28][01:40:50.678][MAIN][INFO]: Logging system initialized
+[2024.10.28][01:40:50.679][TTYM][DEBUG]: Logger object of Transaction Type Manager is created
+[2024.10.28][01:40:50.679][CLIM][DEBUG]: Logger object of Client Manager is created
+[2024.10.28][01:40:50.679][CATM][DEBUG]: Logger object of Category System is created
+[2024.10.28][01:40:50.679][ACCM][DEBUG]: Logger object of Account Manager is created
+[2024.10.28][01:40:50.679][MAIN][DEBUG]: Loading BAF database file from: db\BData.baf
+[2024.10.28][01:40:50.680][ACCM][DEBUG]: Streaming in from file starts
+[2024.10.28][01:40:50.680][CATM][DEBUG]: 34 children loaded from file
+[2024.10.28][01:40:50.682][CLIM][DEBUG]: 840 children loaded from file
+[2024.10.28][01:40:50.683][TTYM][DEBUG]: 22 children loaded from file
+[2024.10.28][01:40:50.683][ACCO][DEBUG]: Logger object of Bank Account object is created
+[2024.10.28][01:40:50.690][ACCM][INFO]: HUF account Régi (11773377-04983110) of OTP loaded from file with 2894 transactions
+[2024.10.28][01:40:50.698][ACCM][INFO]: HUF account Fő (12100011-17882600) of Gránit Bank loaded from file with 5026 transactions
+[2024.10.28][01:40:50.699][ACCM][INFO]: HUF account EV (12100011-10666254) of Gránit Bank loaded from file with 480 transactions
+[2024.10.28][01:40:50.699][ACCM][INFO]: EUR account Deviza (12100011-19018713) of Gránit Bank loaded from file with 69 transactions
+[2024.10.28][01:40:50.699][ACCM][DEBUG]: Streaming in from file finished
+[2024.10.28][01:40:50.699][MAIN][INFO]: Database loaded from saved file
+[2024.10.28][01:41:33.662][TTYM][DEBUG]: Logger object of Transaction Type Manager is destroyed
+[2024.10.28][01:41:33.663][CLIM][DEBUG]: Logger object of Client Manager is destroyed
+[2024.10.28][01:41:33.663][CATM][DEBUG]: Logger object of Category System is destroyed
+[2024.10.28][01:41:33.663][ACCM][DEBUG]: Logger object of Account Manager is destroyed
+[2024.10.28][01:41:33.663][ACCO][DEBUG]: Logger object of Bank Account object is destroyed

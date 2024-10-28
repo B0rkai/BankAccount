@@ -1,5 +1,6 @@
 #pragma once
 #include <map>
+#include <unordered_map>
 #include "CommonTypes.h"
 
 #define GETQUERYTOPIC(topic) inline virtual QueryTopic GetTopic() const override { return QueryTopic::topic; }
@@ -94,27 +95,44 @@ private:
 };
 
 class QueryCurrencySum : public QuerySum {
+protected:
 	GETQUERYTOPIC(CURRENCY)
 	virtual bool CheckTransaction(const Transaction* tr) override;
-protected:
 	std::map<CurrencyType, Result> m_results;
 public:
 	QueryCurrencySum() = default;
 	virtual ~QueryCurrencySum() = default;
+	size_t GetCount() const;
 	virtual String GetStringResult();
 	StringTable GetTableResult() const;
 	inline virtual std::map<CurrencyType, Result> GetResults() const { return m_results; }
+	int32_t GetSumValue(CurrencyType type) const;
 };
 
-class QueryCategorySum : public QueryCurrencySum {
-	GETQUERYTOPIC(CATEGORY)
-	std::map<Id, QueryCurrencySum> m_subqueries;
-	std::map<Id, String> m_category_names;
-	virtual bool CheckTransaction(const Transaction* tr) override;
+class TopicSubQuery : public QueryCurrencySum {
+	String m_name;
 public:
+	inline void SetName(const String& name) { m_name = name; }
+	inline const String& GetName() const { return m_name; }
+	bool CheckTransaction(const Transaction* tr);
+};
+
+class QuerySumByTopic : public QueryCurrencySum {
+	std::unordered_map<Id::Type, TopicSubQuery> m_subqueries;
+	virtual bool CheckTransaction(const Transaction* tr) override;
 	virtual String GetStringResult();
 	StringTable GetTableResult() const;
 	virtual std::map<CurrencyType, Result> GetResults() const;
+};
+
+class QueryCategorySum : public QuerySumByTopic {
+	GETQUERYTOPIC(CATEGORY)
+};
+class QueryTypeSum : public QuerySumByTopic {
+	GETQUERYTOPIC(TYPE)
+};
+class QueryClientSum : public QuerySumByTopic {
+	GETQUERYTOPIC(CLIENT)
 };
 
 class QueryByNumber : public QueryElement {
@@ -124,7 +142,6 @@ public:
 	void SetMax(const int32_t max);
 	void SetMin(const int32_t min);
 	void SetTarget(const int32_t trg);
-protected:
 	enum Type {
 		INVALID,
 		EQUAL,
@@ -132,6 +149,7 @@ protected:
 		LESS,
 		RANGE
 	};
+protected:
 	Type m_type = INVALID;
 	int32_t m_max = 0;
 	int32_t m_min = 0;
@@ -149,6 +167,7 @@ class QueryAmount : public QueryByNumber {
 class QueryDate : protected QueryByNumber {
 	GETQUERYTOPIC(DATUM)
 	virtual bool CheckTransaction(const Transaction* tr) override;
+	virtual String GetStringResult() const override;
 public:
 	inline void SetMax(uint16_t max) { QueryByNumber::SetMax((int32_t)max); }
 	inline void SetMin(uint16_t min) { QueryByNumber::SetMin((int32_t)min); }

@@ -3,6 +3,14 @@
 
 #include "Currency.h"
 
+const double EXCHANGE_RATES[Currency_Count][Currency_Count] = {
+	{0.,0.,0.,0.,4.0421},
+	{0.,0.,0.,0.,3.7428},
+	{0.,0.,0.,0.,4.8511},
+	{0.,0.,0.,0.,4.3178},
+	{1./4.0421, 1./3.7428, 1./4.8511, 1./4.3178, 1.}
+};
+
 void Currency::RecursiveDigits(std::stringstream& str, uint32_t num) const {
 	static int depth = 0;
 	uint32_t div = num / 1000u;
@@ -174,3 +182,17 @@ SwissFranc * SwissFranc::GetObject() {
 	return s_object;
 }
 
+String Money::PrettyPrint() const {
+	return MakeCurrency(m_currency_type)->PrettyPrint(m_amount);
+}
+
+String Money::PrettyPrint(CurrencyType type) const {
+	return MakeCurrency(type)->PrettyPrint(GetValue(type));
+}
+
+int32_t Money::GetValue(CurrencyType type) const {
+	if (type >= Currency_Count) {
+		throw "Money::GetValue() unexpected currency type";
+	}
+	return m_amount * EXCHANGE_RATES[m_currency_type][type];
+}

@@ -69,8 +69,15 @@ enum CtrIds {
 	QUERY_BUTT = 10001,
 	MERGE_BUTT,
 	KEYWORD_BUTT,
-	MENU_DEBUG_SAVE,
 	CHKBX_DATE_FILTER,
+	CLIENT_FILT_TEXT_CTRL,
+	CATEG_FILT_TEXT_CTRL,
+	TYPE_FILT_TEXT_CTRL,
+	MERGE_TO_TEXT_CTRL,
+	MERGE_FROM_TEXT_CTRL,
+	ADD_KEYWORD_TEXT_CTRL,
+	TOPIC_SELECTOR_COMBO_CTRL,
+	MENU_DEBUG_SAVE,
 	MENU_LOAD,
 	MENU_EXTRACT,
 	MENU_SAVE,
@@ -87,6 +94,13 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_BUTTON(MERGE_BUTT, MergeButtonClicked)
 	EVT_BUTTON(KEYWORD_BUTT, AddKeywordButtonClicked)
 	EVT_CHECKBOX(CHKBX_DATE_FILTER, DateFilterToggle)
+	EVT_TEXT(CLIENT_FILT_TEXT_CTRL, IdChanged)
+	EVT_TEXT(CATEG_FILT_TEXT_CTRL, IdChanged)
+	EVT_TEXT(TYPE_FILT_TEXT_CTRL, IdChanged)
+	EVT_TEXT(MERGE_TO_TEXT_CTRL, IdChanged)
+	EVT_TEXT(MERGE_FROM_TEXT_CTRL, IdChanged)
+	EVT_COMBOBOX(TOPIC_SELECTOR_COMBO_CTRL, TopicChanged)
+	EVT_TEXT(ADD_KEYWORD_TEXT_CTRL, IdChanged)
 	EVT_MENU(MENU_LOAD, LoadFile)
 	EVT_MENU(MENU_EXTRACT, LoadFile)
 	EVT_MENU(MENU_SAVE, SaveFile)
@@ -152,9 +166,142 @@ void cMain::List(wxCommandEvent& evt) {
 	} else {
 		return;
 	}
-	m_search_result_text->SetInitialSize();
-	wxRect rect = m_search_result_text->GetRect();
-	m_window->SetScrollbars(5, 5, rect.width, rect.height);
+}
+
+struct Previews {
+	String client_filter;
+	String category_filter;
+	String type_filter;
+
+	String merge_to;
+	String merge_from;
+
+	String keyword_to;
+	operator String() {
+		String all;
+		all.append(client_filter).append(category_filter).append(type_filter).append(merge_to).append(merge_from).append(keyword_to);
+		return all;
+	}
+	void clear() {
+		client_filter = cStringEmpty;
+		category_filter = cStringEmpty;
+		type_filter = cStringEmpty;
+
+		merge_to = cStringEmpty;
+		merge_from = cStringEmpty;
+
+		keyword_to = cStringEmpty;
+	}
+};
+
+Previews g_previews;
+
+QueryTopic ResolveQueryTopic(const String& text) {
+	if (text == "Client") {
+		return QueryTopic::CLIENT;
+	} else if (text == "Type") {
+		return QueryTopic::TYPE;
+	} else if (text == "Category") {
+		return QueryTopic::CATEGORY;
+	}
+	return QueryTopic::WRITE;
+}
+
+void cMain::Preview(CtrIds ctrl_id) {
+	String value;
+	String* info = nullptr;
+	QueryTopic topic;
+	switch (ctrl_id) {
+	case CLIENT_FILT_TEXT_CTRL:
+		value = m_client_filter_textctrl->GetValue();
+		info = &g_previews.client_filter;
+		*info = "Client filter match:\n";
+		topic = QueryTopic::CLIENT;
+		break;
+	case CATEG_FILT_TEXT_CTRL:
+		value = m_category_filter_textctrl->GetValue();
+		info = &g_previews.category_filter;
+		*info = "Category filter match:\n";
+		topic = QueryTopic::CATEGORY;
+		break;
+	case TYPE_FILT_TEXT_CTRL:
+		value = m_type_filter_textctrl->GetValue();
+		info = &g_previews.type_filter;
+		*info = "Type filter match:\n";
+		topic = QueryTopic::TYPE;
+		break;
+
+	case MERGE_TO_TEXT_CTRL:
+		value = m_merge_to_textctrl->GetValue();
+		info = &g_previews.merge_to;
+		*info = "Merge to:\n";
+		topic = ResolveQueryTopic(m_topic_combo->GetValue());
+		break;
+	case MERGE_FROM_TEXT_CTRL:
+		value = m_merge_from_textctrl->GetValue();
+		info = &g_previews.merge_from;
+		*info = "Merge from:\n";
+		topic = ResolveQueryTopic(m_topic_combo->GetValue());
+		break;
+
+	case ADD_KEYWORD_TEXT_CTRL:
+		value = m_keyword_target_textctrl->GetValue();
+		info = &g_previews.keyword_to;
+		*info = "Add keyword to:\n";
+		topic = ResolveQueryTopic(m_topic_combo->GetValue());
+		break;
+	default:
+		return;
+	}
+	if (value.empty()) {
+		*info = cStringEmpty;
+		UIOutputText(g_previews);
+		return;
+	}
+	StringVector vec = ParseMultiValueString(value);
+	String topic_str = m_topic_combo->GetValue();
+	INameResolve* resolve = m_bank_file.get();
+	IdSet ids;
+	for (String& val : vec) {
+		if (val.IsNumber()) {
+			unsigned long tmp;
+			value.ToULong(&tmp);
+			ids.emplace((Id::Type)tmp);
+		} else {
+			ids.merge(resolve->GetIds(topic, val));
+		}
+	}
+	for (Id id : ids) {
+		info->append(resolve->GetInfo(topic, id));
+		info->append(ENDL);
+	}
+	UIOutputText(g_previews);
+}
+
+void cMain::IdChanged(wxCommandEvent& evt) {
+	evt.Skip();
+	Preview((CtrIds)evt.GetId());
+}
+
+void cMain::TopicChanged(wxCommandEvent& evt) {
+	if (!m_client_filter_textctrl->GetValue().empty()) {
+		Preview(CLIENT_FILT_TEXT_CTRL);
+	}
+	if (!m_category_filter_textctrl->GetValue().empty()) {
+		Preview(CATEG_FILT_TEXT_CTRL);
+	}
+	if (!m_type_filter_textctrl->GetValue().empty()) {
+		Preview(TYPE_FILT_TEXT_CTRL);
+	}
+	if (!m_merge_to_textctrl->GetValue().empty()) {
+		Preview(MERGE_TO_TEXT_CTRL);
+	}
+	if (!m_merge_from_textctrl->GetValue().empty()) {
+		Preview(MERGE_FROM_TEXT_CTRL);
+	}
+	if (!m_keyword_target_textctrl->GetValue().empty()) {
+		Preview(ADD_KEYWORD_TEXT_CTRL);
+	}
 }
 
 void cMain::DateFilterToggle(wxCommandEvent& evt) {
@@ -176,10 +323,6 @@ void cMain::Categorize(wxCommandEvent& evt) {
 	evt.Skip();
 	if (!m_bank_file) {
 		UIOutputText("First load the database");
-		return;
-	}
-	if (!m_categorize_chkb->GetValue()) {
-		UIOutputText("No Query");
 		return;
 	}
 	WQuery wq;
@@ -226,25 +369,11 @@ void cMain::DoLoad() {
 	UpdateStatusBar();
 }
 
-StringVector ParseMultiValueString(const wxString& val) {
-	StringVector vals;
-	size_t pos = val.find(';');
-	if (pos == String::npos) {
-		vals.emplace_back(val.c_str());
-	} else {
-		size_t prevpos = 0;
-		do {
-			val[pos] = '\0';
-			vals.emplace_back(val.c_str() + prevpos);
-			prevpos = pos + 1;
-		} while ((pos = val.find(';', pos + 1)) != String::npos);
-		vals.emplace_back(val.c_str() + prevpos);
-	}
-	return vals;
-}
-
 void cMain::UIOutputText(const String& str) {
 	m_search_result_text->SetLabelText(str);
+	m_search_result_text->SetInitialSize();
+	wxRect rect = m_search_result_text->GetRect();
+	m_window->SetScrollbars(5, 5, rect.width, rect.height);
 }
 
 void cMain::PrepareQuery(Query& q) {
@@ -284,9 +413,17 @@ void cMain::PrepareQuery(Query& q) {
 		qdate->SetMax(DMYToExcelSerialDate(d2.GetDay(), d2.GetMonth() + 1, d2.GetYear()));
 		q.push_back((QueryElement*)qdate);
 	}
+	bool sumq = false;
 	if (m_category_sum_chkb->GetValue()) {
 		q.push_back(new QueryCategorySum);
-	} else {
+		sumq = true;
+	} if (m_client_sum_chkb->GetValue()) {
+		q.push_back(new QueryClientSum);
+		sumq = true;
+	} if (m_type_sum_chkb->GetValue()) {
+		q.push_back(new QueryTypeSum);
+		sumq = true;
+	} if (!sumq) {
 		q.push_back(new QueryCurrencySum);
 	}
 }
@@ -324,15 +461,17 @@ void cMain::InitControls() {
 	const wxSize cDefaultCtrlSize(110, 25);
 
 	new wxStaticText(m_main_panel, wxID_ANY, "Client filter", wxPoint(HORIZONTAL_ALIGN_1, 12));
-	m_client_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	m_client_filter_textctrl = new wxTextCtrl(m_main_panel, CLIENT_FILT_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_1), cDefaultCtrlSize);
 	new wxStaticText(m_main_panel, wxID_ANY, "Category filter", wxPoint(HORIZONTAL_ALIGN_1, 62));
-	m_category_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+	m_category_filter_textctrl = new wxTextCtrl(m_main_panel, CATEG_FILT_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_2), cDefaultCtrlSize);
 	new wxStaticText(m_main_panel, wxID_ANY, "Type filter", wxPoint(HORIZONTAL_ALIGN_1, 112));
-	m_type_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+	m_type_filter_textctrl = new wxTextCtrl(m_main_panel, TYPE_FILT_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
 	m_show_list_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transaction list", wxPoint(HORIZONTAL_ALIGN_2, 30));
 	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by categories", wxPoint(HORIZONTAL_ALIGN_2, 50));
-	m_use_date_filter_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "filter date", wxPoint(HORIZONTAL_ALIGN_2, 70));
+	m_client_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by clients", wxPoint(HORIZONTAL_ALIGN_2, 70));
+	m_type_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by types", wxPoint(HORIZONTAL_ALIGN_2, 90));
+	m_use_date_filter_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "filter date", wxPoint(HORIZONTAL_ALIGN_2, 110));
 	m_query_but = new wxButton(m_main_panel, QUERY_BUTT, "Query", wxPoint(HORIZONTAL_ALIGN_2, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
 	m_date_from_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(350, 10));
@@ -340,18 +479,18 @@ void cMain::InitControls() {
 	m_date_to_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 10));
 	m_date_to_calendarctrl->Show(false);
 
-	new wxStaticText(m_main_panel, wxID_ANY, "Merge from IDs", wxPoint(HORIZONTAL_ALIGN_3, 12));
-	m_merge_from_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_1), cDefaultCtrlSize);
-	new wxStaticText(m_main_panel, wxID_ANY, "Merge to ID", wxPoint(HORIZONTAL_ALIGN_3, 62));
-	m_merge_to_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge to ID", wxPoint(HORIZONTAL_ALIGN_3, 12));
+	m_merge_to_textctrl = new wxTextCtrl(m_main_panel, MERGE_TO_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge from IDs", wxPoint(HORIZONTAL_ALIGN_3, 62));
+	m_merge_from_textctrl = new wxTextCtrl(m_main_panel, MERGE_FROM_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_2), cDefaultCtrlSize);
 	m_merge_but = new wxButton(m_main_panel, MERGE_BUTT, "Merge", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
 	wxString merrge_topic_choices[3] = {"Client", "Type", "Category"};
 	new wxStaticText(m_main_panel, wxID_ANY, "Topic Selector", wxPoint(HORIZONTAL_ALIGN_4, 12));
-	m_topic_combo = new wxComboBox(m_main_panel, wxID_ANY, "Client", wxPoint(HORIZONTAL_ALIGN_4, VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(3, merrge_topic_choices));
+	m_topic_combo = new wxComboBox(m_main_panel, TOPIC_SELECTOR_COMBO_CTRL, "Client", wxPoint(HORIZONTAL_ALIGN_4, VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(3, merrge_topic_choices));
 
 	new wxStaticText(m_main_panel, wxID_ANY, "Add keyword to ID", wxPoint(HORIZONTAL_ALIGN_5, 12));
-	m_keyword_target_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	m_keyword_target_textctrl = new wxTextCtrl(m_main_panel, ADD_KEYWORD_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_1), cDefaultCtrlSize);
 	new wxStaticText(m_main_panel, wxID_ANY, "Keyword", wxPoint(HORIZONTAL_ALIGN_5, 62));
 	m_keyword_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_2), cDefaultCtrlSize);
 
@@ -380,9 +519,6 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 
 	result.append(PrettyTable(table));
 	UIOutputText(result);
-	m_search_result_text->SetInitialSize();
-	wxRect rect = m_search_result_text->GetRect();
-	m_window->SetScrollbars(5,5, rect.width, rect.height);
 }
 
 void cMain::MergeButtonClicked(wxCommandEvent& evt) {
@@ -457,15 +593,20 @@ void cMain::AddKeywordButtonClicked(wxCommandEvent& evt) {
 void cMain::Test(wxCommandEvent& evt) {
 	evt.Skip();
 	try {
-		StringTable table = m_bank_file->Import(L"C:\\Users\\borka\\Downloads\\HISTORY_00038695_2024-10-24T02_20_23.xml");
+
+		wxFileDialog
+			openFileDialog(this, _("Import from file"), "", "",
+						   "data files (*.xml;*.csv)|*xml;*.csv", wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+		if (openFileDialog.ShowModal() == wxID_CANCEL) {
+			LogInfo() << "Import cancelled by user";
+			return;     // the user changed idea...
+		}
+		StringTable table = m_bank_file->Import(openFileDialog.GetPath());
 		UIOutputText(PrettyTable(table));
 	} catch (const char*& problem) {
 		String error = "ERROR: ";
 		error.append(problem);
 		m_status_bar->SetStatusText(error);
 	}
-	m_search_result_text->SetInitialSize();
-	wxRect rect = m_search_result_text->GetRect();
-	m_window->SetScrollbars(5, 5, rect.width, rect.height);
 	UpdateStatusBar();
 }

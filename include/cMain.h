@@ -8,6 +8,7 @@
 // wxButton;
 class BankAccountFile;
 class Query;
+enum CtrIds;
 
 class cMain :
     public wxFrame {
@@ -26,8 +27,10 @@ class cMain :
 
     wxCheckBox* m_show_list_chkb = nullptr;
     wxCheckBox* m_category_sum_chkb = nullptr;
+    wxCheckBox* m_client_sum_chkb = nullptr;
+    wxCheckBox* m_type_sum_chkb = nullptr;
     wxCheckBox* m_use_date_filter_chkb = nullptr;
-    wxCheckBox* m_categorize_chkb = nullptr;
+    //wxCheckBox* m_categorize_chkb = nullptr;
     wxButton* m_query_but = nullptr;
 
     wxCalendarCtrl* m_date_from_calendarctrl = nullptr;
@@ -50,6 +53,9 @@ class cMain :
     void InitMenu();
     void InitControls();
     void List(wxCommandEvent& evt);
+    void Preview(CtrIds id);
+    void IdChanged(wxCommandEvent& evt);
+    void TopicChanged(wxCommandEvent& evt);
     void DateFilterToggle(wxCommandEvent& evt);
     void LoadFile(wxCommandEvent& evt);
     void DoLoad();

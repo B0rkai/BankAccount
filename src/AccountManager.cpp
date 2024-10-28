@@ -29,7 +29,9 @@ Id AccountManager::CreateOrGetTransactionTypeId(const String& type) {
 
 Id AccountManager::CreateOrGetAccountId(const String& account_number, const CurrencyType curr) {
 	if (m_accounts.empty()) {
-		//m_accounts.push_back(new Account(bank_name, account_number, account_name, curr));
+		// popup new account dialog, add bank name and name of account
+		//m_accounts.push_back(new Account(account_number, account_name, curr));
+		//m_accounts.back()->SetGroupName(bank_name);
 		m_logger.LogError() << "NOT IMPLEMENTED: Cannot create new account :(";
 		return 0;
 	}
@@ -45,7 +47,8 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Curr
 	}
 	String acc_name = "Account #"; // make default name
 	acc_name.append(std::to_string(m_accounts.size()));
-	m_accounts.push_back(new Account(account_number, acc_name.c_str(), curr));
+	m_accounts.push_back(new Account(account_number, acc_name, curr));
+	m_logger.LogInfo() << "NEW Account '" << m_accounts.back()->GetName() << "' created";
 	return (uint8_t)size;
 }
 
@@ -70,6 +73,19 @@ String AccountManager::GetInfo(const QueryTopic topic, const Id id) const {
 		return m_category_system.GetInfo(id);
 	case QueryTopic::TYPE:
 		return m_ttype_man.GetInfo(id);
+	default:
+		return {};
+	}
+}
+
+String AccountManager::GetName(const QueryTopic topic, const Id id) const {
+	switch (topic) {
+	case QueryTopic::CLIENT:
+		return m_client_man.GetName(id);
+	case QueryTopic::CATEGORY:
+		return m_category_system.GetFullName(id);
+	case QueryTopic::TYPE:
+		return m_ttype_man.GetName(id);
 	default:
 		return {};
 	}
@@ -104,8 +120,8 @@ StringTable AccountManager::List() const {
 		row.push_back(acc->GetName());
 		row.push_back(acc->GetCurrency()->GetName());
 		row.push_back(acc->GetGroupName());
-		row.push_back(GetDateFormat(acc->GetFirstRecord()->GetDate()));
-		row.push_back(GetDateFormat(acc->GetLastRecord()->GetDate()));
+		row.push_back(acc->GetFirstRecord() ? GetDateFormat(acc->GetFirstRecord()->GetDate()) : cStringEmpty);
+		row.push_back(acc->GetFirstRecord() ? GetDateFormat(acc->GetLastRecord()->GetDate()) : cStringEmpty);
 		row.push_back(std::to_string(acc->Size()));
 		row.push_back(acc->GetAccNumber());
 	}
@@ -186,7 +202,7 @@ String AccountManager::GetLastRecordDate() const {
 	uint16_t max = 0;
 	for (const Account* acc : m_accounts) {
 		const Transaction* tr = acc->GetLastRecord();
-		if (tr->GetDate() > max) {
+		if (tr && tr->GetDate() > max) {
 			max = tr->GetDate();
 		}
 	}
@@ -251,6 +267,25 @@ String AccountManager::GetClientInfoOfName(const String& name) {
 	return ss.str();
 }
 
+void AccountManager::ProcessOne(Account* acc, const RawTransactionData& data) {
+	Id ttype = CreateOrGetTransactionTypeId(data.type.c_str());
+	Id client = CreateOrGetClientId(data.client.c_str(), data.client_account_number.c_str());
+	Id cat = Id(0);
+	if (data.cat.empty()) {
+		cat = m_category_system.Categorize({data.type, data.client, data.memo});
+		if ((Id::Type)cat == 0) {
+			cat = m_category_system.Categorize(StringVector{m_ttype_man.GetName(ttype), m_client_man.GetName(client)});
+		}
+		if ((Id::Type)cat == 0) {
+			// popup manual categorization dialog
+			// cat = result from dialog
+		}
+	} else {
+		cat = (Id::Type)m_category_system.GetId(data.cat);
+	}
+	acc->AddTransaction(data.date, ttype, data.amount, client, data.memo.c_str(), cat);
+}
+
 StringTable AccountManager::Import(const String& filename) {
 	m_new_transactions = 0;
 	RawImportData import_data;
@@ -264,7 +299,7 @@ StringTable AccountManager::Import(const String& filename) {
 		return {};
 	}
 	for (auto& raw : import_data.data) {
-		acc->AddTransaction(raw.date, CreateOrGetTransactionTypeId(raw.type.c_str()), raw.amount, CreateOrGetClientId(raw.client.c_str(), raw.client_account_number.c_str()), raw.memo.c_str(), m_category_system.Categorize({raw.type, raw.client, raw.memo}));
+		ProcessOne(acc, raw);
 		++m_new_transactions;
 	}
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);

@@ -29,7 +29,7 @@ public:
 	inline size_t size() const { return m_children.size(); }
 	inline unsigned int GetNewChildCount() const { return m_new_children; }
 
-	Id GetId(const char* name) const {
+	Id GetId(const String& name) const {
 		for (const Child* child : m_children) {
 			if (child->CheckName(name)) {
 				return child->GetId();
@@ -117,14 +117,14 @@ public:
 		}
 		// create new client
 		m_children.push_back(new Child((Id)s, name));
-		m_logger.LogDebug() << "NEW child of ID: " << s << " '" << name.utf8_str() << "'  created";
+		m_logger.LogInfo() << "NEW child of ID: " << s << " '" << name.utf8_str() << "'  created";
 		++m_new_children;
 		return (Id)s;
 	}
 
 	void AddKeyword(const Id id, const String& keyword) {
 		m_children.at(id)->AddKeyword(keyword);
-		m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id;
+		m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id << " " << GetName(id).utf8_str();
 	}
 
 	void Merge(const IdSet froms, const Id to) {

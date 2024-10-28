@@ -65,5 +65,6 @@ StringTable ClientManager::GetInfos() const {
 	//for (int i = 0; i < s; ++i) {
 	//	table[i+1].push_back(ContainerAsString(m_children[i]->GetAccountNumbers(), 2));
 	//}
+	std::reverse(table.begin()+1, table.end());
 	return table;
 }

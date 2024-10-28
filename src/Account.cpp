@@ -6,15 +6,18 @@
 
 #include <algorithm>
 
-Account::Account(const char* acc_number, const char* acc_name, const CurrencyType curr)
+Account::Account(const String& acc_number, const String& acc_name, const CurrencyType curr)
 : NamedType(acc_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")) {}
 
-bool Account::CheckAccNumber(const char* other) {
+bool Account::CheckAccNumber(const String& other) {
 	AccountNumber acc(other);
 	return m_acc_number.IsEqual(acc);
 }
 
 bool Account::PrepareImport(const uint16_t date) {
+	if (m_transactions.empty()) {
+		return true;
+	}
 	const uint16_t last_date = GetLastRecord()->GetDate();
 	if (last_date < date) {
 		return false; // gap
@@ -43,7 +46,7 @@ void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_
 	if (strlen(desc)) {
 		desc_ptr = &m_descriptions.emplace_back(desc);
 	}
-	Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, amount, date, client_id, type_id, memo_ptr);
+	Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, Money(m_curr->Type(), amount), date, client_id, type_id, memo_ptr);
 	if (category_id) {
 		new_tra.GetCategoryId() = category_id;
 	}
@@ -85,10 +88,16 @@ void Account::MakeQuery(WQuery& query) {
 }
 
 const Transaction* Account::GetFirstRecord() const {
+	if (m_transactions.empty()) {
+		return nullptr;
+	}
 	return &m_transactions.front();
 }
 
 const Transaction* Account::GetLastRecord() const {
+	if (m_transactions.empty()) {
+		return nullptr;
+	}
 	return &m_transactions.back();
 }
 
@@ -145,7 +154,7 @@ void Account::Stream(std::istream& in) {
 		if (!de.empty()) {
 			m_descriptions.push_back(de);
 		}
-		Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, am, da, cli, ty, !me.empty() ? &m_memos.back() : nullptr);
+		Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, Money(m_curr->Type(), am), da, cli, ty, !me.empty() ? &m_memos.back() : nullptr);
 		if (!de.empty()) {
 			new_tra.SetDiscription(&m_descriptions.back());
 		}

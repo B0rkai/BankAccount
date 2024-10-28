@@ -6,7 +6,9 @@ enum CurrencyType : Id::Type {
 	USD,
 	GBP,
 	CHF,
-	HUF
+	HUF,
+	Currency_Count, // Add currency before this
+	Invalid_Currency = INVALID_ID
 };
 
 class Currency {
@@ -31,3 +33,16 @@ public:
 
 Currency* MakeCurrency(const CurrencyType type);
 Currency* MakeCurrency(const char* type);
+
+class Money {
+	CurrencyType m_currency_type;
+	int32_t m_amount;
+public:
+	inline Money(CurrencyType curr_type, int32_t amount) : m_currency_type(curr_type), m_amount(amount) {}
+	inline CurrencyType Type() const { return m_currency_type; };
+	String PrettyPrint() const;
+	String PrettyPrint(CurrencyType type) const;
+	inline int32_t GetValue() const { return m_amount; };
+	int32_t GetValue(CurrencyType type) const;
+	inline operator int32_t() const { return m_amount; }
+};

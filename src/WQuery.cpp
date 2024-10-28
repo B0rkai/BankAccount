@@ -29,7 +29,7 @@ bool MergeQuery::CheckTransaction(Transaction* tr) {
     for (const Id& id : m_others) {
         if (id == client_id) {
             client_id = m_target_id;
-            m_logger.LogInfo() << "Merge changed record: " << ContainerAsString(tr->PrintDebug(s_resolve_if));
+            m_logger.LogInfo() << "Merge changed record: " << ContainerAsString(tr->PrintDebug(s_resolve_if)).utf8_str();
             return true;
         } else if (id < client_id) {
             ++diff;

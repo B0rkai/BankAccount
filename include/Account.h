@@ -28,10 +28,10 @@ class Account : public IAccount, public NamedType {
 	bool RunQuery(Query& query, const Transaction* tr) const;
 	virtual const String& GetAccName() const override;
 public:
-	Account(const char* acc_number, const char* acc_name, const CurrencyType curr);
+	Account(const String& acc_number, const String& acc_name, const CurrencyType curr);
 
 	inline String GetAccNumber() const { return m_acc_number.GetString(); }
-	bool CheckAccNumber(const char* other);
+	bool CheckAccNumber(const String& other);
 	bool Status() const { return m_status; }
 
 	bool PrepareImport(const uint16_t date);

@@ -104,3 +104,24 @@ StringTable::MetaData StringTable::GetMetaData(size_t i) const {
 void StringTable::insert_meta(const std::initializer_list<MetaData>& list) {
     m_metadata.insert(m_metadata.begin(), list);
 }
+
+StringVector ParseMultiValueString(const String& val) {
+    StringVector vals;
+    size_t pos = val.find(';');
+    if (pos == String::npos) {
+        vals.emplace_back(val.c_str());
+    } else {
+        size_t prevpos = 0;
+        vals.emplace_back(val, prevpos, pos - prevpos);
+        do {
+            prevpos = pos + 1;
+            pos = val.find(';', prevpos);
+            if (pos == String::npos) {
+                break;
+            }
+            vals.emplace_back(val, prevpos, pos - prevpos);
+        } while (pos != String::npos);
+        vals.emplace_back(val, prevpos, val.size() - prevpos);
+    }
+    return vals;
+}

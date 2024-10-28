@@ -174,3 +174,4 @@ void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear);
 int DMYToExcelSerialDate(int nDay, int nMonth, int nYear);
 
 String GetDateFormat(const uint16_t date);
+StringVector ParseMultiValueString(const String& val);

@@ -1,4 +1,5 @@
 #include <sstream>
+#include <algorithm>
 #include "Query.h"
 #include "Currency.h"
 #include "CommonTypes.h"
@@ -19,7 +20,7 @@ String QueryByName::GetStringResult() const {
 		ss << "s";
 	}
 	ss << " found:";
-	ss << m_result;
+	ss << m_result << ENDL;
 	return ss.str();
 }
 
@@ -36,30 +37,35 @@ bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
 	return true;
 }
 
-bool QueryCategorySum::CheckTransaction(const Transaction* tr) {
-	Id id = tr->GetCategoryId();
-	QueryElement& res = m_subqueries[id];
-	if (!m_category_names.count(id)) {
-		m_category_names[id] = s_resolve_if->GetInfo(GetTopic(), id);
+bool QuerySumByTopic::CheckTransaction(const Transaction* tr) {
+	Id id = tr->GetId(GetTopic());
+	TopicSubQuery& sub = m_subqueries[id];
+	if (sub.GetName().empty()) {
+		sub.SetName(s_resolve_if->GetName(GetTopic(), id));
 	}
-	return res.CheckTransaction(tr);
+	return sub.CheckTransaction(tr);
 }
 
-String QueryCategorySum::GetStringResult() {
+String QuerySumByTopic::GetStringResult() {
 	String res = "\n";
 	for (auto& pair : m_subqueries) {
-		res.append(m_category_names[pair.first]).append(": ");
+		res.append(pair.second.GetName()).append(": ");
 		res.append(pair.second.GetStringResult());
 	}
 	return res;
 }
 
-StringTable QueryCategorySum::GetTableResult() const {
-	StringTable table;
-	table.push_back({"Category", "Currency", "#", "Income", "Expense", "Sum"});
-	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED});
+StringTable QuerySumByTopic::GetTableResult() const {
+	// default sorting
+	std::map<int32_t, const TopicSubQuery*> sum_sorted_map;
 	for (auto& pair : m_subqueries) {
-		auto subtable = pair.second.GetTableResult();
+		sum_sorted_map.insert(std::make_pair(pair.second.GetSumValue(HUF), &pair.second));
+	}
+	StringTable table;
+	table.push_back({"Topic", "Currency", "#", "Income", "Expense", "Sum"});
+	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED});
+	for (auto& pair : sum_sorted_map) {
+		auto subtable = pair.second->GetTableResult();
 		bool first = true;
 		for (auto& subrow : subtable) {
 			if (first) {
@@ -67,11 +73,12 @@ StringTable QueryCategorySum::GetTableResult() const {
 				continue;
 			}
 			auto& row = table.emplace_back();
-			row.push_back(m_category_names.at(pair.first));
+			row.push_back(pair.second->GetName());
 			row.insert(row.end(), subrow.begin(), subrow.end());
 		}
 	}
 	auto totals = GetResults();
+	QuerySum::Result exchanged_total;
 	for (auto& pair : totals) {
 		auto& row = table.emplace_back();
 		row.push_back("TOTAL");
@@ -81,12 +88,28 @@ StringTable QueryCategorySum::GetTableResult() const {
 		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_inc));
 		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_exp));
 		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_sum));
+		if (totals.size() > 1) {
+			exchanged_total.m_count += pair.second.m_count;
+			exchanged_total.m_inc += Money(curr->Type(), pair.second.m_inc).GetValue(HUF);
+			exchanged_total.m_exp += Money(curr->Type(), pair.second.m_exp).GetValue(HUF);
+			exchanged_total.m_sum += Money(curr->Type(), pair.second.m_sum).GetValue(HUF);
+		}
 	}
-	// TODO
+	// exchanged totals
+	if (totals.size() > 1) {
+		auto& row = table.emplace_back();
+		row.push_back("EXCHANGED TOTAL");
+		Currency* curr = MakeCurrency(HUF);
+		row.push_back(curr->GetName());
+		row.push_back(std::to_string(exchanged_total.m_count));
+		row.push_back(curr->PrettyPrint(exchanged_total.m_inc));
+		row.push_back(curr->PrettyPrint(exchanged_total.m_exp));
+		row.push_back(curr->PrettyPrint(exchanged_total.m_sum));
+	}
 	return table;
 }
 
-std::map<CurrencyType, QuerySum::Result> QueryCategorySum::GetResults() const {
+std::map<CurrencyType, QuerySum::Result> QuerySumByTopic::GetResults() const {
 	std::map<CurrencyType, QuerySum::Result> total;
 	for (auto& pair : m_subqueries) {
 		const auto& resmap = pair.second.GetResults();
@@ -127,6 +150,14 @@ StringVector QuerySum::GetStringResultRow(const Result& res, const Currency* cur
 	return {std::to_string(res.m_count), curr->PrettyPrint((int32_t)res.m_inc), curr->PrettyPrint((int32_t)res.m_exp), curr->PrettyPrint((int32_t)res.m_sum)};
 }
 
+size_t QueryCurrencySum::GetCount() const {
+	size_t res = 0;
+	for (const auto& pair : m_results) {
+		res += pair.second.m_count;
+	}
+	return res;
+}
+
 String QueryCurrencySum::GetStringResult() {
 	std::stringstream ss;
 	for (auto& pair : m_results) {
@@ -150,6 +181,15 @@ StringTable QueryCurrencySum::GetTableResult() const {
 		row.insert(row.end(), resline.begin(), resline.end());
 	}
 	return table;
+}
+
+int32_t QueryCurrencySum::GetSumValue(CurrencyType type) const {
+	int32_t sum = 0;
+	for (auto& pair : m_results) {
+		Money m(pair.first, pair.second.m_sum);
+		sum += m.GetValue(type);
+	}
+	return sum;
 }
 
 bool QueryElement::CheckTransaction(const Transaction* tr) {
@@ -225,6 +265,25 @@ bool QueryDate::CheckTransaction(const Transaction* tr) {
 	return Check(tr->GetDate());
 }
 
+String QueryDate::GetStringResult() const {
+	String res;
+	switch (m_type) {
+	case QueryAmount::EQUAL:
+		return res; // not supported yet
+	case QueryAmount::GREATER:
+		return res; // not supported yet
+	case QueryAmount::LESS:
+		return res; // not supported yet
+	case QueryAmount::RANGE:
+		res = "Date filter is set from ";
+		res.Append(GetDateFormat(m_min)).Append(" to ").Append(GetDateFormat(m_max)).Append(ENDL);
+		break;
+	default:
+		res = "QueryDate query is in invalid state";
+	}
+	return res;
+}
+
 Query::Query() : m_elements(true) {}
 
 Query::~Query() {}
@@ -253,4 +312,8 @@ void QueryByName::PreResolve() {
 	if (m_result.empty()) {
 		m_result = "No type found";
 	}
+}
+
+bool TopicSubQuery::CheckTransaction(const Transaction* tr) {
+	return QueryCurrencySum::CheckTransaction(tr);
 }

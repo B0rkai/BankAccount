@@ -3,33 +3,53 @@
 #include "IDataBase.h"
 
 enum ImportColumnsGranit {
-	Column_ACCOUNT_NUMBER,
-	Column_AMOUNT,
-	Column_CURRENCY,
-	Column_IN_OR_OUT,
-	Column_DATE,
-	Column_TYPE = 6,
-	Column_CLIENT1,
-	Column_CLIENT1_ACC,
-	Column_CLIENT2,
-	Column_CLIENT2_ACC,
-	Column_MEMO,
-	Column_SIZE // size of columns, keep it last
+	Granit_Column_ACCOUNT_NUMBER,
+	Granit_Column_AMOUNT,
+	Granit_Column_CURRENCY,
+	Granit_Column_IN_OR_OUT,
+	Granit_Column_DATE,
+	Granit_Column_TYPE = 6,
+	Granit_Column_CLIENT1,
+	Granit_Column_CLIENT1_ACC,
+	Granit_Column_CLIENT2,
+	Granit_Column_CLIENT2_ACC,
+	Granit_Column_MEMO,
+	Granit_Column_SIZE // size of columns, keep it last
 };
 
-void XMLParser(const String& filename, StringTable& data) {
-	std::ifstream in(static_cast<const char*>(filename));
+enum ImportColumnsSpecial {
+	Special_Column_DATE,
+	Special_Column_TYPE,
+	Special_Column_AMOUNT,
+	Special_Column_CLIENT,
+	Special_Column_CLIENT_ACC,
+	Special_Column_MEMO,
+	Special_Column_CATEGORY,
+	Special_Column_SUBCATEGORY
+};
+
+class FileLineStreamReader {
+	std::ifstream _in;
+	char _buffer[1000];
+public:
+	FileLineStreamReader(const char* filename) : _in(filename), _buffer{0}	{}
+	bool ReadLine(String& line) {
+		_in.getline(_buffer, 1000);
+		line = String::FromUTF8(_buffer);
+		return _in.eof();
+	}
+};
+
+static void XMLParser(const String& filename, StringTable& data) {
 	(void)data.emplace_back();
-	wxMBConvStrictUTF8 conv;
-	char buffer[1000];
-	while (!in.eof()) {
-		in.getline(buffer, 1000);
-		String line(buffer, conv);
+	String line;
+	FileLineStreamReader reader(static_cast<const char*>(filename));
+	while (!reader.ReadLine(line)) {
 		size_t pos = line.find(L"<Data");
 		if (pos == String::npos) {
 			continue;
 		}
-		if (data.back().size() == Column_SIZE) {
+		if (data.back().size() == Granit_Column_SIZE) {
 			(void)data.emplace_back();
 		}
 		size_t vstart = line.find(L">", pos) + 1;
@@ -45,6 +65,15 @@ void XMLParser(const String& filename, StringTable& data) {
 	}
 }
 
+static void CSVParser(const String& filename, StringTable& data) {
+	std::ifstream in(static_cast<const char*>(filename));
+	String line;
+	FileLineStreamReader reader(static_cast<const char*>(filename));
+	while (!reader.ReadLine(line)) {
+		data.push_back(ParseMultiValueString(line));
+	}
+}
+
 uint16_t ParseDateFormat(String formatted) {
 	constexpr char DASH('-');
 	size_t pos1 = formatted.find(DASH);
@@ -56,29 +85,64 @@ uint16_t ParseDateFormat(String formatted) {
 	return DMYToExcelSerialDate(day, month, year);
 }
 
-void ImportFromFile(const String& filename, RawImportData& import_data) {
+static void ImportFromCSV(const String& filename, RawImportData& import_data) {
+	StringTable data;
+	CSVParser(filename, data);
+	import_data.account_number = "HU85 1210 0011 1789 2719 0000 0000";
+	import_data.currency = HUF;
+	bool first = true; // header
+	for (StringVector& vec : data) {
+		if (first) {
+			first = false;
+			continue;
+		}
+		RawTransactionData& raw = import_data.data.emplace_back();
+		unsigned long tmp;
+		vec[Special_Column_DATE].ToULong(&tmp);
+		raw.date = tmp;
+		raw.type = vec[Special_Column_TYPE];
+		vec[Special_Column_AMOUNT].ToLong(&raw.amount);
+		raw.client = vec[Special_Column_CLIENT];
+		raw.client_account_number = vec[Special_Column_CLIENT_ACC];
+		raw.memo = vec[Special_Column_MEMO];
+		raw.cat = vec[Special_Column_SUBCATEGORY];
+	}
+}
+
+static void ImportFromXML(const String& filename, RawImportData& import_data) {
 	StringTable data;
 	XMLParser(filename, data);
-	import_data.account_number = data[1][Column_ACCOUNT_NUMBER]; 
-	import_data.currency = MakeCurrency(data[1][Column_CURRENCY].c_str())->Type();
+	import_data.account_number = data[1][Granit_Column_ACCOUNT_NUMBER]; 
+	import_data.currency = MakeCurrency(data[1][Granit_Column_CURRENCY].c_str())->Type();
 	int cnt = 0;
 	size_t size = data.size();
 	for (auto rit = data.crbegin(); rit != data.crend(); rit++) {
 		RawTransactionData& raw = import_data.data.emplace_back();
 		Id client_id = 0;
-		if ((*rit)[Column_IN_OR_OUT] == "J") {
-			raw.client = (*rit)[Column_CLIENT1];
-			raw.client_account_number = (*rit)[Column_CLIENT1_ACC];
+		if ((*rit)[Granit_Column_IN_OR_OUT] == "J") {
+			raw.client = (*rit)[Granit_Column_CLIENT1];
+			raw.client_account_number = (*rit)[Granit_Column_CLIENT1_ACC];
 		} else {
-			raw.client = (*rit)[Column_CLIENT2];
-			raw.client_account_number = (*rit)[Column_CLIENT2_ACC];
+			raw.client = (*rit)[Granit_Column_CLIENT2];
+			raw.client_account_number = (*rit)[Granit_Column_CLIENT2_ACC];
 		}
-		raw.date = ParseDateFormat((*rit)[Column_DATE]);
-		raw.type = (*rit)[Column_TYPE];
-		(*rit)[Column_AMOUNT].ToLong(&raw.amount);
-		raw.memo = (*rit)[Column_MEMO];
+		raw.date = ParseDateFormat((*rit)[Granit_Column_DATE]);
+		raw.type = (*rit)[Granit_Column_TYPE];
+		(*rit)[Granit_Column_AMOUNT].ToLong(&raw.amount);
+		raw.memo = (*rit)[Granit_Column_MEMO];
 		if (++cnt == (size - 1)) {
 			break;
 		}
 	}
+}
+
+void ImportFromFile(const String& filename, RawImportData& import_data) {
+	if (filename.EndsWith(".xml")) {
+		ImportFromXML(filename, import_data);
+	} else if (filename.EndsWith(".csv")) {
+		ImportFromCSV(filename, import_data);
+	} else {
+		// Not supported
+	}
+
 }
