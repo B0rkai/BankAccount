@@ -30,6 +30,9 @@ using String		= wxString;
 using StringSet		= std::set<String>;
 using StringVector	= std::vector<String>;
 
+String Topic2String(const QueryTopic topic);
+QueryTopic String2Topic(const String& topic);
+
 class Id {
 	uint16_t _id = 0;
 public:

@@ -38,6 +38,7 @@ class Money {
 	CurrencyType m_currency_type;
 	int32_t m_amount;
 public:
+	inline Money() : m_currency_type(Invalid_Currency), m_amount(0) {}
 	inline Money(CurrencyType curr_type, int32_t amount) : m_currency_type(curr_type), m_amount(amount) {}
 	inline CurrencyType Type() const { return m_currency_type; };
 	String PrettyPrint() const;

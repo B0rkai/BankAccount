@@ -4,6 +4,7 @@
 #include "wx\calctrl.h"
 
 #include "CommonTypes.h"
+#include "IManualResolve.h"
 
 // wxButton;
 class BankAccountFile;
@@ -11,7 +12,7 @@ class Query;
 enum CtrIds;
 
 class cMain :
-    public wxFrame {
+    public wxFrame, public IManualResolve {
     wxPanel* m_main_panel = nullptr;
 
     wxMenuBar* m_menu_bar = nullptr;
@@ -64,8 +65,10 @@ class cMain :
     void QueryButtonClicked(wxCommandEvent& evt);
     void MergeButtonClicked(wxCommandEvent& evt);
     void AddKeywordButtonClicked(wxCommandEvent& evt);
+    void Import(wxCommandEvent& evt);
     void Test(wxCommandEvent& evt);
     void UpdateStatusBar();
+    virtual ManualResolveResult ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, bool optional) override;
 public:
     cMain();
     ~cMain();

@@ -163,6 +163,7 @@
     <ClCompile Include="src\DataImporter.cpp" />
     <ClCompile Include="src\Logger.cpp" />
     <ClCompile Include="src\ManagerType.cpp" />
+    <ClCompile Include="src\ManualResolverDialog.cpp" />
     <ClCompile Include="src\Query.cpp" />
     <ClCompile Include="src\Transaction.cpp" />
     <ClCompile Include="src\TransactionType.cpp" />
@@ -186,11 +187,13 @@
     <ClInclude Include="include\IAccount.h" />
     <ClInclude Include="include\IDataBase.h" />
     <ClInclude Include="include\IIdResolve.h" />
+    <ClInclude Include="include\IManualResolve.h" />
     <ClInclude Include="include\INameResolve.h" />
     <ClInclude Include="include\IWQuery.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\ManagedType.h" />
     <ClInclude Include="include\ManagerType.h" />
+    <ClInclude Include="include\ManualResolverDialog.h" />
     <ClInclude Include="include\Query.h" />
     <ClInclude Include="include\RefCounted.h" />
     <ClInclude Include="include\Transaction.h" />

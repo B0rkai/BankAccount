@@ -19,8 +19,9 @@ class WQuery;
 class Account;
 class Client;
 struct RawTransactionData;
+class IManualResolve;
 
-class AccountManager : public IDataBase, public IIdResolve, public INameResolve, public IWAccount {
+class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameResolve, public IWAccount {
 	ManagerType<TransactionType> m_ttype_man;
 	ClientManager m_client_man;
 	PtrVector<Account> m_accounts;
@@ -28,10 +29,10 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve,
 	Logger& m_logger;
 	int m_new_transactions = 0;
 
-	virtual void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo) override;
-	virtual Id CreateOrGetTransactionTypeId(const String& type) override;
-	virtual Id CreateOrGetAccountId(const String& account_number, const CurrencyType curr) override;
-	virtual Id CreateOrGetClientId(const String& client_name, const String& client_account_number) override;
+	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
+	Id CreateTransactionTypeId(const String& type);
+	Id CreateOrGetAccountId(const String& account_number, const CurrencyType curr);
+	Id CreateClientId(const String& client_name, const String& client_account_number);
 
 	virtual String GetCategoryName(const Id id) const override;
 	virtual String GetTransactionType(const Id id) const override;
@@ -52,7 +53,10 @@ class AccountManager : public IDataBase, public IIdResolve, public INameResolve,
 	void StreamAccounts(std::ostream& out) const;
 	void StreamAccounts(std::istream& in);
 
-	void ProcessOne(Account* acc, const RawTransactionData& data);
+	Id CreateId(const QueryTopic topic, const String& name);
+	IdSet SearchIds(const QueryTopic topic, const String& name, bool low_confidence) const;
+	Id ProcessOneTopic(const RawTransactionData& data, const QueryTopic topic, const String& name, IManualResolve* resolve_if, bool optional = false);
+	void ProcessOneTransaction(Account* acc, const RawTransactionData& data, IManualResolve* resolve_if);
 protected:
 	void Stream(std::ostream& out) const;
 	void Stream(std::istream& in);
@@ -71,8 +75,10 @@ public:
 
 	String GetClientInfoOfName(const String& name);
 
-	StringTable Import(const String& filename);
+	StringTable Import(const String& filename, IManualResolve* resolve_if);
 
 	StringTable MakeQuery(Query& query) const;
 	StringTable MakeQuery(WQuery& query);
+
+	StringTable GetTestData() const;
 };

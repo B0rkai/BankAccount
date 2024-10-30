@@ -1,10 +1,9 @@
 #pragma once
 #include "CommonTypes.h"
-
-class IDataBase;
+#include "Currency.h"
 
 struct RawTransactionData {
-	long amount;
+	Money amount;
 	uint16_t date;
 	String type;
 	String client;

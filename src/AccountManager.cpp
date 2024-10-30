@@ -7,6 +7,7 @@
 #include "Query.h"
 #include "WQuery.h"
 #include "DataImporter.h"
+#include "IManualResolve.h"
 
 struct data {
 	String name;
@@ -23,8 +24,8 @@ void AccountManager::AddNewTransaction(const Id acc_id, const uint16_t date, con
 	m_new_transactions++;
 }
 
-Id AccountManager::CreateOrGetTransactionTypeId(const String& type) {
-	return m_ttype_man.GetOrCreateId(type);
+Id AccountManager::CreateTransactionTypeId(const String& type) {
+	return m_ttype_man.Create(type);
 }
 
 Id AccountManager::CreateOrGetAccountId(const String& account_number, const CurrencyType curr) {
@@ -91,8 +92,8 @@ String AccountManager::GetName(const QueryTopic topic, const Id id) const {
 	}
 }
 
-Id AccountManager::CreateOrGetClientId(const String& client_name, const String& acc_num) {
-	Id id = m_client_man.GetOrCreateId(client_name);
+Id AccountManager::CreateClientId(const String& client_name, const String& acc_num) {
+	Id id = m_client_man.Create(client_name);
 	m_client_man.AddAccountNumber(id, acc_num);
 	return id;
 }
@@ -267,9 +268,117 @@ String AccountManager::GetClientInfoOfName(const String& name) {
 	return ss.str();
 }
 
-void AccountManager::ProcessOne(Account* acc, const RawTransactionData& data) {
-	Id ttype = CreateOrGetTransactionTypeId(data.type.c_str());
-	Id client = CreateOrGetClientId(data.client.c_str(), data.client_account_number.c_str());
+Id AccountManager::CreateId(const QueryTopic topic, const String& name) {
+	switch (topic) {
+	case QueryTopic::CLIENT:
+		return m_client_man.Create(name);
+	case QueryTopic::TYPE:
+		return m_ttype_man.Create(name);
+	case QueryTopic::CATEGORY:
+		return m_category_system.Create(name);
+	}
+	return Id(INVALID_ID);
+}
+
+IdSet AccountManager::SearchIds(const QueryTopic topic, const String& name, bool low_confidence) const {
+	switch (topic) {
+	case QueryTopic::CLIENT:
+		if (low_confidence) {
+			return m_client_man.SearchIdsLowConfidence(name);
+		}
+		return m_client_man.SearchIdsHighConfidence(name);
+	case QueryTopic::CATEGORY:
+		if (low_confidence) {
+			return m_category_system.SearchIdsLowConfidence(name);
+		}
+		return m_category_system.SearchIdsHighConfidence(name);
+	case QueryTopic::TYPE:
+		if (low_confidence) {
+			return m_ttype_man.SearchIdsLowConfidence(name);
+		}
+		return m_ttype_man.SearchIdsHighConfidence(name);
+	default:
+		return {};
+	}
+}
+
+const char* cDIVIDER("  |  ");
+
+static String PrepareTransactionDetails(const RawTransactionData& data, const QueryTopic highlight_topic) {
+	String details;
+	details.append(GetDateFormat(data.date)).append(cDIVIDER);
+	if ((highlight_topic == QueryTopic::TYPE) || (highlight_topic == QueryTopic::CATEGORY)) {
+		details.append("<b>").append(data.type).append("</b>").append(cDIVIDER);
+	} else {
+		details.append(data.type).append(cDIVIDER);
+	}
+	details.append(data.amount.PrettyPrint()).append(cDIVIDER);
+	if ((highlight_topic == QueryTopic::CLIENT) || (highlight_topic == QueryTopic::CATEGORY)) {
+		details.append("<b>").append(data.client).append("</b>").append(cDIVIDER);
+	} else {
+		details.append(data.client).append(cDIVIDER);
+	}
+	if (highlight_topic == QueryTopic::CATEGORY) {
+		details.append("<b>").append(data.memo).append("</b>");
+	} else {
+		details.append(data.memo);
+	}
+	return details;
+}
+
+Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTopic topic, const String& name, IManualResolve* resolve_if, bool optional) {
+	IdSet ids = SearchIds(topic, name, false);
+	Id id(INVALID_ID);
+	String create, keyword;
+	if (ids.size() == 1) {
+		return *ids.begin(); // perfect match
+	} else if (ids.size() > 1) {
+		ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, topic), topic, ids, id, create, keyword, optional);
+		if (res == ManualResolve_ABORT) {
+			throw; // quick exit
+		} else if (res & ManualResolve_NEW_CHILD) {
+			id = CreateId(topic, create);
+		} else if (res & ManualResolve_DEFAULT) {
+			id = Id(0);
+		}
+		if (res & ManualResolve_KEYWORD) {
+			AddKeyword(topic, id, keyword);
+		}
+		return id;
+	}
+	ids = SearchIds(topic, name, true);
+	if (ids.size() == 1) {
+		id = *ids.begin();
+	} else if (ids.empty()) {
+		create = name;
+	}
+	ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, topic), topic, ids, id, create, keyword, optional);
+	if (res == ManualResolve_ABORT) {
+		throw; // quick exit
+	} else if (res & ManualResolve_NEW_CHILD) {
+		id = CreateId(topic, create);
+	} else if (res == ManualResolve_DEFAULT) {
+		id = Id(0);
+	}
+	if (res & ManualResolve_KEYWORD) {
+		AddKeyword(topic, id, keyword);
+	}
+	return id;
+}
+
+void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionData& data, IManualResolve* resolve_if) {
+	// Type
+	StringVector tr_data;
+	tr_data.push_back(GetDateFormat(data.date));
+	tr_data.push_back(data.type);
+	tr_data.push_back(data.amount.PrettyPrint());
+	Id ttype = ProcessOneTopic(data, QueryTopic::TYPE, data.type, resolve_if);
+
+	// Client
+	Id client = ProcessOneTopic(data, QueryTopic::CLIENT, data.client, resolve_if, true);
+	m_client_man.AddAccountNumber(client, data.client_account_number);
+
+	// Category
 	Id cat = Id(0);
 	if (data.cat.empty()) {
 		cat = m_category_system.Categorize({data.type, data.client, data.memo});
@@ -278,7 +387,18 @@ void AccountManager::ProcessOne(Account* acc, const RawTransactionData& data) {
 		}
 		if ((Id::Type)cat == 0) {
 			// popup manual categorization dialog
-			// cat = result from dialog
+			String create = cINACTIVE, keyword;
+			ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, QueryTopic::CATEGORY), QueryTopic::CATEGORY, IdSet(), cat, create, keyword, true);
+			if (res == ManualResolve_ABORT) {
+				throw; // quick exit
+			} else if (res & ManualResolve_NEW_CHILD) {
+				cat = CreateId(QueryTopic::CATEGORY, create);
+			} else if (res & ManualResolve_DEFAULT) {
+				cat = Id(0);
+			}
+			if (res & ManualResolve_KEYWORD) {
+				AddKeyword(QueryTopic::CATEGORY, cat, keyword);
+			}
 		}
 	} else {
 		cat = (Id::Type)m_category_system.GetId(data.cat);
@@ -286,7 +406,7 @@ void AccountManager::ProcessOne(Account* acc, const RawTransactionData& data) {
 	acc->AddTransaction(data.date, ttype, data.amount, client, data.memo.c_str(), cat);
 }
 
-StringTable AccountManager::Import(const String& filename) {
+StringTable AccountManager::Import(const String& filename, IManualResolve* resolve_if) {
 	m_new_transactions = 0;
 	RawImportData import_data;
 	ImportFromFile(filename, import_data);
@@ -299,7 +419,7 @@ StringTable AccountManager::Import(const String& filename) {
 		return {};
 	}
 	for (auto& raw : import_data.data) {
-		ProcessOne(acc, raw);
+		ProcessOneTransaction(acc, raw, resolve_if);
 		++m_new_transactions;
 	}
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);
@@ -368,4 +488,8 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 	});
 	m_logger.LogDebug() << "Write Query execution finished";
 	return FormatResultTable(query.GetResult());
+}
+
+StringTable AccountManager::GetTestData() const {
+	return FormatResultTable(m_accounts.back()->GetLastRecords(1u));
 }

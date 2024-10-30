@@ -101,7 +101,9 @@ static void ImportFromCSV(const String& filename, RawImportData& import_data) {
 		vec[Special_Column_DATE].ToULong(&tmp);
 		raw.date = tmp;
 		raw.type = vec[Special_Column_TYPE];
-		vec[Special_Column_AMOUNT].ToLong(&raw.amount);
+		long l;
+		vec[Special_Column_AMOUNT].ToLong(&l);
+		raw.amount = Money(import_data.currency, l);
 		raw.client = vec[Special_Column_CLIENT];
 		raw.client_account_number = vec[Special_Column_CLIENT_ACC];
 		raw.memo = vec[Special_Column_MEMO];
@@ -128,7 +130,10 @@ static void ImportFromXML(const String& filename, RawImportData& import_data) {
 		}
 		raw.date = ParseDateFormat((*rit)[Granit_Column_DATE]);
 		raw.type = (*rit)[Granit_Column_TYPE];
-		(*rit)[Granit_Column_AMOUNT].ToLong(&raw.amount);
+
+		long l;
+		(*rit)[Granit_Column_AMOUNT].ToLong(&l);
+		raw.amount = Money(import_data.currency, l);
 		raw.memo = (*rit)[Granit_Column_MEMO];
 		if (++cnt == (size - 1)) {
 			break;

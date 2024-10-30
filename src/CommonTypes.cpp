@@ -9,6 +9,30 @@ bool IsEndl(const char& c) {
     return ((c == ENDL) || (c == CRET));
 }
 
+String Topic2String(const QueryTopic topic) {
+    switch (topic) {
+    case QueryTopic::CLIENT:
+        return "Client";
+    case QueryTopic::CATEGORY:
+        return "Category";
+    case QueryTopic::TYPE:
+        return "Type";
+    default:
+        return "Unknown";
+    }
+}
+
+QueryTopic String2Topic(const String& topic) {
+    if (topic == "Client") {
+        return QueryTopic::CLIENT;
+    } else if (topic == "Type") {
+        return QueryTopic::TYPE;
+    } else if (topic == "Category") {
+        return QueryTopic::CATEGORY;
+    }
+    return QueryTopic::WRITE;
+}
+
 bool caseInsensitiveStringContains(const String& string, const String& sub) {
     if (string.length() <= sub.length()) {
         return string.IsSameAs(sub, false);

@@ -35,6 +35,7 @@ public:
 				return child->GetId();
 			}
 		}
+		return Id(INVALID_ID);
 	}
 
 	String GetInfo(const Id id) const {
@@ -61,10 +62,7 @@ public:
 		return m_children.at(id)->GetFullName();
 	}
 
-	IdSet SearchIds(const String& word, bool full_name = false) const {
-		if (strlen(word) == 0) {
-			return {}; // cannot match
-		}
+	IdSet SearchIdsHighConfidence(const String& word, bool full_name = false) const {
 		IdSet results;
 		for (const Child* child : m_children) {
 			if (child->CheckName(word)) {
@@ -74,7 +72,9 @@ public:
 		if (!full_name) {
 			for (const Child* child : m_children) {
 				if (child->CheckNameContains(word)) {
-					m_logger.LogDebug() << "NameContains() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
+					if (word.size() > 2) { // avoid log floading
+						m_logger.LogDebug() << "NameContains() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
+					}
 					results.insert(child->GetId());
 				}
 			}
@@ -85,29 +85,44 @@ public:
 				results.insert(child->GetId());
 			}
 		}
+		return results;
+	}
+
+	IdSet SearchIds(const String& word, bool full_name = false) const {
+		if (strlen(word) == 0) {
+			return {}; // cannot match
+		}
+		IdSet results = SearchIdsHighConfidence(word, full_name);
 		if (!results.empty()) {
 			return results;
 		}
+		return SearchIdsLowConfidence(word);
+	}
+
+	IdSet SearchIdsLowConfidence(const String& word) const {
 		// last resort
+		IdSet results;
 		for (const Child* child : m_children) {
 			if (child->CheckNameContained(word)) {
-				m_logger.LogWarn() << "CheckNameContained() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
+				m_logger.LogWarn() << "LOW CONFIDENCE MATCH - CheckNameContained() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
 				results.insert(child->GetId());
 			}
 		}
 		return results;
 	}
 
-	Id GetOrCreateId(const String& name) {
+	Id Create(const String& name) {
 		if (strlen(name) == 0) {
 			return 0; // NO NAME
 		}
 		// first check full match
-		IdSet ids = SearchIds(name, true);
+		IdSet ids = SearchIdsHighConfidence(name, true);
 		if (ids.size() == 1) {
+			m_logger.LogWarn() << "Create() Name '" << name.utf8_str() << "' matches with already existing child ID: " << (Id::Type)*ids.begin() << " " << GetName(*ids.begin()).utf8_str();
 			return *ids.begin();
 		} else if (ids.size() > 1) {
-			m_logger.LogWarn() << "Multiple choices for '" << name.utf8_str() << "' are: " << ContainerAsString(ids);
+			m_logger.LogError() << "Create() Name '" << name.utf8_str() << "' matches with multiple IDs: " << ContainerAsString(ids);
+			return Id(INVALID_ID);
 		}
 		// check count
 		size_t s = size();
@@ -117,7 +132,7 @@ public:
 		}
 		// create new client
 		m_children.push_back(new Child((Id)s, name));
-		m_logger.LogInfo() << "NEW child of ID: " << s << " '" << name.utf8_str() << "'  created";
+		m_logger.LogInfo() << "NEW child created at ID: " << s << " '" << name.utf8_str();
 		++m_new_children;
 		return (Id)s;
 	}
