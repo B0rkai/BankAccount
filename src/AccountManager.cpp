@@ -29,13 +29,13 @@ Id AccountManager::CreateTransactionTypeId(const String& type) {
 }
 
 Id AccountManager::CreateOrGetAccountId(const String& account_number, const CurrencyType curr) {
-	if (m_accounts.empty()) {
-		// popup new account dialog, add bank name and name of account
-		//m_accounts.push_back(new Account(account_number, account_name, curr));
-		//m_accounts.back()->SetGroupName(bank_name);
-		m_logger.LogError() << "NOT IMPLEMENTED: Cannot create new account :(";
-		return 0;
-	}
+	//if (m_accounts.empty()) {
+	//	// popup new account dialog, add bank name and name of account
+	//	//m_accounts.push_back(new Account(account_number, account_name, curr));
+	//	//m_accounts.back()->SetGroupName(bank_name);
+	//	m_logger.LogError() << "NOT IMPLEMENTED: Cannot create new account :(";
+	//	return 0;
+	//}
 	size_t size = m_accounts.size();
 	for (int i = 0; i < size; ++i) {
 		if (m_accounts[i]->CheckAccNumber(account_number)) {
@@ -46,8 +46,13 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Curr
 		// BAD
 		throw "too many accounts";
 	}
+	AccountNumber* acc_num_ptr = AccountNumber::Create(account_number);
+	if (!acc_num_ptr) {
+		m_logger.LogError() << "Cannot create account, account number '" << account_number << "' is invalid";
+		throw "bad account number";
+	}
 	String acc_name = "Account #"; // make default name
-	acc_name.append(std::to_string(m_accounts.size()));
+	acc_name.append(std::to_string(m_accounts.size() + 1));
 	m_accounts.push_back(new Account(account_number, acc_name, curr));
 	m_logger.LogInfo() << "NEW Account '" << m_accounts.back()->GetName() << "' created";
 	return (uint8_t)size;
@@ -112,7 +117,8 @@ String AccountManager::GetClientName(const Id id) const {
 
 StringTable AccountManager::List() const {
 	StringTable table;
-	table.push_back({"ID", "Status", "Account name", "Currency", "Bank name", "First entry", "Last entry", "Entries", "Account number"});
+	table.push_back({"ID", "Status", "Account name", "Currency", "Bank name", "First entry", "Last entry", "Entries", "Categorized", "Account number"});
+	table.insert_meta({StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED});
 	size_t id = 0;
 	for (const Account* acc : m_accounts) {
 		StringVector& row = table.emplace_back();
@@ -124,6 +130,16 @@ StringTable AccountManager::List() const {
 		row.push_back(acc->GetFirstRecord() ? GetDateFormat(acc->GetFirstRecord()->GetDate()) : cStringEmpty);
 		row.push_back(acc->GetFirstRecord() ? GetDateFormat(acc->GetLastRecord()->GetDate()) : cStringEmpty);
 		row.push_back(std::to_string(acc->Size()));
+		{ // categorization
+			Query q;
+			QueryCategory* qcat = new QueryCategory;
+			qcat->AddId(Id(0)); // uncat
+			q.push_back(qcat);
+			QueryCount* qcount = new QueryCount;
+			q.push_back(qcount);
+			acc->MakeQuery(q);
+			row.push_back(String::FromDouble((1. - (double)qcount->GetCount() / (double)acc->Size()) * 100., 2).append("%"));
+		}
 		row.push_back(acc->GetAccNumber());
 	}
 	return table;
@@ -304,24 +320,32 @@ IdSet AccountManager::SearchIds(const QueryTopic topic, const String& name, bool
 
 const char* cDIVIDER("  |  ");
 
-static String PrepareTransactionDetails(const RawTransactionData& data, const QueryTopic highlight_topic) {
+static String PrepareTransactionDetails(const RawTransactionData& data, const String& resolved_client = cStringEmpty) {
 	String details;
+	details.append(std::to_string(RawTransactionData::index)).append("/").append(std::to_string(RawTransactionData::size)).append(cDIVIDER);
 	details.append(GetDateFormat(data.date)).append(cDIVIDER);
-	if ((highlight_topic == QueryTopic::TYPE) || (highlight_topic == QueryTopic::CATEGORY)) {
-		details.append("<b>").append(data.type).append("</b>").append(cDIVIDER);
-	} else {
-		details.append(data.type).append(cDIVIDER);
-	}
+	//if ((highlight_topic == QueryTopic::TYPE) || (highlight_topic == QueryTopic::CATEGORY)) {
+	//	details.append("<b>").append(data.type).append("</b>").append(cDIVIDER);
+	//} else {
+	details.append(data.type).append(cDIVIDER);
+	//}
 	details.append(data.amount.PrettyPrint()).append(cDIVIDER);
-	if ((highlight_topic == QueryTopic::CLIENT) || (highlight_topic == QueryTopic::CATEGORY)) {
-		details.append("<b>").append(data.client).append("</b>").append(cDIVIDER);
-	} else {
-		details.append(data.client).append(cDIVIDER);
+	//if ((highlight_topic == QueryTopic::CLIENT) || (highlight_topic == QueryTopic::CATEGORY)) {
+	//	details.append("<b>").append(data.client).append("</b>").append(cDIVIDER);
+	//} else {
+	details.append(data.client);
+	if (!resolved_client.empty() && data.client.IsSameAs(resolved_client) == 0) {
+		details.append(" -> [").append(resolved_client).append("]");
 	}
-	if (highlight_topic == QueryTopic::CATEGORY) {
-		details.append("<b>").append(data.memo).append("</b>");
-	} else {
-		details.append(data.memo);
+	details.append(cDIVIDER);
+	//}
+	//if (highlight_topic == QueryTopic::CATEGORY) {
+	//	details.append("<b>").append(data.memo).append("</b>");
+	//} else {
+	details.append(data.memo);
+	//}
+	if (!data.cat.IsEmpty()) {
+		details.append(cDIVIDER).append(data.cat);
 	}
 	return details;
 }
@@ -333,12 +357,12 @@ Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTo
 	if (ids.size() == 1) {
 		return *ids.begin(); // perfect match
 	} else if (ids.size() > 1) {
-		ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, topic), topic, ids, id, create, keyword, optional);
+		ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data), topic, ids, id, create, keyword, optional);
 		if (res == ManualResolve_ABORT) {
-			throw; // quick exit
+			throw "abort"; // quick exit
 		} else if (res & ManualResolve_NEW_CHILD) {
 			id = CreateId(topic, create);
-		} else if (res & ManualResolve_DEFAULT) {
+		} else if (res == ManualResolve_DEFAULT) {
 			id = Id(0);
 		}
 		if (res & ManualResolve_KEYWORD) {
@@ -352,9 +376,9 @@ Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTo
 	} else if (ids.empty()) {
 		create = name;
 	}
-	ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, topic), topic, ids, id, create, keyword, optional);
+	ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data), topic, ids, id, create, keyword, optional);
 	if (res == ManualResolve_ABORT) {
-		throw; // quick exit
+		throw "abort"; // quick exit
 	} else if (res & ManualResolve_NEW_CHILD) {
 		id = CreateId(topic, create);
 	} else if (res == ManualResolve_DEFAULT) {
@@ -377,20 +401,21 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 	// Client
 	Id client = ProcessOneTopic(data, QueryTopic::CLIENT, data.client, resolve_if, true);
 	m_client_man.AddAccountNumber(client, data.client_account_number);
+	String client_name = m_client_man.GetName(client);
 
 	// Category
 	Id cat = Id(0);
 	if (data.cat.empty()) {
 		cat = m_category_system.Categorize({data.type, data.client, data.memo});
 		if ((Id::Type)cat == 0) {
-			cat = m_category_system.Categorize(StringVector{m_ttype_man.GetName(ttype), m_client_man.GetName(client)});
+			cat = m_category_system.Categorize(StringVector{m_ttype_man.GetName(ttype), client_name});
 		}
 		if ((Id::Type)cat == 0) {
 			// popup manual categorization dialog
 			String create = cINACTIVE, keyword;
-			ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, QueryTopic::CATEGORY), QueryTopic::CATEGORY, IdSet(), cat, create, keyword, true);
+			ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, client_name), QueryTopic::CATEGORY, IdSet(), cat, create, keyword, true);
 			if (res == ManualResolve_ABORT) {
-				throw; // quick exit
+				throw "abort"; // quick exit
 			} else if (res & ManualResolve_NEW_CHILD) {
 				cat = CreateId(QueryTopic::CATEGORY, create);
 			} else if (res & ManualResolve_DEFAULT) {
@@ -415,12 +440,30 @@ StringTable AccountManager::Import(const String& filename, IManualResolve* resol
 	}
 	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.currency);
 	Account* acc = m_accounts[account_id];
-	if (!acc->PrepareImport(import_data.data.front().date)) {
-		return {};
+	if (acc->Size()) {
+		if (acc->GetLastRecord()->GetDate() < import_data.data.front().date) {
+			m_logger.LogError() << "Cannot Import data if it is not overlapping at least one day with stored data (" << GetDateFormat(acc->GetLastRecord()->GetDate()) << ")";
+			return {};
+		}
 	}
-	for (auto& raw : import_data.data) {
-		ProcessOneTransaction(acc, raw, resolve_if);
-		++m_new_transactions;
+	RawTransactionData::size = import_data.data.size();
+	RawTransactionData::index = 1;
+	try {
+		bool start = false;
+		for (auto& raw : import_data.data) {
+			if (!start) {
+				start = acc->PrepareImport(raw.date);
+				if (!start) {
+					++RawTransactionData::index;
+					continue;
+				}
+			}
+			ProcessOneTransaction(acc, raw, resolve_if);
+			++RawTransactionData::index;
+			++m_new_transactions;
+		}
+	} catch (...) {
+		m_logger.LogError() << "Import aborted";
 	}
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);
 	StringTable table = FormatResultTable(last_transactions);

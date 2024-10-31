@@ -6,11 +6,15 @@
 class AccountNumber {
 	mutable String m_iban_prefix;
 	String m_numbers;
-public:
+	bool m_valid = false;
 	AccountNumber(const String& acc_num);
+public:
+	static AccountNumber* Create(const String& acc_num);
 	AccountNumber(const AccountNumber& copy);
+	inline bool IsValid() const { return m_valid; }
 	String GetString() const;
 	bool IsEqual(const AccountNumber& other) const;
+	bool IsEqual(const String& other) const;
 	operator String() const;
 };
 

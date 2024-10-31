@@ -20,7 +20,7 @@ void Client::AddAccountNumber(const AccountNumber& acc) {
 }
 
 void Client::AddAccountNumber(const String& acc) {
-	m_account_numbers.push_back(AccountNumber(acc));
+	m_account_numbers.push_back(acc);
 }
 
 void Client::Merge(const Client* other) {

@@ -28,6 +28,9 @@ enum ImportColumnsSpecial {
 	Special_Column_SUBCATEGORY
 };
 
+size_t RawTransactionData::size = 0;
+size_t RawTransactionData::index = 0;
+
 class FileLineStreamReader {
 	std::ifstream _in;
 	char _buffer[1000];
@@ -128,6 +131,7 @@ static void ImportFromXML(const String& filename, RawImportData& import_data) {
 			raw.client = (*rit)[Granit_Column_CLIENT2];
 			raw.client_account_number = (*rit)[Granit_Column_CLIENT2_ACC];
 		}
+		raw.client.Replace("&amp;", "&"); // remove xml escaping of ampersand
 		raw.date = ParseDateFormat((*rit)[Granit_Column_DATE]);
 		raw.type = (*rit)[Granit_Column_TYPE];
 

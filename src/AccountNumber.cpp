@@ -3,6 +3,8 @@
 #include <iomanip>
 #include <cwctype>
 
+#include "Logger.h"
+
 bool IsAlpha(const char& c) {
 	return ((c >= 'A') && (c <= 'Z'));
 }
@@ -16,26 +18,43 @@ bool IsAlNum(const char& c) {
 }
 
 AccountNumber::AccountNumber(const String& acc_num) {
-	int counter = 0;
-	bool iban = true;
+	bool has_iban = false;
+	String clean;
 	for (const auto& c : acc_num) {
 		if (!IsAlNum(c)) {
 			continue; // skip
 		}
-		if (iban && IsAlpha(c) && counter < 2) {
-			m_iban_prefix.Append(c);
-			++counter;
-		} else if (iban && IsDigit(c) && counter >= 2) {
-			m_iban_prefix.Append(c);
-			++counter;
-			if (counter == 4) {
-				iban = false;
-			}
-		} else if (IsDigit(c)) {
-			iban = false;
+		clean.append(c);
+	}
+	if (IsAlpha(clean[0]) && IsAlpha(clean[1]) && IsDigit(clean[2]) && IsDigit(clean[2])) {
+		has_iban = true;
+		m_iban_prefix = clean.Mid(0, 4);
+		clean = clean.Mid(4);
+	}
+	for (const auto& c : clean) {
+		if (IsDigit(c) || (has_iban && (m_numbers.size() >= 16))) {
 			m_numbers.Append(c);
+		} else {
+			return; // invalid
 		}
 	}
+	size_t size = m_numbers.size();
+	if (size == 16) {
+		m_numbers.append("00000000");
+		m_valid = true;
+	} else if ((size == 24) || (has_iban && (size >= 16))) {
+		m_valid = true;
+	}
+}
+
+AccountNumber* AccountNumber::Create(const String& acc_num) {
+	AccountNumber* acc_ptr = new AccountNumber(acc_num);
+	if (acc_ptr->IsValid()) {
+		return acc_ptr;
+	}
+	delete acc_ptr;
+	LogWarn() << "Invalid account number '" << acc_num << "'";
+	return nullptr;
 }
 
 AccountNumber::AccountNumber(const AccountNumber& copy)
@@ -68,6 +87,9 @@ String AccountNumber::GetString() const {
 }
 
 bool AccountNumber::IsEqual(const AccountNumber& other) const {
+	if (!other.IsValid()) {
+		return false;
+	}
 	if (m_numbers != other.m_numbers) {
 		return false;
 	}
@@ -82,12 +104,22 @@ bool AccountNumber::IsEqual(const AccountNumber& other) const {
 	return true;
 }
 
+bool AccountNumber::IsEqual(const String& other) const {
+	AccountNumber* acc_ptr = AccountNumber::Create(other);
+	if (!acc_ptr) {
+		return false;
+	}
+	bool eq = IsEqual(*acc_ptr);
+	delete acc_ptr;
+	return eq;
+}
+
 AccountNumber::operator String() const { return GetString(); }
 
 AccountNumberSet::AccountNumberSet() : PtrVector(true) {}
 
 bool AccountNumberSet::Check(const String acc) const {
-	AccountNumber* acc_ptr = new AccountNumber(acc);
+	AccountNumber* acc_ptr = AccountNumber::Create(acc);
 	if (!acc_ptr) {
 		return false;
 	}
@@ -108,7 +140,7 @@ void AccountNumberSet::push_back(AccountNumber* acc) {
 }
 
 void AccountNumberSet::push_back(const String& acc) {
-	AccountNumber* acc_ptr = new AccountNumber(acc);
+	AccountNumber* acc_ptr = AccountNumber::Create(acc);
 	if (!acc_ptr) {
 		return;
 	}
@@ -120,7 +152,7 @@ void AccountNumberSet::push_back(const String& acc) {
 }
 
 void AccountNumberSet::insert(Iterator it, const String& acc) {
-	AccountNumber* acc_ptr = new AccountNumber(acc);
+	AccountNumber* acc_ptr = AccountNumber::Create(acc);
 	if (!acc_ptr) {
 		return;
 	}
@@ -152,6 +184,9 @@ AccountNumberSet::ConstIterator AccountNumberSet::end() const {
 }
 
 bool AccountNumberSet::Check(const AccountNumber* newacc) const {
+	if (!newacc->IsValid()) {
+		return false;
+	}
 	for (const AccountNumber& acc : *this) {
 		if (acc.IsEqual(*newacc)) {
 			return true;

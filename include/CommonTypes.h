@@ -16,6 +16,7 @@ enum class QueryTopic {
 	CLIENT,
 	MEMO,
 	CATEGORY,
+	GENERAL,
 	WRITE
 };
 

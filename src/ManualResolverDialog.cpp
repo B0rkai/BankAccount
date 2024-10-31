@@ -58,7 +58,8 @@ void ManualResolverDialog::SetUp(const String& tr_details, const IdSet& matches,
 	wxStaticText* text = new wxStaticText(this, wxID_ANY, wxEmptyString, wxPoint(20,10), wxSize(XSIZE - 100, 100));
 	wxFont font = wxFont(wxSize(7, 14), wxFontFamily::wxFONTFAMILY_TELETYPE, wxFontStyle::wxFONTSTYLE_NORMAL, wxFontWeight::wxFONTWEIGHT_BOLD);
 	text->SetFont(font);
-	text->SetLabelMarkup(tr_details);
+	//text->SetLabel(tr_details);
+	text->SetLabelText(tr_details);
 	new wxStaticText(this, wxID_ANY, "Search", wxPoint(20, VERTICAL_ALIGNMENT - 18));
 	m_search_txtctrl = new wxTextCtrl(this, SEARCH_TXTCTRL, wxEmptyString, wxPoint(20, VERTICAL_ALIGNMENT), cDefaultTextCtrlSize);
 	if (create != cINACTIVE) {
@@ -125,15 +126,20 @@ void ManualResolverDialog::ButtonClicked(wxCommandEvent& evt) {
 	evt.Skip();
 	ManualResolveResult res = ManualResolve_ID_SELECTED;
 	if (evt.GetId() == ABORT_BUTT) {
+		m_logger.LogDebug() << "User pressed Abort";
 		EndModal(ManualResolve_ABORT);
 		return;
 	} else if (evt.GetId() == DEF_BUTT) {
+		m_logger.LogDebug() << "User pressed Default";
 		res = ManualResolve_DEFAULT;
 		if (m_create_new_txtctrl) m_create_new_txtctrl->Clear();
 		m_selection_listctrl->Clear();
 		EndModal(res); // no keyword
 	} else if (m_create_new_txtctrl && !m_create_new_txtctrl->IsEmpty()) {
+		m_logger.LogDebug() << "User pressed Ok with create request";
 		res = ManualResolve_NEW_CHILD;
+	} else {
+		m_logger.LogDebug() << "User pressed Ok";
 	}
 	if (!m_add_keyword_txtctrl->IsEmpty()) {
 		res = ManualResolveResult(res | ManualResolve_KEYWORD);

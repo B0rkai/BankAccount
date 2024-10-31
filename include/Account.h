@@ -18,7 +18,7 @@ class Query;
 class WQuery;
 
 class Account : public IAccount, public NamedType {
-	const AccountNumber m_acc_number;
+	std::unique_ptr<const AccountNumber> m_acc_number;
 	bool m_status = true;
 	Currency* m_curr;
 	std::vector<Transaction> m_transactions;
@@ -30,7 +30,7 @@ class Account : public IAccount, public NamedType {
 public:
 	Account(const String& acc_number, const String& acc_name, const CurrencyType curr);
 
-	inline String GetAccNumber() const { return m_acc_number.GetString(); }
+	inline String GetAccNumber() const { return m_acc_number->GetString(); }
 	bool CheckAccNumber(const String& other);
 	bool Status() const { return m_status; }
 

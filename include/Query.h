@@ -77,6 +77,17 @@ class QueryCategory : public QueryByName {
 	GETQUERYTOPIC(CATEGORY)
 };
 
+class QueryCount : public QueryElement {
+	GETQUERYTOPIC(GENERAL)
+	uint32_t m_count = 0;
+	inline virtual bool IsOk() const { return true; }
+public:
+	QueryCount() = default;
+	virtual ~QueryCount() = default;
+	virtual bool CheckTransaction(const Transaction* tr) override;
+	inline uint32_t GetCount() const { return m_count; }
+};
+
 class QuerySum : public QueryElement {
 public:
 	struct Result {

@@ -3,6 +3,8 @@
 #include "Currency.h"
 
 struct RawTransactionData {
+	static size_t size;
+	static size_t index;
 	Money amount;
 	uint16_t date;
 	String type;

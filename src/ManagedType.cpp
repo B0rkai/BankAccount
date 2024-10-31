@@ -41,6 +41,9 @@ void NamedType::Stream(std::ostream& out) const {
 }
 
 void MappedType::AddKeyword(const String& acc) {
+    if (acc.empty()) {
+        return;
+    }
     (void) m_keywords.insert(acc);
 }
 

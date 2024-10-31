@@ -317,3 +317,8 @@ void QueryByName::PreResolve() {
 bool TopicSubQuery::CheckTransaction(const Transaction* tr) {
 	return QueryCurrencySum::CheckTransaction(tr);
 }
+
+bool QueryCount::CheckTransaction(const Transaction* tr) {
+	++m_count;
+	return true;
+}

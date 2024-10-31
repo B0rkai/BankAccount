@@ -42,15 +42,15 @@ String PrettyTable(const StringTable& table) {
 				++i;
 				continue;
 			}
-			int intend = widths[i] - str.length();
+			int indent = widths[i] - str.length();
 			if (table.GetMetaData(i) == StringTable::RIGHT_ALIGNED) {
-				while (intend--) {
+				while (indent--) {
 					ss << " ";
 				}
 			}
 			ss << str;
 			if (table.GetMetaData(i) == StringTable::LEFT_ALIGNED) {
-				while (intend--) {
+				while (indent--) {
 					ss << " ";
 				}
 			}
@@ -538,12 +538,27 @@ void cMain::MergeButtonClicked(wxCommandEvent& evt) {
 	wxString merge_to = m_merge_to_textctrl->GetValue();
 	wxString merge_topic = m_topic_combo->GetValue();
 	IdSet froms;
+	Id to(0);
 	unsigned long _id;
-	merge_to.ToULong(&_id);
-	Id to(_id);
+	INameResolve* resolve = m_bank_file.get();
+	if (merge_to.IsNumber()) {
+		merge_to.ToULong(&_id);
+		 to = Id(_id);
+	} else {
+		IdSet tos = resolve->GetIds(String2Topic(merge_topic), merge_to);
+		if (tos.size() != 1) {
+			LogError() << "Merge Query aborted! Target is not correctly set to one element";
+			return;
+		}
+		to = *tos.begin();
+	}
 	try {
 		StringVector froms_str = ParseMultiValueString(merge_from);
 		for (const String& from_str : froms_str) {
+			if (!from_str.IsNumber()) {
+				LogError() << "Merge Query aborted! Merge from by name is not yet supported";
+				return;
+			}
 			from_str.ToULong(&_id);
 			Id from(_id);
 			froms.insert(from);

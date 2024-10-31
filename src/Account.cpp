@@ -7,11 +7,10 @@
 #include <algorithm>
 
 Account::Account(const String& acc_number, const String& acc_name, const CurrencyType curr)
-: NamedType(acc_name), m_acc_number(acc_number), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")) {}
+: NamedType(acc_name), m_acc_number(AccountNumber::Create(acc_number)), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")) {}
 
 bool Account::CheckAccNumber(const String& other) {
-	AccountNumber acc(other);
-	return m_acc_number.IsEqual(acc);
+	return m_acc_number->IsEqual(other);
 }
 
 bool Account::PrepareImport(const uint16_t date) {
@@ -22,8 +21,8 @@ bool Account::PrepareImport(const uint16_t date) {
 	if (last_date < date) {
 		return false; // gap
 	} else { // delete old data on the start day, because export has higher chance to be whole
-		if ((last_date - date) > 5) { // WTF
-			m_logger.LogError() << "Import Aborted! Please import data what has 5 or less days overlap with already loaded data! (last record date on " << GetFullName().utf8_str() << " is " << GetDateFormat(GetLastRecord()->GetDate()) << ")";
+		if ((last_date - date) > 1) { // WTF
+			//m_logger.LogError() << "Import Aborted! Please import data what has 5 or less days overlap with already loaded data! (last record date on " << GetFullName().utf8_str() << " is " << GetDateFormat(GetLastRecord()->GetDate()) << ")";
 			return false;
 		}
 		do {
@@ -120,7 +119,7 @@ void Account::Sort() {
 void Account::Stream(std::ostream& out) const {
 	StreamString(out, GetGroupName());
 	out << COMMA;
-	StreamString(out, m_acc_number);
+	StreamString(out, m_acc_number->GetString());
 	out << COMMA;
 	StreamString(out, GetName());
 	out << COMMA << m_curr->GetShortName() << COMMA << m_status << COMMA << m_transactions.size() << ENDL;
