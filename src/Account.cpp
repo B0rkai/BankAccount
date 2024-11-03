@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-Account::Account(const String& acc_number, const String& acc_name, const CurrencyType curr)
-: NamedType(acc_name), m_acc_number(AccountNumber::Create(acc_number)), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")) {}
+Account::Account(const Id::Type id, const String& acc_number, const String& acc_name, const CurrencyType curr)
+: NumberedType(id), NamedType(acc_name), m_acc_number(AccountNumber::Create(acc_number)), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")) {}
 
 bool Account::CheckAccNumber(const String& other) {
 	return m_acc_number->IsEqual(other);
@@ -67,6 +67,11 @@ bool Account::RunQuery(Query& query, const Transaction* tr) const {
 
 const String& Account::GetAccName() const {
 	return GetName();
+}
+
+String* Account::AddDescription(const String& str) {
+	m_descriptions.push_back(str);
+	return &m_descriptions.back();
 }
 
 void Account::MakeQuery(Query& query) const {

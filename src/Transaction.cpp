@@ -11,6 +11,7 @@ Transaction::Transaction(IAccount* parent, const Money amount, const uint16_t da
 
 StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
     StringVector res;
+    res.push_back(m_parent->GetAccName());
     res.push_back(GetDateFormat(m_date));
     res.push_back(resif->GetTransactionType(m_type_id));
     res.push_back(m_amount.PrettyPrint());
@@ -31,6 +32,8 @@ StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
 
 Id Transaction::GetId(const QueryTopic topic) const {
     switch (topic) {
+    case QueryTopic::ACCOUNT:
+        return m_parent->GetId();
     case QueryTopic::CLIENT:
         return m_client_id;
     case QueryTopic::TYPE:
@@ -38,7 +41,7 @@ Id Transaction::GetId(const QueryTopic topic) const {
     case QueryTopic::CATEGORY:
         return m_category_id;
     case QueryTopic::CURRENCY:
-        return m_parent->GetCurrency()->Type();
+        return m_amount.Type();
     default:
         throw "Transaction: Invalid topic requested";
     }
@@ -59,6 +62,10 @@ Id& Transaction::GetId(const QueryTopic topic) {
 
 CurrencyType Transaction::GetCurrencyType() const {
     return m_amount.Type();
+}
+
+void Transaction::AddDescription(const String& desc) {
+    m_desc_ptr = m_parent->AddDescription(desc);
 }
 
 void Transaction::Stream(std::ostream& out) const {

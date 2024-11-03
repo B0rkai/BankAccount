@@ -1,6 +1,7 @@
 #include "WQuery.h"
 #include "Transaction.h"
 #include "IWQuery.h"
+#include "IManualResolve.h"
 
 const IIdResolve* WQueryElement::s_resolve_if = nullptr;
 
@@ -66,29 +67,56 @@ void CategorizingQuery::Execute(IWAccount* account_if) {
     if_categorize = account_if->GetCategorizingInterface();
 }
 
-bool CategorizingQuery::TryCategorizing(Transaction* tr, String& text) {
-    Id id = if_categorize->Categorize(text);
-    if (!id || (tr->GetCategoryId() == id)) {
-        return false;
-    }
-    if (m_flags & CAUTIOUS) {
-        // pop up the confirmation window about the match
-    }
-    tr->GetCategoryId() = id;
-    return true;
-}
-
 bool CategorizingQuery::CheckTransaction(Transaction* tr) {
+    ++m_all;
     if (tr->GetCategoryId() && !(m_flags & OVERRIDE)) {
         return false; // skip already categorized if not in override
     }
     bool success = false;
+    StringVector vec = tr->PrintDebug(s_resolve_if);
+    String details = ContainerAsString(vec);
     if (m_flags & AUTOMATIC) {
-        StringVector vec = tr->PrintDebug(s_resolve_if);
-        success = TryCategorizing(tr, vec[Transaction::CLIENT]) || TryCategorizing(tr, vec[Transaction::MEMO]) || TryCategorizing(tr, vec[Transaction::DESCRIPTION]);
+        Id id = if_categorize->Categorize({vec[Transaction::CLIENT], vec[Transaction::MEMO], vec[Transaction::DESCRIPTION]});
+        if (id && (tr->GetCategoryId() != id)) {
+            if (m_flags & CAUTIOUS) {
+                // pop up the confirmation window about the match
+                String create = cINACTIVE;
+                String desc;
+                if_manual_resolve->DoManualResolve(details, "", desc, QueryTopic::CATEGORY, IdSet({id}), id, true);
+                if (!desc.empty()) {
+                    tr->AddDescription(desc);
+                }
+            }
+            tr->GetCategoryId() = id;
+            ++m_automatic_categorized;
+            success = true;
+        } else if (tr->GetCategoryId() == id) {
+            ++m_did_not_change;
+        } else { // id == 0
+            ++m_no_category_found;
+        }
     }
     if (!success && m_flags & MANUAL) {
         // pop up the manual categorization window
+        Id cat(tr->GetCategoryId());
+        String create = cINACTIVE;
+        String desc;     
+        if_manual_resolve->DoManualResolve(details, "", desc, QueryTopic::CATEGORY, IdSet(), cat, true);
+        tr->GetCategoryId() = cat;
+        if (!desc.empty()) {
+            tr->AddDescription(desc);
+        }
+        ++m_manual_categorized;
     }
     return success;
+}
+
+String CategorizingQuery::GetResult() const {
+    String res;
+    res.append("From ").append(std::to_string(m_all)).append(" records, here are the results").append(ENDL);
+    res.append(std::to_string(m_automatic_categorized)).append(" automatic categorization done").append(ENDL);
+    res.append(std::to_string(m_manual_categorized)).append(" manual categorization done").append(ENDL);
+    res.append(std::to_string(m_did_not_change)).append(" records' category did not change").append(ENDL);
+    res.append(std::to_string(m_no_category_found)).append(" missing categorization").append(ENDL);
+    return res;
 }

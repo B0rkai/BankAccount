@@ -65,6 +65,10 @@ public:
 	virtual String GetStringResult() const;
 };
 
+class QueryAccount : public QueryByName {
+	GETQUERYTOPIC(ACCOUNT)
+};
+
 class QueryType : public QueryByName {
 	GETQUERYTOPIC(TYPE)
 };
@@ -144,6 +148,9 @@ class QueryTypeSum : public QuerySumByTopic {
 };
 class QueryClientSum : public QuerySumByTopic {
 	GETQUERYTOPIC(CLIENT)
+};
+class QueryAccountSum : public QuerySumByTopic {
+	GETQUERYTOPIC(ACCOUNT)
 };
 
 class QueryByNumber : public QueryElement {

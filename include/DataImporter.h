@@ -11,6 +11,7 @@ struct RawTransactionData {
 	String client;
 	String client_account_number;
 	String memo;
+	mutable String desc;
 	String cat;
 };
 

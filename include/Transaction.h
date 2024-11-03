@@ -34,6 +34,7 @@ public:
 	Id GetId(const QueryTopic topic) const;
 	Id& GetId(const QueryTopic topic);
 	CurrencyType GetCurrencyType() const;
+	void AddDescription(const String& desc);
 	inline void SetDiscription(String* ptr) { m_desc_ptr = ptr; }
 
 	enum Debug {

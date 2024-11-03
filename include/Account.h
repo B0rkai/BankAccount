@@ -17,7 +17,7 @@ class Currency;
 class Query;
 class WQuery;
 
-class Account : public IAccount, public NamedType {
+class Account : public IAccount, public NumberedType, public NamedType {
 	std::unique_ptr<const AccountNumber> m_acc_number;
 	bool m_status = true;
 	Currency* m_curr;
@@ -27,8 +27,10 @@ class Account : public IAccount, public NamedType {
 	Logger& m_logger;
 	bool RunQuery(Query& query, const Transaction* tr) const;
 	virtual const String& GetAccName() const override;
+	virtual String* AddDescription(const String& str) override;
+	inline virtual Id GetId() const override { return NumberedType::GetId(); }
 public:
-	Account(const String& acc_number, const String& acc_name, const CurrencyType curr);
+	Account(const Id::Type id, const String& acc_number, const String& acc_name, const CurrencyType curr);
 
 	inline String GetAccNumber() const { return m_acc_number->GetString(); }
 	bool CheckAccNumber(const String& other);

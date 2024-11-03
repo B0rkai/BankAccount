@@ -8,6 +8,7 @@
 #include "WQuery.h"
 #include "DataImporter.h"
 #include "IManualResolve.h"
+#include "INewAccount.h"
 
 struct data {
 	String name;
@@ -28,14 +29,7 @@ Id AccountManager::CreateTransactionTypeId(const String& type) {
 	return m_ttype_man.Create(type);
 }
 
-Id AccountManager::CreateOrGetAccountId(const String& account_number, const CurrencyType curr) {
-	//if (m_accounts.empty()) {
-	//	// popup new account dialog, add bank name and name of account
-	//	//m_accounts.push_back(new Account(account_number, account_name, curr));
-	//	//m_accounts.back()->SetGroupName(bank_name);
-	//	m_logger.LogError() << "NOT IMPLEMENTED: Cannot create new account :(";
-	//	return 0;
-	//}
+Id AccountManager::CreateOrGetAccountId(const String& account_number, const CurrencyType curr, INewAccount* newaccount_if) {
 	size_t size = m_accounts.size();
 	for (int i = 0; i < size; ++i) {
 		if (m_accounts[i]->CheckAccNumber(account_number)) {
@@ -51,9 +45,13 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Curr
 		m_logger.LogError() << "Cannot create account, account number '" << account_number << "' is invalid";
 		throw "bad account number";
 	}
+
 	String acc_name = "Account #"; // make default name
-	acc_name.append(std::to_string(m_accounts.size() + 1));
-	m_accounts.push_back(new Account(account_number, acc_name, curr));
+	String bank_name;
+	acc_name.append(std::to_string(size + 1));
+	newaccount_if->NewAccountDetails(*acc_num_ptr, acc_name, bank_name, curr);
+	m_accounts.push_back(new Account(size, account_number, acc_name, curr));
+	m_accounts.back()->SetGroupName(bank_name);
 	m_logger.LogInfo() << "NEW Account '" << m_accounts.back()->GetName() << "' created";
 	return (uint8_t)size;
 }
@@ -86,6 +84,8 @@ String AccountManager::GetInfo(const QueryTopic topic, const Id id) const {
 
 String AccountManager::GetName(const QueryTopic topic, const Id id) const {
 	switch (topic) {
+	case QueryTopic::ACCOUNT:
+		return m_accounts.at(id)->GetFullName();
 	case QueryTopic::CLIENT:
 		return m_client_man.GetName(id);
 	case QueryTopic::CATEGORY:
@@ -145,6 +145,12 @@ StringTable AccountManager::List() const {
 	return table;
 }
 
+void AccountManager::ListOfAccNames(StringVector& vec) const {
+	for (const Account* acc : m_accounts) {
+		vec.push_back(acc->GetFullName());
+	}
+}
+
 void AccountManager::StreamAccounts(std::ostream& out) const {
 	out << m_accounts.size() << ENDL;
 	for (const Account* acc : m_accounts) {
@@ -159,12 +165,12 @@ void AccountManager::StreamAccounts(std::istream& in) {
 	m_accounts.clear();
 	m_accounts.reserve(size);
 	String bank_name, acc_numb, acc_name, curr_name;
-	for (int i = 0; i < size; ++i) {
+	for (Id::Type i = 0; i < size; ++i) {
 		StreamString(in, bank_name);
 		StreamString(in, acc_numb);
 		StreamString(in, acc_name);
 		StreamString(in, curr_name);
-		m_accounts.push_back(new Account(acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
+		m_accounts.push_back(new Account(i, acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
 		m_accounts.back()->SetGroupName(bank_name.c_str());
 		m_accounts.back()->Stream(in);
 		m_accounts.back()->Sort();
@@ -318,34 +324,23 @@ IdSet AccountManager::SearchIds(const QueryTopic topic, const String& name, bool
 	}
 }
 
-const char* cDIVIDER("  |  ");
-
 static String PrepareTransactionDetails(const RawTransactionData& data, const String& resolved_client = cStringEmpty) {
 	String details;
 	details.append(std::to_string(RawTransactionData::index)).append("/").append(std::to_string(RawTransactionData::size)).append(cDIVIDER);
 	details.append(GetDateFormat(data.date)).append(cDIVIDER);
-	//if ((highlight_topic == QueryTopic::TYPE) || (highlight_topic == QueryTopic::CATEGORY)) {
-	//	details.append("<b>").append(data.type).append("</b>").append(cDIVIDER);
-	//} else {
 	details.append(data.type).append(cDIVIDER);
-	//}
 	details.append(data.amount.PrettyPrint()).append(cDIVIDER);
-	//if ((highlight_topic == QueryTopic::CLIENT) || (highlight_topic == QueryTopic::CATEGORY)) {
-	//	details.append("<b>").append(data.client).append("</b>").append(cDIVIDER);
-	//} else {
 	details.append(data.client);
-	if (!resolved_client.empty() && data.client.IsSameAs(resolved_client) == 0) {
+	if (!resolved_client.empty() && !data.client.IsSameAs(resolved_client)) {
 		details.append(" -> [").append(resolved_client).append("]");
 	}
 	details.append(cDIVIDER);
-	//}
-	//if (highlight_topic == QueryTopic::CATEGORY) {
-	//	details.append("<b>").append(data.memo).append("</b>");
-	//} else {
 	details.append(data.memo);
-	//}
 	if (!data.cat.IsEmpty()) {
 		details.append(cDIVIDER).append(data.cat);
+	}
+	if (!data.desc.empty()) {
+		details.append(cDIVIDER).append(data.desc);
 	}
 	return details;
 }
@@ -353,40 +348,20 @@ static String PrepareTransactionDetails(const RawTransactionData& data, const St
 Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTopic topic, const String& name, IManualResolve* resolve_if, bool optional) {
 	IdSet ids = SearchIds(topic, name, false);
 	Id id(INVALID_ID);
-	String create, keyword;
 	if (ids.size() == 1) {
 		return *ids.begin(); // perfect match
 	} else if (ids.size() > 1) {
-		ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data), topic, ids, id, create, keyword, optional);
-		if (res == ManualResolve_ABORT) {
-			throw "abort"; // quick exit
-		} else if (res & ManualResolve_NEW_CHILD) {
-			id = CreateId(topic, create);
-		} else if (res == ManualResolve_DEFAULT) {
-			id = Id(0);
-		}
-		if (res & ManualResolve_KEYWORD) {
-			AddKeyword(topic, id, keyword);
-		}
+		resolve_if->DoManualResolve(PrepareTransactionDetails(data), cStringEmpty, data.desc, topic, ids, id, optional);
 		return id;
 	}
+	String create;
 	ids = SearchIds(topic, name, true);
 	if (ids.size() == 1) {
 		id = *ids.begin();
 	} else if (ids.empty()) {
 		create = name;
 	}
-	ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data), topic, ids, id, create, keyword, optional);
-	if (res == ManualResolve_ABORT) {
-		throw "abort"; // quick exit
-	} else if (res & ManualResolve_NEW_CHILD) {
-		id = CreateId(topic, create);
-	} else if (res == ManualResolve_DEFAULT) {
-		id = Id(0);
-	}
-	if (res & ManualResolve_KEYWORD) {
-		AddKeyword(topic, id, keyword);
-	}
+	resolve_if->DoManualResolve(PrepareTransactionDetails(data), create, data.desc, topic, ids, id, optional);
 	return id;
 }
 
@@ -412,33 +387,22 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 		}
 		if ((Id::Type)cat == 0) {
 			// popup manual categorization dialog
-			String create = cINACTIVE, keyword;
-			ManualResolveResult res = resolve_if->ManualResolve(PrepareTransactionDetails(data, client_name), QueryTopic::CATEGORY, IdSet(), cat, create, keyword, true);
-			if (res == ManualResolve_ABORT) {
-				throw "abort"; // quick exit
-			} else if (res & ManualResolve_NEW_CHILD) {
-				cat = CreateId(QueryTopic::CATEGORY, create);
-			} else if (res & ManualResolve_DEFAULT) {
-				cat = Id(0);
-			}
-			if (res & ManualResolve_KEYWORD) {
-				AddKeyword(QueryTopic::CATEGORY, cat, keyword);
-			}
+			resolve_if->DoManualResolve(PrepareTransactionDetails(data, client_name), cStringEmpty, data.desc, QueryTopic::CATEGORY, IdSet(), cat, true);
 		}
 	} else {
 		cat = (Id::Type)m_category_system.GetId(data.cat);
 	}
-	acc->AddTransaction(data.date, ttype, data.amount, client, data.memo.c_str(), cat);
+	acc->AddTransaction(data.date, ttype, data.amount, client, data.memo.c_str(), cat, data.desc.c_str());
 }
 
-StringTable AccountManager::Import(const String& filename, IManualResolve* resolve_if) {
+StringTable AccountManager::Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if) {
 	m_new_transactions = 0;
 	RawImportData import_data;
 	ImportFromFile(filename, import_data);
 	if (import_data.data.empty()) {
 		return {};
 	}
-	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.currency);
+	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.currency, newaccount_if);
 	Account* acc = m_accounts[account_id];
 	if (acc->Size()) {
 		if (acc->GetLastRecord()->GetDate() < import_data.data.front().date) {
@@ -474,8 +438,8 @@ StringTable AccountManager::Import(const String& filename, IManualResolve* resol
 
 StringTable AccountManager::FormatResultTable(const PtrVector<const Transaction>& res) const {
 	StringTable table;
-	table.push_back({"Date", "Type", "Amount", "Client", "Memo", "Desc", "Category"});
-	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED});
+	table.push_back({"Account", "Date", "Type", "Amount", "Client", "Memo", "Desc", "Category"});
+	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED});
 	for (const Transaction* tr : res) {
 		table.push_back(tr->PrintDebug(this));
 	}
@@ -516,9 +480,12 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 	WQueryElement* wqe = query.WElement();
 	wqe->PreResolve();
 	wqe->Execute(this);
-
-	for (auto* acc : m_accounts) {
-		acc->MakeQuery(query);
+	try {
+		for (auto* acc : m_accounts) {
+			acc->MakeQuery(query);
+		}
+	} catch (...) {
+		m_logger.LogWarn() << "User aboted WQuery execution";
 	}
 	QueryElement::SetResolveIf(nullptr);
 	WQueryElement::SetResolveIf(nullptr);

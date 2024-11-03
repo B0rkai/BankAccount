@@ -8,6 +8,7 @@ class IIdResolve;
 class IWClient;
 class IWCategorize;
 class IWAccount;
+class IManualResolve;
 
 class WQuery : public Query {
     WQueryElement* m_wqe = nullptr;
@@ -25,6 +26,7 @@ public:
     virtual ~WQueryElement() = default;
     inline static void SetResolveIf(const IIdResolve* resif) { s_resolve_if = resif; }
     inline virtual bool ReadOnly() const { return false; }
+    inline virtual String GetResult() const { return cStringEmpty; }
     inline virtual QueryTopic GetTopic() const = 0;
     virtual bool CheckTransaction(Transaction* tr) = 0; // non-const parameter
     inline virtual void PreResolve() {};
@@ -65,9 +67,15 @@ class CategorizingQuery : public WQueryElement {
     virtual bool IsOk() const;
     virtual void Execute(IWAccount* account_if) override;
     virtual bool CheckTransaction(Transaction* tr) override;
-    bool TryCategorizing(Transaction* tr, String& text);
+    virtual String GetResult() const override;
     uint8_t m_flags = 0u;
+    size_t m_all = 0;
+    size_t m_did_not_change = 0;
+    size_t m_no_category_found = 0;
+    size_t m_automatic_categorized = 0;
+    size_t m_manual_categorized = 0;
     IWCategorize* if_categorize = nullptr;
+    IManualResolve* if_manual_resolve = nullptr;
 public:
     enum Settings : uint8_t {
         CAUTIOUS = 1,
@@ -75,6 +83,7 @@ public:
         AUTOMATIC = 4,
         OVERRIDE = 8
     };
+    inline void SetManualResolveIf(IManualResolve* resolver_if) { if_manual_resolve = resolver_if; }
     inline void SetFlags(uint8_t flags) { m_flags = flags; };
 
 };

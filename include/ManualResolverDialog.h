@@ -14,6 +14,7 @@ class ManualResolverDialog : public wxDialog {
 	wxTextCtrl* m_search_txtctrl = nullptr;
 	wxTextCtrl* m_create_new_txtctrl = nullptr;
 	wxTextCtrl* m_add_keyword_txtctrl = nullptr;
+	wxTextCtrl* m_add_desc_txtctrl = nullptr;
 	wxListBox* m_selection_listctrl = nullptr;
 	//Id m_resolved_id;
 	QueryTopic m_topic;
@@ -24,7 +25,7 @@ class ManualResolverDialog : public wxDialog {
 	void SearchTextChanged(wxCommandEvent& evt);
 	void NewTextChanged(wxCommandEvent& evt);
 	void Selected(wxCommandEvent& evt);
-	void ButtonClicked(wxCommandEvent& evt); // ok or cancel
+	void ButtonClicked(wxCommandEvent& evt); // ok, default or abort
 	void CheckState();
 public:
 	ManualResolverDialog(wxWindow* parent, const String& title, const QueryTopic topic, INameResolve* resolve_if);
@@ -32,6 +33,7 @@ public:
 	Id GetResolvedId() const;
 	String GetNewName() const;
 	String GetNewKeyword() const;
+	String GetDescription() const;
 	wxDECLARE_EVENT_TABLE();
 };
 

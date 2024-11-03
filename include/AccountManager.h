@@ -20,6 +20,7 @@ class Account;
 class Client;
 struct RawTransactionData;
 class IManualResolve;
+class INewAccount;
 
 class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameResolve, public IWAccount {
 	ManagerType<TransactionType> m_ttype_man;
@@ -31,7 +32,7 @@ class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameReso
 
 	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
 	Id CreateTransactionTypeId(const String& type);
-	Id CreateOrGetAccountId(const String& account_number, const CurrencyType curr);
+	Id CreateOrGetAccountId(const String& account_number, const CurrencyType curr, INewAccount* newaccount_if);
 	Id CreateClientId(const String& client_name, const String& client_account_number);
 
 	virtual String GetCategoryName(const Id id) const override;
@@ -53,10 +54,10 @@ class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameReso
 	void StreamAccounts(std::ostream& out) const;
 	void StreamAccounts(std::istream& in);
 
-	Id CreateId(const QueryTopic topic, const String& name);
 	IdSet SearchIds(const QueryTopic topic, const String& name, bool low_confidence) const;
 	Id ProcessOneTopic(const RawTransactionData& data, const QueryTopic topic, const String& name, IManualResolve* resolve_if, bool optional = false);
 	void ProcessOneTransaction(Account* acc, const RawTransactionData& data, IManualResolve* resolve_if);
+	//void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional, IManualResolve* resolve_if);
 protected:
 	void Stream(std::ostream& out) const;
 	void Stream(std::istream& in);
@@ -71,11 +72,13 @@ public:
 	String GetLastRecordDate() const;
 	StringTable GetSummary(const QueryTopic topic);
 
+	Id CreateId(const QueryTopic topic, const String& name);
 	void AddKeyword(const QueryTopic topic, Id id, const String& keyword);
+	void ListOfAccNames(StringVector& vec) const;
 
 	String GetClientInfoOfName(const String& name);
 
-	StringTable Import(const String& filename, IManualResolve* resolve_if);
+	StringTable Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if);
 
 	StringTable MakeQuery(Query& query) const;
 	StringTable MakeQuery(WQuery& query);

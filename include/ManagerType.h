@@ -111,17 +111,23 @@ public:
 		return results;
 	}
 
-	Id Create(const String& name) {
-		if (strlen(name) == 0) {
+	Id Create(const String& fullname) {
+		if (strlen(fullname) == 0) {
 			return 0; // NO NAME
+		}
+		String name = fullname;
+		String groupname;
+		if (fullname.Contains("::")) {
+			groupname = fullname.BeforeFirst(':');
+			name = fullname.AfterLast(':');
 		}
 		// first check full match
 		IdSet ids = SearchIdsHighConfidence(name, true);
 		if (ids.size() == 1) {
-			m_logger.LogWarn() << "Create() Name '" << name.utf8_str() << "' matches with already existing child ID: " << (Id::Type)*ids.begin() << " " << GetName(*ids.begin()).utf8_str();
+			m_logger.LogWarn() << "Create() Name '" << fullname.utf8_str() << "' matches with already existing child ID: " << (Id::Type)*ids.begin() << " " << GetName(*ids.begin()).utf8_str();
 			return *ids.begin();
 		} else if (ids.size() > 1) {
-			m_logger.LogError() << "Create() Name '" << name.utf8_str() << "' matches with multiple IDs: " << ContainerAsString(ids);
+			m_logger.LogError() << "Create() Name '" << fullname.utf8_str() << "' matches with multiple IDs: " << ContainerAsString(ids);
 			return Id(INVALID_ID);
 		}
 		// check count
@@ -132,7 +138,10 @@ public:
 		}
 		// create new client
 		m_children.push_back(new Child((Id)s, name));
-		m_logger.LogInfo() << "NEW child created at ID: " << s << " '" << name.utf8_str();
+		if (!groupname.empty()) {
+			m_children.back()->SetGroupName(groupname);
+		}
+		m_logger.LogInfo() << "NEW child created at ID: " << s << " '" << fullname.utf8_str();
 		++m_new_children;
 		return (Id)s;
 	}

@@ -4,6 +4,8 @@
 
 
 const char* cCharArrEmpty = "";
+const char* cDIVIDER("  |  ");
+const String cStringEmpty;
 
 bool IsEndl(const char& c) {
     return ((c == ENDL) || (c == CRET));

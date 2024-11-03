@@ -62,7 +62,8 @@ constexpr uint16_t INVALID_ID = 0xffffu;
 constexpr uint16_t UNCATEGORIZED = 0u;
 constexpr uint16_t NO_CLIENT = 0u;
 
-const String cStringEmpty;
+extern const String cStringEmpty;
+extern const char* cDIVIDER;
 extern const char* cCharArrEmpty;
 
 class StringTable : public std::vector<StringVector> {

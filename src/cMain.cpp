@@ -12,6 +12,7 @@
 #include "WQuery.h"
 #include "BankAccountFile.h"
 #include "ManualResolverDialog.h"
+#include "NewAccountDetailsDialog.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -68,6 +69,7 @@ String PrettyTable(const StringTable& table) {
 
 enum CtrIds {
 	QUERY_BUTT = 10001,
+	CATEGORIZE_BUTT,
 	MERGE_BUTT,
 	KEYWORD_BUTT,
 	CHKBX_DATE_FILTER,
@@ -83,16 +85,17 @@ enum CtrIds {
 	MENU_LOAD,
 	MENU_EXTRACT,
 	MENU_SAVE,
-	MENU_CATEGORIZE,
 	MENU_LIST_TYPES,
 	MENU_LIST_ACCOUNTS,
 	MENU_LIST_CLIENTS,
 	MENU_LIST_CATEGORIES,
-	MENU_TEST
+	MENU_TEST_MANUAL_RESOLVER,
+	MENU_TEST_NEW_ACCOUNT
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_BUTTON(QUERY_BUTT, QueryButtonClicked)
+	EVT_BUTTON(CATEGORIZE_BUTT, Categorize)
 	EVT_BUTTON(MERGE_BUTT, MergeButtonClicked)
 	EVT_BUTTON(KEYWORD_BUTT, AddKeywordButtonClicked)
 	EVT_CHECKBOX(CHKBX_DATE_FILTER, DateFilterToggle)
@@ -108,12 +111,12 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_EXTRACT, LoadFile)
 	EVT_MENU(MENU_SAVE, SaveFile)
 	EVT_MENU(MENU_DEBUG_SAVE, SaveFile)
-	EVT_MENU(MENU_CATEGORIZE, Categorize)
 	EVT_MENU(MENU_LIST_TYPES, List)
 	EVT_MENU(MENU_LIST_ACCOUNTS, List)
 	EVT_MENU(MENU_LIST_CLIENTS, List)
 	EVT_MENU(MENU_LIST_CATEGORIES, List)
-	EVT_MENU(MENU_TEST, Test)
+	EVT_MENU(MENU_TEST_MANUAL_RESOLVER, Test)
+	EVT_MENU(MENU_TEST_NEW_ACCOUNT, Test)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -317,21 +320,33 @@ void cMain::Categorize(wxCommandEvent& evt) {
 		UIOutputText("First load the database");
 		return;
 	}
-	WQuery wq;
-	QueryDate* qdate;
-	if (m_use_date_filter_chkb->GetValue()) {
-		qdate = new QueryDate;
-		wxDateTime d1 = m_date_from_calendarctrl->GetDate();
-		wxDateTime d2 = m_date_to_calendarctrl->GetDate();
-		qdate->SetMin(DMYToExcelSerialDate(d1.GetDay(), d1.GetMonth() + 1, d1.GetYear()));
-		qdate->SetMax(DMYToExcelSerialDate(d2.GetDay(), d2.GetMonth() + 1, d2.GetYear()));
-		wq.push_back((QueryElement*)qdate);
+	uint8_t flags = 0;
+	if (m_automatic_chkb->GetValue()) {
+		flags |= CategorizingQuery::AUTOMATIC;
 	}
+	if (m_manual_chkb->GetValue()) {
+		flags |= CategorizingQuery::MANUAL;
+	}
+	if (m_caution_chkb->GetValue()) {
+		flags |= CategorizingQuery::CAUTIOUS;
+	}
+	if (m_override_chkb->GetValue()) {
+		flags |= CategorizingQuery::OVERRIDE;
+	}
+	if (!flags) {
+		LogWarn() << "No categorization mode selected";
+		return;
+	}
+	WQuery wq;
+	PrepareQuery(wq);
 	CategorizingQuery* cq = new CategorizingQuery;
-	cq->SetFlags(CategorizingQuery::AUTOMATIC);
+	cq->SetFlags(flags);
+	cq->SetManualResolveIf(this);
 	wq.AddWElement(cq);
 	auto table = m_bank_file->MakeQuery(wq);
-	UIOutputText(PrettyTable(table));
+	String result = wq.WElement()->GetResult();
+	result.append(PrettyTable(table));
+	UIOutputText(result);
 }
 
 void cMain::LoadFile(wxCommandEvent& evt) {
@@ -349,7 +364,16 @@ void cMain::UpdateStatusBar() {
 	m_status_bar->SetStatusText(str.str());
 }
 
-ManualResolveResult cMain::ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, bool optional) {
+void cMain::UpdateAccFilter() {
+	StringVector vec;
+	m_bank_file->ListOfAccNames(vec);
+	m_acc_chklb->Set(wxArrayString(vec.size(), vec.data()));
+	for (int i = 0; i < vec.size(); ++i) {
+		m_acc_chklb->Check(i);
+	}
+}
+
+ManualResolveResult cMain::ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, String& desc, bool optional) {
 	String title = "Resolve ";
 	title.append(Topic2String(topic));
 	ManualResolverDialog dialog(this, title, topic, (INameResolve*)m_bank_file.get());
@@ -364,7 +388,28 @@ ManualResolveResult cMain::ManualResolve(const String& tr_details, const QueryTo
 	if (res & ManualResolve_NEW_CHILD) {
 		create_name = dialog.GetNewName();
 	}
+	desc = dialog.GetDescription();
 	return res;
+}
+
+void cMain::DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional) {
+	String keyword;
+	ManualResolveResult res = ManualResolve(details, topic, ids, id, create, keyword, desc, optional);
+	if (res == ManualResolve_ABORT) {
+		throw "abort"; // quick exit
+	} else if (res & ManualResolve_NEW_CHILD) {
+		id = m_bank_file->CreateId(topic, create);
+	} else if (res == ManualResolve_DEFAULT) {
+		id = Id(0);
+	}
+	if (res & ManualResolve_KEYWORD) {
+		m_bank_file->AddKeyword(topic, id, keyword);
+	}
+}
+
+bool cMain::NewAccountDetails(const String& acc_number, String& name, String& bank, CurrencyType curr) {
+	NewAccountDetailsDialog dialog(this, acc_number, name, bank, curr);
+	return (dialog.ShowModal() == 0);
 }
 
 void cMain::DoLoad() {
@@ -375,7 +420,7 @@ void cMain::DoLoad() {
 		return;
 	}
 	m_initdb_menu_item->Enable(false);
-	//m_resetdb_menu_item->Enable(true);
+	UpdateAccFilter();
 	UpdateStatusBar();
 }
 
@@ -390,6 +435,15 @@ void cMain::PrepareQuery(Query& q) {
 	wxString client_filter_value = m_client_filter_textctrl->GetValue();
 	wxString category_filter_value = m_category_filter_textctrl->GetValue();
 	wxString type_filter_value = m_type_filter_textctrl->GetValue();
+	{
+		QueryAccount* qa = new QueryAccount;
+		wxArrayInt checked;
+		m_acc_chklb->GetCheckedItems(checked);
+		for (const int id : checked) {
+			qa->AddId(id);
+		}
+		q.push_back(qa);
+	}
 	if (!client_filter_value.empty()) {
 		QueryClient* qcli = new QueryClient;
 		StringVector vec = ParseMultiValueString(client_filter_value);
@@ -427,13 +481,20 @@ void cMain::PrepareQuery(Query& q) {
 	if (m_category_sum_chkb->GetValue()) {
 		q.push_back(new QueryCategorySum);
 		sumq = true;
-	} if (m_client_sum_chkb->GetValue()) {
+	}
+	if (m_client_sum_chkb->GetValue()) {
 		q.push_back(new QueryClientSum);
 		sumq = true;
-	} if (m_type_sum_chkb->GetValue()) {
+	}
+	if (m_type_sum_chkb->GetValue()) {
 		q.push_back(new QueryTypeSum);
 		sumq = true;
-	} if (!sumq) {
+	}
+	if (m_acc_sum_chkb->GetValue()) {
+		q.push_back(new QueryAccountSum);
+		sumq = true;
+	}
+	if (!sumq) {
 		q.push_back(new QueryCurrencySum);
 	}
 }
@@ -442,28 +503,33 @@ void cMain::InitMenu() {
 	m_menu_bar = new wxMenuBar();
 	wxMenu* dbmenu = new wxMenu();
 	wxMenu* querymenu = new wxMenu();
+	wxMenu* testmenu = new wxMenu();
 	m_menu_bar->Append(dbmenu, "Database");
 	m_menu_bar->Append(querymenu, "Query");
+	m_menu_bar->Append(testmenu, "Test");
 	m_initdb_menu_item = dbmenu->Append(MENU_LOAD, "Load file*");
 	dbmenu->Append(MENU_IMPORT, "Import from file");
 	dbmenu->Append(MENU_SAVE, "Save file");
 	dbmenu->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
 	dbmenu->Append(MENU_EXTRACT, "Extract save file");
-	querymenu->Append(MENU_CATEGORIZE, "Categorize");
 	querymenu->Append(MENU_LIST_ACCOUNTS, "List Accounts");
 	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
 	querymenu->Append(MENU_LIST_CLIENTS, "List Clients");
 	querymenu->Append(MENU_LIST_CATEGORIES, "List Categories");
-	querymenu->Append(MENU_TEST, "TEST");
+	testmenu->Append(MENU_TEST_MANUAL_RESOLVER, "ManualResolverDialog");
+	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
 
 	SetMenuBar(m_menu_bar);
 }
 
-constexpr int HORIZONTAL_ALIGN_1 = 20;
-constexpr int HORIZONTAL_ALIGN_2 = 150;
-constexpr int HORIZONTAL_ALIGN_3 = 770;
-constexpr int HORIZONTAL_ALIGN_4 = 900;
-constexpr int HORIZONTAL_ALIGN_5 = 1030;
+constexpr int HORIZONTAL_ALIGN_1 = 170;
+constexpr int HORIZONTAL_ALIGN_2 = HORIZONTAL_ALIGN_1 + 130;
+constexpr int HORIZONTAL_ALIGN_3 = HORIZONTAL_ALIGN_2 + 130;
+constexpr int HORIZONTAL_ALIGN_4 = HORIZONTAL_ALIGN_3 + 130;
+constexpr int HORIZONTAL_ALIGN_5 = HORIZONTAL_ALIGN_4 + 200;
+constexpr int HORIZONTAL_ALIGN_6 = HORIZONTAL_ALIGN_5 + 220;
+constexpr int HORIZONTAL_ALIGN_7 = HORIZONTAL_ALIGN_6 + 125;
+constexpr int HORIZONTAL_ALIGN_8 = HORIZONTAL_ALIGN_7 + 125;
 constexpr int VERTICAL_ALIGN_1 = 30;
 constexpr int VERTICAL_ALIGN_2 = 80;
 constexpr int VERTICAL_ALIGN_3 = 130;
@@ -472,6 +538,10 @@ const wxSize cDefaultCtrlSize(110, 25);
 
 void cMain::InitControls() {
 
+	// 20, 12
+	new wxStaticText(m_main_panel, wxID_ANY, "Account filter", wxPoint(20, 12));
+	m_acc_chklb = new wxCheckListBox(m_main_panel, wxID_ANY, wxPoint(20, VERTICAL_ALIGN_1), wxSize(130, 125));
+
 	new wxStaticText(m_main_panel, wxID_ANY, "Client filter", wxPoint(HORIZONTAL_ALIGN_1, 12));
 	m_client_filter_textctrl = new wxTextCtrl(m_main_panel, CLIENT_FILT_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_1), cDefaultCtrlSize);
 	new wxStaticText(m_main_panel, wxID_ANY, "Category filter", wxPoint(HORIZONTAL_ALIGN_1, 62));
@@ -479,34 +549,45 @@ void cMain::InitControls() {
 	new wxStaticText(m_main_panel, wxID_ANY, "Type filter", wxPoint(HORIZONTAL_ALIGN_1, 112));
 	m_type_filter_textctrl = new wxTextCtrl(m_main_panel, TYPE_FILT_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_1, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
-	m_show_list_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transaction list", wxPoint(HORIZONTAL_ALIGN_2, 30));
-	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by categories", wxPoint(HORIZONTAL_ALIGN_2, 50));
-	m_client_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by clients", wxPoint(HORIZONTAL_ALIGN_2, 70));
-	m_type_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "summary by types", wxPoint(HORIZONTAL_ALIGN_2, 90));
-	m_use_date_filter_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "filter date", wxPoint(HORIZONTAL_ALIGN_2, 110));
+	m_show_list_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "show transactions", wxPoint(HORIZONTAL_ALIGN_2, 10));
+	m_acc_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "account summary", wxPoint(HORIZONTAL_ALIGN_2, 30));
+	m_category_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "category summary", wxPoint(HORIZONTAL_ALIGN_2, 50));
+	m_client_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "client summary", wxPoint(HORIZONTAL_ALIGN_2, 70));
+	m_type_sum_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "type summary", wxPoint(HORIZONTAL_ALIGN_2, 90));
+	m_use_date_filter_chkb = new wxCheckBox(m_main_panel, CHKBX_DATE_FILTER, "date filter", wxPoint(HORIZONTAL_ALIGN_2, 110));
 	m_query_but = new wxButton(m_main_panel, QUERY_BUTT, "Query", wxPoint(HORIZONTAL_ALIGN_2, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
-	m_date_from_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(350, 10));
+	m_automatic_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "auto mode", wxPoint(HORIZONTAL_ALIGN_3, 10));
+	m_automatic_chkb->SetToolTip("Categorization query will attempt to find categories automatically based on the matching keywords");
+	m_manual_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "manual mode", wxPoint(HORIZONTAL_ALIGN_3, 30));
+	m_manual_chkb->SetToolTip("If categorization unsuccessful the manual resolver dialog pops up for the user");
+	m_caution_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "cautious mode", wxPoint(HORIZONTAL_ALIGN_3, 50));
+	m_caution_chkb->SetToolTip("Use with Auto mode, every match is needed to be confirmed with the manual resolver dialog");
+	m_override_chkb = new wxCheckBox(m_main_panel, wxID_ANY, "override mode", wxPoint(HORIZONTAL_ALIGN_3, 70));
+	m_override_chkb->SetToolTip("Process already categorized records as well");
+	m_categorize_but = new wxButton(m_main_panel, CATEGORIZE_BUTT, "Categorize", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+
+	m_date_from_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(HORIZONTAL_ALIGN_4, 10));
 	m_date_from_calendarctrl->Show(false);
-	m_date_to_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(550, 10));
+	m_date_to_calendarctrl = new wxCalendarCtrl(m_main_panel, wxID_ANY, wxDefaultDateTime, wxPoint(HORIZONTAL_ALIGN_5, 10));
 	m_date_to_calendarctrl->Show(false);
 
-	new wxStaticText(m_main_panel, wxID_ANY, "Merge to ID", wxPoint(HORIZONTAL_ALIGN_3, 12));
-	m_merge_to_textctrl = new wxTextCtrl(m_main_panel, MERGE_TO_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_1), cDefaultCtrlSize);
-	new wxStaticText(m_main_panel, wxID_ANY, "Merge from IDs", wxPoint(HORIZONTAL_ALIGN_3, 62));
-	m_merge_from_textctrl = new wxTextCtrl(m_main_panel, MERGE_FROM_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_2), cDefaultCtrlSize);
-	m_merge_but = new wxButton(m_main_panel, MERGE_BUTT, "Merge", wxPoint(HORIZONTAL_ALIGN_3, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge to ID", wxPoint(HORIZONTAL_ALIGN_6, 12));
+	m_merge_to_textctrl = new wxTextCtrl(m_main_panel, MERGE_TO_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_6, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Merge from IDs", wxPoint(HORIZONTAL_ALIGN_6, 62));
+	m_merge_from_textctrl = new wxTextCtrl(m_main_panel, MERGE_FROM_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_6, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+	m_merge_but = new wxButton(m_main_panel, MERGE_BUTT, "Merge", wxPoint(HORIZONTAL_ALIGN_6, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 
 	String merge_topic_choices[3] = {"Client", "Type", "Category"};
-	new wxStaticText(m_main_panel, wxID_ANY, "Topic Selector", wxPoint(HORIZONTAL_ALIGN_4, 12));
-	m_topic_combo = new wxComboBox(m_main_panel, TOPIC_SELECTOR_COMBO_CTRL, "Client", wxPoint(HORIZONTAL_ALIGN_4, VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(3, merge_topic_choices));
+	new wxStaticText(m_main_panel, wxID_ANY, "Topic Selector", wxPoint(HORIZONTAL_ALIGN_7, 12));
+	m_topic_combo = new wxComboBox(m_main_panel, TOPIC_SELECTOR_COMBO_CTRL, "Client", wxPoint(HORIZONTAL_ALIGN_7, VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(3, merge_topic_choices));
 
-	new wxStaticText(m_main_panel, wxID_ANY, "Add keyword to ID", wxPoint(HORIZONTAL_ALIGN_5, 12));
-	m_keyword_target_textctrl = new wxTextCtrl(m_main_panel, ADD_KEYWORD_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_1), cDefaultCtrlSize);
-	new wxStaticText(m_main_panel, wxID_ANY, "Keyword", wxPoint(HORIZONTAL_ALIGN_5, 62));
-	m_keyword_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_2), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Add keyword to ID", wxPoint(HORIZONTAL_ALIGN_8, 12));
+	m_keyword_target_textctrl = new wxTextCtrl(m_main_panel, ADD_KEYWORD_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_8, VERTICAL_ALIGN_1), cDefaultCtrlSize);
+	new wxStaticText(m_main_panel, wxID_ANY, "Keyword", wxPoint(HORIZONTAL_ALIGN_8, 62));
+	m_keyword_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_8, VERTICAL_ALIGN_2), cDefaultCtrlSize);
 
-	m_add_keyword_but = new wxButton(m_main_panel, KEYWORD_BUTT, "Add keyword", wxPoint(HORIZONTAL_ALIGN_5, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+	m_add_keyword_but = new wxButton(m_main_panel, KEYWORD_BUTT, "Add keyword", wxPoint(HORIZONTAL_ALIGN_8, VERTICAL_ALIGN_3), cDefaultCtrlSize);
 }
 
 void cMain::QueryButtonClicked(wxCommandEvent& evt) {
@@ -618,18 +699,32 @@ void cMain::AddKeywordButtonClicked(wxCommandEvent& evt) {
 }
 
 void cMain::Test(wxCommandEvent& evt) {
-	Id id(INVALID_ID);
-	String new_name, keyword;
-	ManualResolveResult res = ManualResolve(PrettyTable(m_bank_file->GetTestData()), QueryTopic::CLIENT, IdSet(), id, new_name, keyword, false);
-	if (res == ManualResolve_ABORT) {
-		LogWarn() << "TEST: User aborted the ManualResolveDialog";
-	} else if (res & ManualResolve_ID_SELECTED) {
-		LogWarn() << "TEST: Id " << (Id::Type)id << " came back from ManualResolveDialog";
-	} else if (res & ManualResolve_NEW_CHILD) {
-		LogWarn() << "TEST: User selected creation of new child element with name " << new_name;
-	}
-	if (res & ManualResolve_KEYWORD) {
-		LogWarn() << "TEST: User added keyword: " << keyword;
+	evt.Skip();
+	int id = evt.GetId();
+	if (id == MENU_TEST_MANUAL_RESOLVER) {
+		Id id(INVALID_ID);
+		String new_name, keyword, description;
+		ManualResolveResult res = ManualResolve(PrettyTable(m_bank_file->GetTestData()), QueryTopic::CLIENT, IdSet(), id, new_name, keyword, description, false);
+		if (res == ManualResolve_ABORT) {
+			LogWarn() << "TEST: User aborted the ManualResolveDialog";
+		} else if (res & ManualResolve_ID_SELECTED) {
+			LogWarn() << "TEST: Id " << (Id::Type)id << " came back from ManualResolveDialog";
+		} else if (res & ManualResolve_NEW_CHILD) {
+			LogWarn() << "TEST: User selected creation of new child element with name " << new_name;
+		}
+		if (res & ManualResolve_KEYWORD) {
+			LogWarn() << "TEST: User added keyword: " << keyword;
+		}
+		if (!description.empty()) {
+			LogWarn() << "TEST: User set description: " << description;
+		}
+		return;
+	} else if (id == MENU_TEST_NEW_ACCOUNT) {
+		String name, bank;
+		CurrencyType curr = HUF;
+		NewAccountDetailsDialog dialog(this, "00000000-00000000-00000000", name, bank, curr);
+		(void) dialog.ShowModal();
+		return;
 	}
 }
 
@@ -644,12 +739,13 @@ void cMain::Import(wxCommandEvent& evt) {
 			LogInfo() << "Import cancelled by user";
 			return;     // the user changed idea...
 		}
-		StringTable table = m_bank_file->Import(openFileDialog.GetPath(), this);
+		StringTable table = m_bank_file->Import(openFileDialog.GetPath(), this, this);
 		UIOutputText(PrettyTable(table));
 	} catch (const char*& problem) {
 		String error = "ERROR: ";
 		error.append(problem);
 		m_status_bar->SetStatusText(error);
 	}
+	UpdateAccFilter();
 	UpdateStatusBar();
 }

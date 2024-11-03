@@ -6,7 +6,7 @@
 const String cINACTIVE("INACTIVE");
 
 enum CTRL_IDs {
-	SEARCH_TXTCTRL,
+	SEARCH_TXTCTRL = 11000,
 	NEW_TXTCTRL,
 	SELECTOR_LISTBOX,
 	OK_BUTT,
@@ -28,6 +28,7 @@ constexpr int YSIZE = 400;
 constexpr int VERTICAL_ALIGNMENT = 100;
 constexpr int VERTICAL_ALIGNMENT2 = 150;
 constexpr int VERTICAL_ALIGNMENT3 = 200;
+constexpr int VERTICAL_ALIGNMENT4 = 250;
 constexpr int HORIZONTAL_ALIGNMENT = 260;
 const wxSize cDefaultTextCtrlSize(220, 25);
 const wxSize cDefaultCtrlSize(110, 25);
@@ -55,11 +56,12 @@ void ManualResolverDialog::PopulateSelectionChoices(const IdSet& matches, const 
 }
 
 void ManualResolverDialog::SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, bool optional) {
-	wxStaticText* text = new wxStaticText(this, wxID_ANY, wxEmptyString, wxPoint(20,10), wxSize(XSIZE - 100, 100));
+	wxStaticText* text = new wxStaticText(this, wxID_ANY, wxEmptyString, wxPoint(20,10), wxSize(XSIZE - 100, 80));
 	wxFont font = wxFont(wxSize(7, 14), wxFontFamily::wxFONTFAMILY_TELETYPE, wxFontStyle::wxFONTSTYLE_NORMAL, wxFontWeight::wxFONTWEIGHT_BOLD);
 	text->SetFont(font);
 	//text->SetLabel(tr_details);
 	text->SetLabelText(tr_details);
+	text->Wrap(XSIZE - 100);
 	new wxStaticText(this, wxID_ANY, "Search", wxPoint(20, VERTICAL_ALIGNMENT - 18));
 	m_search_txtctrl = new wxTextCtrl(this, SEARCH_TXTCTRL, wxEmptyString, wxPoint(20, VERTICAL_ALIGNMENT), cDefaultTextCtrlSize);
 	if (create != cINACTIVE) {
@@ -68,6 +70,8 @@ void ManualResolverDialog::SetUp(const String& tr_details, const IdSet& matches,
 	}
 	new wxStaticText(this, wxID_ANY, "Add keyword", wxPoint(20, VERTICAL_ALIGNMENT3 - 18));
 	m_add_keyword_txtctrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxPoint(20, VERTICAL_ALIGNMENT3), cDefaultTextCtrlSize);
+	new wxStaticText(this, wxID_ANY, "Add description", wxPoint(20, VERTICAL_ALIGNMENT4 - 18));
+	m_add_desc_txtctrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxPoint(20, VERTICAL_ALIGNMENT4), cDefaultTextCtrlSize);
 	new wxStaticText(this, wxID_ANY, "Selection choices", wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT-20));
 	m_selection_listctrl = new wxListBox(this, SELECTOR_LISTBOX, wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT), wxSize(250, 200));
 	m_ok_butt = new wxButton(this, OK_BUTT, "Ok", wxPoint(20, YSIZE - 80), cDefaultCtrlSize);
@@ -93,6 +97,10 @@ String ManualResolverDialog::GetNewName() const {
 
 String ManualResolverDialog::GetNewKeyword() const {
 	return m_add_keyword_txtctrl->GetValue();
+}
+
+String ManualResolverDialog::GetDescription() const {
+	return m_add_desc_txtctrl->GetValue();
 }
 
 void ManualResolverDialog::NewTextChanged(wxCommandEvent& evt) {
