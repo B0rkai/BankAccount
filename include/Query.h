@@ -35,6 +35,7 @@ public:
 
 class QueryElement {
 	IdSet m_ids;
+	bool m_include_mode = true;
 protected:
 	static const INameResolve* s_resolve_if;
 public:
@@ -44,6 +45,7 @@ public:
 	virtual QueryTopic GetTopic() const = 0;
 	inline const IdSet& GetIds() const { return m_ids; }
 	inline void AddId(const Id id) { m_ids.emplace(id); }
+	inline void SetExcludeMode() { m_include_mode = false; }
 	virtual bool CheckTransaction(const Transaction* tr);
 	inline virtual void PreResolve() {};
 	virtual String GetStringResult() const;

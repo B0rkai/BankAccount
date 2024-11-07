@@ -133,7 +133,11 @@ void ExtractData(const StringTable& data, RawImportData& import_data, const Supp
 		RawTransactionData& raw = import_data.data.emplace_back();
 		switch (bank) {
 		case MBH_Bank_csv:
-			raw.date = ParseDateFormat((*rit)[MBH_Column_Tranzakciodatuma], PERIOD);
+			if ((*rit)[MBH_Column_Tranzakciodatuma].empty()) {
+				raw.date = ParseDateFormat((*rit)[MBH_Column_Konyvelesidatum], PERIOD);
+			} else {
+				raw.date = ParseDateFormat((*rit)[MBH_Column_Tranzakciodatuma], PERIOD);
+			}
 			raw.type = (*rit)[MBH_Column_Megbizastipusa];
 			raw.amount = Money(import_data.currency, (*rit)[MBH_Column_Osszeg]);
 			if ((*rit)[MBH_Column_Ellenoldaliszamlaszama].empty()) {

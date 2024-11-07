@@ -94,6 +94,7 @@ enum CtrIds {
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
+	EVT_SIZE(SizeUpdate)
 	EVT_BUTTON(QUERY_BUTT, QueryButtonClicked)
 	EVT_BUTTON(CATEGORIZE_BUTT, Categorize)
 	EVT_BUTTON(MERGE_BUTT, MergeButtonClicked)
@@ -120,16 +121,17 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
-: wxFrame(nullptr, wxID_ANY, "Bank Account", wxPoint(100, 100), wxSize(1920, 1080)) {
+: wxFrame(nullptr, wxID_ANY, "Bank Account", wxPoint(100, 100), wxSize(1380, 730)) {
+	SetMinSize(wxSize(1380, 430));
 	InitMenu();
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
 	m_main_panel->SetBackgroundColour(wxColour(200, 200, 200));
 	InitControls();
 
-	m_window = new wxScrolledWindow(m_main_panel, wxID_ANY, wxPoint(20, 170), wxSize(1850, 880));
+	m_window = new wxScrolledWindow(m_main_panel, wxID_ANY, wxPoint(20, 170), wxSize(1325, 470));
 	wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 	m_window->SetSizer(sizer);
-	m_search_result_text = new wxStaticText(m_window, wxID_ANY, "Standby", wxPoint(5, 5), wxSize(900, 520));
+	m_search_result_text = new wxStaticText(m_window, wxID_ANY, "Standby", wxPoint(5, 5), wxSize(900, 320));
 	sizer->Add(m_search_result_text, 0, wxALL, 3);
 	m_window->FitInside(); // ask the sizer about the needed size
 	m_window->SetScrollRate(5,5);
@@ -595,6 +597,13 @@ void cMain::InitControls() {
 	m_keyword_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_8, VERTICAL_ALIGN_2), cDefaultCtrlSize);
 
 	m_add_keyword_but = new wxButton(m_main_panel, KEYWORD_BUTT, "Add keyword", wxPoint(HORIZONTAL_ALIGN_8, VERTICAL_ALIGN_3), cDefaultCtrlSize);
+}
+
+void cMain::SizeUpdate(wxSizeEvent& evt) {
+	evt.Skip();
+	if (m_window) {
+		m_window->SetSize(evt.GetSize() - wxSize(55, 260));
+	}
 }
 
 void cMain::QueryButtonClicked(wxCommandEvent& evt) {

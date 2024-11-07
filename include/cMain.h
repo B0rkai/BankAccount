@@ -61,6 +61,7 @@ class cMain :
     void PrepareQuery(Query& query);
     void InitMenu();
     void InitControls();
+    void SizeUpdate(wxSizeEvent& evt);
     void List(wxCommandEvent& evt);
     void Preview(CtrIds id);
     void IdChanged(wxCommandEvent& evt);

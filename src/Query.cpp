@@ -197,10 +197,10 @@ bool QueryElement::CheckTransaction(const Transaction* tr) {
 	auto& ids = GetIds();
 	for (auto& id : ids) {
 		if (tr_id == id) {
-			return true;
+			return m_include_mode;
 		}
 	}
-	return false;
+	return !m_include_mode;
 }
 
 String QueryElement::GetStringResult() const {
@@ -300,7 +300,11 @@ void Query::push_back(QueryElement* qe) {
 }
 
 void QueryByName::PreResolve() {
-	for (auto& name : m_names) {
+	for (String name : m_names) {
+		if (name.StartsWith('!')) {
+			name = name.SubString(1, String::npos);
+			SetExcludeMode();
+		}
 		IdSet ids = s_resolve_if->GetIds(GetTopic(), name.c_str());
 		for (auto id : ids) {
 			AddId(id);
