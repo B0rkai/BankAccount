@@ -2,6 +2,7 @@
 #include <iomanip>
 
 #include "Currency.h"
+#include "wx\arrstr.h"
 
 const double EXCHANGE_RATES[Currency_Count][Currency_Count] = {
 	{0.,0.,0.,0.,4.0421},
@@ -140,6 +141,11 @@ Currency* MakeCurrency(const char* type) {
 	return Forint::GetObject();
 }
 
+wxArrayString GetSupportedCurrencies() {
+	const char* ch[] = {"EUR","USD","HUF","GBP","CHF"};
+	return wxArrayString(5, ch);
+}
+
 Euro* Euro::s_object = nullptr;
 Forint* Forint::s_object = nullptr;
 USDollar* USDollar::s_object = nullptr;
@@ -180,6 +186,26 @@ SwissFranc * SwissFranc::GetObject() {
 		s_object = &francs;
 	}
 	return s_object;
+}
+
+Money::Money(CurrencyType curr_type, const String& amount_str)
+: m_currency_type(curr_type), m_amount(0) {
+	Currency* curr = MakeCurrency(m_currency_type);
+	String clean;
+	for (const char& c : amount_str) {
+		if ((c == DASH) || std::isdigit(c)) {
+			clean.append(c);
+		}
+		if (c == COMMA) {
+			if (curr->HasCents()) {
+				continue;
+			}
+			break;
+		}
+	}
+	long am;
+	clean.ToLong(&am);
+	m_amount = am;
 }
 
 String Money::PrettyPrint() const {

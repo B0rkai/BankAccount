@@ -8,7 +8,7 @@ public:
 	enum State {
 		EMPTY,
 		DIRTY,
-		SAVED
+		NO_CHANGE
 	};
 
 	BankAccountFile(const String& filename);
@@ -16,8 +16,8 @@ public:
 	static void ExtractSave(const String& filename);
 	bool Save(const bool compress);
 	inline State GetState() const { return m_state; }
-private:
 	virtual void Modified() override;
+private:
 	const String m_filename;
 	State m_state = EMPTY;
 };

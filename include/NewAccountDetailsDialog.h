@@ -10,6 +10,7 @@ class NewAccountDetailsDialog : public wxDialog {
 	CurrencyType& m_currency_type_ref;
 	wxTextCtrl* m_bank_name_txtctrl = nullptr;
 	wxTextCtrl* m_account_name_txtctrl = nullptr;
+	wxComboBox* m_currency_selector_combobox = nullptr;
 	wxButton* m_ok_but = nullptr;
 	wxButton* m_abort_but = nullptr;
 	void ButtonClicked(wxCommandEvent& evt); // ok, default or abort

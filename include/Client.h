@@ -19,7 +19,7 @@ public:
 // Write Access
 	void AddAccountNumber(const AccountNumber& acc);
 	void AddAccountNumber(const String& acc);
-	void Merge(const Client* other);
+	virtual bool DoMerge(const Client* other);
 
 // Query
 	bool CheckAccountNumbers(const String& acc) const;

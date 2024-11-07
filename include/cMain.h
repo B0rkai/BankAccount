@@ -79,6 +79,7 @@ class cMain :
     void UpdateAccFilter();
     virtual ManualResolveResult ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, String& desc, bool optional) override;
     virtual void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional) override;
+    virtual void SetDirty() override;
     virtual bool NewAccountDetails(const String& acc_number, String& name, String& bank, CurrencyType curr) override;
 public:
     cMain();

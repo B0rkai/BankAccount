@@ -65,7 +65,7 @@ BankAccountFile::BankAccountFile(const String& filename)
 	: m_filename(filename) {}
 
 bool BankAccountFile::Load() {
-	if (m_state == SAVED) {
+	if (m_state == NO_CHANGE) {
 		return false; // do nothing, it is already synced
 	}
 	bool compressed = !std::filesystem::exists(DEFAULT_UNCOMPRESSED_FILE_PATH);
@@ -98,7 +98,7 @@ bool BankAccountFile::Load() {
 		LogWarn() << "Database loaded from open csv file!! Please save it as encrypted BAF database file!";
 
 	}
-	m_state = SAVED;
+	m_state = NO_CHANGE;
 	return true;
 }
 
@@ -119,7 +119,7 @@ bool BankAccountFile::Save(const bool compress) {
 	} else {
 		LogWarn() << "Databese saved into plain csv file!!";
 	}
-	m_state = SAVED;
+	m_state = NO_CHANGE;
 	return true;
 }
 

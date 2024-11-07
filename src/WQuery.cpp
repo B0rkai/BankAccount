@@ -88,6 +88,7 @@ bool CategorizingQuery::CheckTransaction(Transaction* tr) {
                 }
             }
             tr->GetCategoryId() = id;
+            if_manual_resolve->SetDirty();
             ++m_automatic_categorized;
             success = true;
         } else if (tr->GetCategoryId() == id) {
@@ -107,6 +108,7 @@ bool CategorizingQuery::CheckTransaction(Transaction* tr) {
             tr->AddDescription(desc);
         }
         ++m_manual_categorized;
+        if_manual_resolve->SetDirty();
     }
     return success;
 }

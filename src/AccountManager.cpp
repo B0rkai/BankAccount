@@ -29,7 +29,7 @@ Id AccountManager::CreateTransactionTypeId(const String& type) {
 	return m_ttype_man.Create(type);
 }
 
-Id AccountManager::CreateOrGetAccountId(const String& account_number, const CurrencyType curr, INewAccount* newaccount_if) {
+Id AccountManager::CreateOrGetAccountId(const String& account_number, const String& bank_name, const CurrencyType curr, INewAccount* newaccount_if) {
 	size_t size = m_accounts.size();
 	for (int i = 0; i < size; ++i) {
 		if (m_accounts[i]->CheckAccNumber(account_number)) {
@@ -47,9 +47,10 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Curr
 	}
 
 	String acc_name = "Account #"; // make default name
-	String bank_name;
+	String bname = bank_name;
 	acc_name.append(std::to_string(size + 1));
-	newaccount_if->NewAccountDetails(*acc_num_ptr, acc_name, bank_name, curr);
+	Modified();
+	newaccount_if->NewAccountDetails(*acc_num_ptr, acc_name, bname, curr);
 	m_accounts.push_back(new Account(size, account_number, acc_name, curr));
 	m_accounts.back()->SetGroupName(bank_name);
 	m_logger.LogInfo() << "NEW Account '" << m_accounts.back()->GetName() << "' created";
@@ -249,26 +250,34 @@ StringTable AccountManager::GetSummary(const QueryTopic topic) {
 }
 
 void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& keyword) {
+	bool change = false;
 	if (topic == QueryTopic::TYPE) {
-		m_ttype_man.AddKeyword(id, keyword);
+		change = m_ttype_man.AddKeyword(id, keyword);
 	} else if (topic == QueryTopic::CLIENT) {
-		m_client_man.AddKeyword(id, keyword);
+		change = m_client_man.AddKeyword(id, keyword);
 	} else if (topic == QueryTopic::CATEGORY) {
-		m_category_system.AddKeyword(id, keyword);
+		change = m_category_system.AddKeyword(id, keyword);
 	} else {
 		m_logger.LogError() << "AddKeyword() wrong topic";
+	}
+	if (change) {
+		Modified();
 	}
 }
 
 void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id to) {
+	bool change = false;
 	if (topic == QueryTopic::TYPE) {
-		m_ttype_man.Merge(from, to);
+		change = m_ttype_man.Merge(from, to);
 	} else if (topic == QueryTopic::CLIENT) {
-		m_client_man.Merge(from, to);
+		change = m_client_man.Merge(from, to);
 	} else if (topic == QueryTopic::CATEGORY) {
-		m_category_system.Merge(from, to);
+		change = m_category_system.Merge(from, to);
 	} else {
 		m_logger.LogError() << "AddKeyword() wrong topic";
+	}
+	if (change) {
+		Modified();
 	}
 }
 
@@ -291,15 +300,32 @@ String AccountManager::GetClientInfoOfName(const String& name) {
 }
 
 Id AccountManager::CreateId(const QueryTopic topic, const String& name) {
+	Id ret(0);
+	size_t size_before = 0;
+	size_t size_after = 0;
 	switch (topic) {
 	case QueryTopic::CLIENT:
-		return m_client_man.Create(name);
+		size_before = m_client_man.size();
+		ret = m_client_man.Create(name);
+		size_after = m_client_man.size();
+		break;
 	case QueryTopic::TYPE:
-		return m_ttype_man.Create(name);
+		size_before = m_ttype_man.size();
+		ret = m_ttype_man.Create(name);
+		size_after = m_ttype_man.size();
+		break;
 	case QueryTopic::CATEGORY:
-		return m_category_system.Create(name);
+		size_before = m_category_system.size();
+		ret = m_category_system.Create(name);
+		size_after = m_category_system.size();
+		break;
+	default:
+		return Id(INVALID_ID);
 	}
-	return Id(INVALID_ID);
+	if (size_after != size_before) {
+		Modified();
+	}
+	return ret;
 }
 
 IdSet AccountManager::SearchIds(const QueryTopic topic, const String& name, bool low_confidence) const {
@@ -393,6 +419,7 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 		cat = (Id::Type)m_category_system.GetId(data.cat);
 	}
 	acc->AddTransaction(data.date, ttype, data.amount, client, data.memo.c_str(), cat, data.desc.c_str());
+	Modified();
 }
 
 StringTable AccountManager::Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if) {
@@ -402,7 +429,7 @@ StringTable AccountManager::Import(const String& filename, IManualResolve* resol
 	if (import_data.data.empty()) {
 		return {};
 	}
-	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.currency, newaccount_if);
+	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.bank_name, import_data.currency, newaccount_if);
 	Account* acc = m_accounts[account_id];
 	if (acc->Size()) {
 		if (acc->GetLastRecord()->GetDate() < import_data.data.front().date) {

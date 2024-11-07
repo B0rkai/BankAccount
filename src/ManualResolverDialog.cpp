@@ -57,8 +57,7 @@ void ManualResolverDialog::PopulateSelectionChoices(const IdSet& matches, const 
 
 void ManualResolverDialog::SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, bool optional) {
 	wxStaticText* text = new wxStaticText(this, wxID_ANY, wxEmptyString, wxPoint(20,10), wxSize(XSIZE - 100, 80));
-	wxFont font = wxFont(wxSize(7, 14), wxFontFamily::wxFONTFAMILY_TELETYPE, wxFontStyle::wxFONTSTYLE_NORMAL, wxFontWeight::wxFONTWEIGHT_BOLD);
-	text->SetFont(font);
+	text->SetFont(GetMonoSpaceFont());
 	//text->SetLabel(tr_details);
 	text->SetLabelText(tr_details);
 	text->Wrap(XSIZE - 100);

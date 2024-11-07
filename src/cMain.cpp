@@ -133,8 +133,8 @@ cMain::cMain()
 	sizer->Add(m_search_result_text, 0, wxALL, 3);
 	m_window->FitInside(); // ask the sizer about the needed size
 	m_window->SetScrollRate(5,5);
-	wxFont font = wxFont(wxSize(7, 14), wxFontFamily::wxFONTFAMILY_TELETYPE, wxFontStyle::wxFONTSTYLE_NORMAL, wxFontWeight::wxFONTWEIGHT_NORMAL);
-	m_search_result_text->SetFont(font);
+	
+	m_search_result_text->SetFont(GetMonoSpaceFont());
 	m_search_result_text->SetForegroundColour(wxColour(255, 255, 255));
 	m_window->SetBackgroundColour(wxColour(0, 0, 0));
 
@@ -148,6 +148,9 @@ cMain::cMain()
 
 cMain::~cMain() {
 	UIOutputText("");
+	if ((m_bank_file->GetState() == BankAccountFile::DIRTY) && (wxMessageBox(wxT("You have unsaved changes! Do you want to save before exit?"), wxT("Confirm Save"), wxICON_QUESTION | wxYES_NO) == wxYES)) {
+		m_bank_file->Save(true);
+	}
 }
 
 void cMain::Init() {
@@ -405,6 +408,10 @@ void cMain::DoManualResolve(const String& details, String create, String& desc, 
 	if (res & ManualResolve_KEYWORD) {
 		m_bank_file->AddKeyword(topic, id, keyword);
 	}
+}
+
+void cMain::SetDirty() {
+	m_bank_file->Modified();
 }
 
 bool cMain::NewAccountDetails(const String& acc_number, String& name, String& bank, CurrencyType curr) {
@@ -720,9 +727,9 @@ void cMain::Test(wxCommandEvent& evt) {
 		}
 		return;
 	} else if (id == MENU_TEST_NEW_ACCOUNT) {
-		String name, bank;
+		String name, bank = "Test Bank Zrt.";
 		CurrencyType curr = HUF;
-		NewAccountDetailsDialog dialog(this, "00000000-00000000-00000000", name, bank, curr);
+		NewAccountDetailsDialog dialog(this, "HU85 1210 0011 1789 2719 0000 0000", name, bank, curr);
 		(void) dialog.ShowModal();
 		return;
 	}

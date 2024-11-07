@@ -146,19 +146,23 @@ public:
 		return (Id)s;
 	}
 
-	void AddKeyword(const Id id, const String& keyword) {
-		m_children.at(id)->AddKeyword(keyword);
-		m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id << " " << GetName(id).utf8_str();
+	bool AddKeyword(const Id id, const String& keyword) {
+		if (m_children.at(id)->AddKeyword(keyword)) {
+			m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id << " " << GetName(id).utf8_str();
+			return true;
+		}
+		return false;
 	}
 
-	void Merge(const IdSet froms, const Id to) {
+	bool Merge(const IdSet froms, const Id to) {
+		bool changes = false;
 		// first merge data
 		{ // scope because ptrs will be invalide
 			Child* cto = m_children.at(to);
 			for (const Id& from : froms) {
 				Child* cfrom = m_children.at(from);
-				cto->Merge(cfrom);
-				cto->DoMerge(cfrom);
+				changes |= cto->Merge(cfrom);
+				changes |= cto->DoMerge(cfrom);
 			}
 		}
 		// then delete
@@ -168,6 +172,7 @@ public:
 				if ((*it)->GetId() == from) {
 					m_logger.LogInfo() << "ID: " << (Id::Type)((*it)->GetId()) << " " << (*it)->GetName().utf8_str() << " is erased";
 					m_children.erase(it);
+					changes = true;
 					break;
 				}
 			}
@@ -176,7 +181,9 @@ public:
 		size_t size = m_children.size();
 		for (int i = 0; i < size; ++i) {
 			m_children[i]->SetId((Id)i);
+			changes = true;
 		}
+		return changes;
 	}
 
 	void StreamOut(std::ostream& out) const {

@@ -23,15 +23,17 @@ void Client::AddAccountNumber(const String& acc) {
 	m_account_numbers.push_back(acc);
 }
 
-void Client::Merge(const Client* other) {
+bool Client::DoMerge(const Client* other) {
 	const AccountNumberSet& accs = other->GetAccountNumbers();
+	const size_t size_before = m_account_numbers.size();
 	for (const AccountNumber& acc : accs) {
 		AddAccountNumber(acc);
 	}
+	return (size_before != m_account_numbers.size());
 }
 
 bool Client::CheckAccountNumbers(const String& acc) const {
-	return (bool)m_account_numbers.Check(acc);
+	return m_account_numbers.Check(acc);
 }
 
 String Client::GetInfo() const {

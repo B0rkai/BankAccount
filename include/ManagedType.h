@@ -35,9 +35,9 @@ protected:
 public:
 	inline const StringSet& GetKeywords() const { return m_keywords; }
 	bool CheckKeywords(const String& text, bool fullmatch = false) const;
-	void AddKeyword(const String& acc);
-	void Merge(const MappedType* other);
-	virtual void DoMerge(const MappedType* other) {}; // optional for extra data
+	bool AddKeyword(const String& acc);
+	bool Merge(const MappedType* other);
+	virtual bool DoMerge(const MappedType* other) { return false; }; // optional for extra data
 	void Stream(std::ostream& out) const;
 	void Stream(std::istream& in);
 };

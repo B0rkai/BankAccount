@@ -19,6 +19,7 @@ enum CurrencyType : Id::Type;
 
 struct RawImportData {
 	String account_number;
+	String bank_name;
 	CurrencyType currency;
 	std::vector<RawTransactionData> data;
 };

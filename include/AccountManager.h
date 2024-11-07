@@ -32,7 +32,7 @@ class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameReso
 
 	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
 	Id CreateTransactionTypeId(const String& type);
-	Id CreateOrGetAccountId(const String& account_number, const CurrencyType curr, INewAccount* newaccount_if);
+	Id CreateOrGetAccountId(const String& account_number, const String& bank_name, const CurrencyType curr, INewAccount* newaccount_if);
 	Id CreateClientId(const String& client_name, const String& client_account_number);
 
 	virtual String GetCategoryName(const Id id) const override;

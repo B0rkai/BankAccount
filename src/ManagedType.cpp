@@ -40,15 +40,17 @@ void NamedType::Stream(std::ostream& out) const {
     StreamString(out, m_name);
 }
 
-void MappedType::AddKeyword(const String& acc) {
+bool MappedType::AddKeyword(const String& acc) {
     if (acc.empty()) {
-        return;
+        return false;
     }
-    (void) m_keywords.insert(acc);
+    return m_keywords.insert(acc).second;
 }
 
-void MappedType::Merge(const MappedType* other) {
+bool MappedType::Merge(const MappedType* other) {
+    const size_t ori = m_keywords.size();
     m_keywords.insert(other->m_keywords.begin(), other->m_keywords.end());
+    return (ori != m_keywords.size());
 }
 
 void MappedType::Stream(std::ostream& out) const {

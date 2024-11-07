@@ -18,4 +18,5 @@ class IManualResolve {
 public:
 	virtual ManualResolveResult ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, String& desc, bool optional = false) = 0;
 	virtual void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional) = 0;
+	virtual void SetDirty() = 0;
 };

@@ -48,6 +48,9 @@ AccountNumber::AccountNumber(const String& acc_num) {
 }
 
 AccountNumber* AccountNumber::Create(const String& acc_num) {
+	if (acc_num.size() < 16) {
+		return nullptr;
+	}
 	AccountNumber* acc_ptr = new AccountNumber(acc_num);
 	if (acc_ptr->IsValid()) {
 		return acc_ptr;

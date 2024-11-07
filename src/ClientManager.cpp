@@ -54,6 +54,9 @@ Id ClientManager::GetClientId(const String& client_name) {
 }
 
 void ClientManager::AddAccountNumber(const Id id, const String& acc_number) {
+	if (acc_number.size() < 16) {
+		return; // don't bother
+	}
 	m_children[id]->AddAccountNumber(acc_number);
 }
 

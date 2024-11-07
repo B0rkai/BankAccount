@@ -25,6 +25,9 @@ constexpr char DQUOTE = '\"';
 constexpr char ENDL = '\n';
 constexpr char CRET = '\r';
 
+constexpr char DASH('-');
+constexpr char PERIOD('.');
+
 bool IsEndl(const char& c);
 
 using String		= wxString;
@@ -180,3 +183,6 @@ int DMYToExcelSerialDate(int nDay, int nMonth, int nYear);
 
 String GetDateFormat(const uint16_t date);
 StringVector ParseMultiValueString(const String& val);
+
+class wxFont;
+const wxFont& GetMonoSpaceFont();
