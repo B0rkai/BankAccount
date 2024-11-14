@@ -57,15 +57,60 @@ String QuerySumByTopic::GetStringResult() {
 
 StringTable QuerySumByTopic::GetTableResult() const {
 	// default sorting
-	std::map<int32_t, const TopicSubQuery*> sum_sorted_map;
+	std::vector<const TopicSubQuery*> sum_list_sorting;
 	for (auto& pair : m_subqueries) {
-		sum_sorted_map.insert(std::make_pair(pair.second.GetSumValue(HUF), &pair.second));
+		sum_list_sorting.push_back(&pair.second);
+	}
+	if (sum_list_sorting.size() > 1) {
+		std::sort(sum_list_sorting.begin(), sum_list_sorting.end(), [](const TopicSubQuery* lhs, const TopicSubQuery* rhs) {
+			return (lhs->GetSumValue(HUF) < rhs->GetSumValue(HUF));
+		});
 	}
 	StringTable table;
+	if (GetTopic() == QueryTopic::CURRENCY) {
+		if (sum_list_sorting.size() == 1) {
+			return sum_list_sorting.front()->GetTableResult();
+		}
+		for (const TopicSubQuery* tsq : sum_list_sorting) {
+			if (table.empty()) {
+				table = tsq->GetTableResult();
+			} else {
+				bool first = true;
+				auto subtable = tsq->GetTableResult();
+				for (auto& subrow : subtable) {
+					if (first) {
+						first = false;
+						continue;
+					}
+					auto& row = table.emplace_back();
+					row.insert(row.end(), subrow.begin(), subrow.end());
+				}
+			}
+		}
+		auto totals = GetResults();
+		QuerySum::Result exchanged_total;
+		if (totals.size() > 1) {
+			for (auto& pair : totals) {
+				Currency* curr = MakeCurrency(pair.first);
+				exchanged_total.m_count += pair.second.m_count;
+				exchanged_total.m_inc += Money(curr->Type(), pair.second.m_inc).GetValue(HUF);
+				exchanged_total.m_exp += Money(curr->Type(), pair.second.m_exp).GetValue(HUF);
+				exchanged_total.m_sum += Money(curr->Type(), pair.second.m_sum).GetValue(HUF);
+			}
+			auto& row = table.emplace_back();
+			row.push_back("EXCHANGED TOTAL");
+			Currency* curr = MakeCurrency(HUF);
+			row.push_back(std::to_string(exchanged_total.m_count));
+			row.push_back(curr->PrettyPrint(exchanged_total.m_inc));
+			row.push_back(curr->PrettyPrint(exchanged_total.m_exp));
+			row.push_back(curr->PrettyPrint(exchanged_total.m_sum));
+		}
+		return table;
+	}
 	table.push_back({"Topic", "Currency", "#", "Income", "Expense", "Sum"});
 	table.insert_meta({StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED});
-	for (auto& pair : sum_sorted_map) {
-		auto subtable = pair.second->GetTableResult();
+	for (const TopicSubQuery* tsq : sum_list_sorting) {
+		auto subtable = tsq->GetTableResult();
 		bool first = true;
 		for (auto& subrow : subtable) {
 			if (first) {
@@ -73,7 +118,7 @@ StringTable QuerySumByTopic::GetTableResult() const {
 				continue;
 			}
 			auto& row = table.emplace_back();
-			row.push_back(pair.second->GetName());
+			row.push_back(tsq->GetName());
 			row.insert(row.end(), subrow.begin(), subrow.end());
 		}
 	}
@@ -325,4 +370,157 @@ bool TopicSubQuery::CheckTransaction(const Transaction* tr) {
 bool QueryCount::CheckTransaction(const Transaction* tr) {
 	++m_count;
 	return true;
+}
+
+String DateId2String(const TopicPeriodicSubQuery::Mode mode, int id) {
+	switch (mode) {
+	case TopicPeriodicSubQuery::DAILY:
+		return GetDateFormat(id);
+		break;
+	case TopicPeriodicSubQuery::MONTHLY:
+		return String::Format("%d-%02d", id / 12, id % 12 + 1);
+		break;
+	case TopicPeriodicSubQuery::YEARLY:
+		return String::Format("%d", id);
+	}
+	return "ERROR";
+}
+
+bool TopicPeriodicSubQuery::CheckTransaction(const Transaction* tr) {
+	int date_id = 0;
+	switch (m_mode) {
+	case DAILY:
+		date_id = tr->GetDate();
+		break;
+	case MONTHLY: {
+			int day, month, year;
+			ExcelSerialDateToDMY(tr->GetDate(), day, month, year);
+			date_id = year * 12 + month - 1;
+			break;
+		}
+	case YEARLY: {
+			int day, month, year;
+			ExcelSerialDateToDMY(tr->GetDate(), day, month, year);
+			date_id = year;
+			break;
+		}
+	}
+	TopicSubQuery& sub = m_subsubqueries[date_id];
+	if (sub.GetName().empty()) {
+		switch (m_mode) {
+		case DAILY:
+			sub.SetName(GetDateFormat(date_id));
+			break;
+		case MONTHLY:
+			sub.SetName(String::Format("%d-%d", date_id / 12, date_id % 12 + 1));
+			break;
+		case YEARLY:
+			sub.SetName(String::Format("%d", date_id));
+		}
+	}
+	if (m_min_date_id > date_id) {
+		m_min_date_id = date_id;
+	}
+	if (m_max_date_id < date_id) {
+		m_max_date_id = date_id;
+	}
+	return sub.CheckTransaction(tr);
+}
+
+std::set<CurrencyType> TopicPeriodicSubQuery::GetCurrencyTypes() const {
+	std::set<CurrencyType> curr_vec;
+	for (auto& p : m_subsubqueries) {
+		auto map = p.second.GetResults();
+		for (auto& p2 : map) {
+			curr_vec.insert(p2.first);
+		}
+	}
+	return curr_vec;
+}
+
+const TopicSubQuery* TopicPeriodicSubQuery::GetSubQuery(const int date_id) const {
+	auto it = m_subsubqueries.find(date_id);
+	if (it == m_subsubqueries.end()) {
+		return nullptr;
+	}
+	return &(it->second);
+}
+
+bool PeriodicQuery::CheckTransaction(const Transaction* tr) {
+	Id id = tr->GetId(GetTopic());
+	TopicPeriodicSubQuery& sub = m_subqueries[id];
+	if (sub.GetName().empty()) {
+		sub.SetName(s_resolve_if->GetName(GetTopic(), id));
+		sub.SetMode(m_mode);
+	}
+	return sub.CheckTransaction(tr);
+}
+
+// some serious shenanigans here
+StringTable PeriodicQuery::GetTableResult() const {
+	StringTable table;
+	int start = INT_MAX;
+	int end = 0;
+	for (auto& p : m_subqueries) {
+		const int st = p.second.GetStartDateId();
+		const int en = p.second.GetEndDateId();
+		if (st < start) {
+			start = st;
+		}
+		if (en > end) {
+			end = en;
+		}
+	}
+	table.emplace_back().push_back("Topic");
+	table.push_meta_back(StringTable::LEFT_ALIGNED);
+	for (auto& p : m_subqueries) {
+		int date_id = start;
+		std::map<CurrencyType, StringVector> row_map;
+		std::set<CurrencyType> currencytypes = p.second.GetCurrencyTypes();
+		for (CurrencyType ct : currencytypes) {
+			row_map[ct].push_back(p.second.GetName());
+		}
+		while (date_id <= end) {
+			const TopicSubQuery* ptr = p.second.GetSubQuery(date_id);
+			if (!ptr) {
+				for (auto& r : row_map) {
+					r.second.push_back("-");
+				}
+				++date_id;
+				continue;
+			}
+			auto res_map = ptr->GetResults();
+			for (auto& r : row_map) {
+				if (res_map.count(r.first)) {
+					r.second.push_back(MakeCurrency(r.first)->PrettyPrint(res_map[r.first].m_sum));
+				} else {
+					r.second.push_back("-");
+				}
+			}
+			++date_id;
+		}
+		for (auto& r : row_map) {
+			table.push_back(r.second);
+		}
+	}
+	size_t column_size = 0;
+	for (auto& vec : table) {
+		const size_t s = vec.size();
+		if (s > column_size) {
+			column_size = s;
+		}
+	}
+	size_t csize = column_size;
+	// header
+	while (--csize) {
+		table.push_meta_back(StringTable::RIGHT_ALIGNED);
+		table.front().push_back(DateId2String(m_mode, start++));
+	}
+	for (auto& vec : table) {
+		size_t s = column_size - vec.size();
+		while (s--) {
+			vec.push_back("-");
+		}
+	}
+	return table;
 }

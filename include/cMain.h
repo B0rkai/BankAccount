@@ -33,9 +33,11 @@ class cMain :
     wxCheckBox* m_category_sum_chkb = nullptr;
     wxCheckBox* m_client_sum_chkb = nullptr;
     wxCheckBox* m_type_sum_chkb = nullptr;
-    wxCheckBox* m_use_date_filter_chkb = nullptr;
     wxButton* m_query_but = nullptr;
 
+    wxComboBox* m_period_combo = nullptr;
+
+    wxCheckBox* m_use_date_filter_chkb = nullptr;
     wxCheckBox* m_automatic_chkb = nullptr;
     wxCheckBox* m_manual_chkb = nullptr;
     wxCheckBox* m_caution_chkb = nullptr;

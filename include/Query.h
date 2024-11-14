@@ -155,6 +155,56 @@ class QueryAccountSum : public QuerySumByTopic {
 	GETQUERYTOPIC(ACCOUNT)
 };
 
+class TopicPeriodicSubQuery {
+public:
+	enum Mode {
+		INVALID,
+		YEARLY,
+		MONTHLY,
+		DAILY
+	};
+	inline void SetName(const String& name) { m_name = name; }
+	inline const String& GetName() const { return m_name; }
+	inline bool IsModeSet() const { return m_mode != INVALID; }
+	inline void SetMode(const Mode m) { m_mode = m; }
+	bool CheckTransaction(const Transaction* tr);
+	inline int GetStartDateId() const { return m_min_date_id; }
+	inline int GetEndDateId() const { return m_max_date_id; }
+	std::set<CurrencyType> GetCurrencyTypes() const;
+	const TopicSubQuery* GetSubQuery(const int date_id) const;
+private:
+	int m_min_date_id = INT_MAX;
+	int m_max_date_id = 0;
+	String m_name; // first column Topic
+	std::map<int, TopicSubQuery> m_subsubqueries; // rest of columns data
+	Mode m_mode = INVALID;
+};
+
+class PeriodicQuery : public QueryCurrencySum {
+	TopicPeriodicSubQuery::Mode m_mode = TopicPeriodicSubQuery::INVALID;
+	std::unordered_map<Id::Type, TopicPeriodicSubQuery> m_subqueries;
+	virtual bool CheckTransaction(const Transaction* tr) override;
+public:
+	virtual StringTable GetTableResult() const;
+	inline void SetMode(const TopicPeriodicSubQuery::Mode m) { m_mode = m; }
+};
+
+class PeriodicCategoryQuery : public PeriodicQuery {
+	GETQUERYTOPIC(CATEGORY)
+};
+
+class PeriodicClientQuery : public PeriodicQuery {
+	GETQUERYTOPIC(CLIENT)
+};
+
+class PeriodicTypeQuery : public PeriodicQuery {
+	GETQUERYTOPIC(TYPE)
+};
+
+class PeriodicAccountQuery : public PeriodicQuery {
+	GETQUERYTOPIC(ACCOUNT)
+};
+
 class QueryByNumber : public QueryElement {
 public:
 	QueryByNumber() = default;

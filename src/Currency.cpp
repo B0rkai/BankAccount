@@ -196,7 +196,7 @@ Money::Money(CurrencyType curr_type, const String& amount_str)
 		if ((c == DASH) || std::isdigit(c)) {
 			clean.append(c);
 		}
-		if (c == COMMA) {
+		if ((c == COMMA) || (c == PERIOD)) {
 			if (curr->HasCents()) {
 				continue;
 			}
