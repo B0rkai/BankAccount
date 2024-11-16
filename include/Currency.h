@@ -7,6 +7,7 @@ enum CurrencyType : Id::Type {
 	GBP,
 	CHF,
 	HUF,
+	Default_Currency = HUF,
 	Currency_Count, // Add currency before this
 	Invalid_Currency = INVALID_ID
 };
@@ -42,7 +43,7 @@ class Money {
 	CurrencyType m_currency_type;
 	int32_t m_amount;
 public:
-	inline Money() : m_currency_type(Invalid_Currency), m_amount(0) {}
+	inline Money() : m_currency_type(Default_Currency), m_amount(0) {}
 	inline Money(CurrencyType curr_type, int32_t amount) : m_currency_type(curr_type), m_amount(amount) {}
 	Money(CurrencyType curr_type, const String& amount_str);
 	inline CurrencyType Type() const { return m_currency_type; };
@@ -51,4 +52,9 @@ public:
 	inline int32_t GetValue() const { return m_amount; };
 	int32_t GetValue(CurrencyType type) const;
 	inline operator int32_t() const { return m_amount; }
+	Money& operator+=(const Money& other);
+	Money& operator-=(const Money& other);
+	Money operator-();
+	Money operator-(const Money& other);
+	Money operator+(const Money& other);
 };

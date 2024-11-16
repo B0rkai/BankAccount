@@ -4,12 +4,17 @@
 #include "Currency.h"
 #include "wx\arrstr.h"
 
+constexpr double EURHUF = 406.47;
+constexpr double USDHUF = 386.11;
+constexpr double GBPHUF = 488.72;
+constexpr double CHFHUF = 433.54;
+
 const double EXCHANGE_RATES[Currency_Count][Currency_Count] = {
-	{0.,0.,0.,0.,4.0421},
-	{0.,0.,0.,0.,3.7428},
-	{0.,0.,0.,0.,4.8511},
-	{0.,0.,0.,0.,4.3178},
-	{1./4.0421, 1./3.7428, 1./4.8511, 1./4.3178, 1.}
+	{0.,0.,0.,0.,EURHUF/100.},
+	{0.,0.,0.,0.,USDHUF/100.},
+	{0.,0.,0.,0.,GBPHUF/100.},
+	{0.,0.,0.,0.,CHFHUF/100.},
+	{1. / EURHUF / 100., 1. / USDHUF / 100., 1. / GBPHUF / 100., 1. / CHFHUF/100., 1.}
 };
 
 void Currency::RecursiveDigits(std::stringstream& str, uint32_t num) const {
@@ -221,4 +226,26 @@ int32_t Money::GetValue(CurrencyType type) const {
 		throw "Money::GetValue() unexpected currency type";
 	}
 	return m_amount * EXCHANGE_RATES[m_currency_type][type];
+}
+
+Money& Money::operator+=(const Money& other) {
+	m_amount += other.GetValue(m_currency_type);
+	return *this;
+}
+
+Money& Money::operator-=(const Money& other) {
+	m_amount -= other.GetValue(m_currency_type);
+	return *this;
+}
+
+Money Money::operator-() {
+	return Money(m_currency_type, -m_amount);
+}
+
+Money Money::operator-(const Money& other) {
+	return Money(m_currency_type, m_amount - other.GetValue(m_currency_type));
+}
+
+Money Money::operator+(const Money& other) {
+	return Money(m_currency_type, m_amount + other.GetValue(m_currency_type));
 }

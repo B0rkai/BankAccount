@@ -55,7 +55,7 @@ void ManualResolverDialog::PopulateSelectionChoices(const IdSet& matches, const 
 	}
 }
 
-void ManualResolverDialog::SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, bool optional) {
+void ManualResolverDialog::SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, const String& desc, bool optional) {
 	wxStaticText* text = new wxStaticText(this, wxID_ANY, wxEmptyString, wxPoint(20,10), wxSize(XSIZE - 100, 80));
 	text->SetFont(GetMonoSpaceFont());
 	//text->SetLabel(tr_details);
@@ -70,7 +70,7 @@ void ManualResolverDialog::SetUp(const String& tr_details, const IdSet& matches,
 	new wxStaticText(this, wxID_ANY, "Add keyword", wxPoint(20, VERTICAL_ALIGNMENT3 - 18));
 	m_add_keyword_txtctrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxPoint(20, VERTICAL_ALIGNMENT3), cDefaultTextCtrlSize);
 	new wxStaticText(this, wxID_ANY, "Add description", wxPoint(20, VERTICAL_ALIGNMENT4 - 18));
-	m_add_desc_txtctrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxPoint(20, VERTICAL_ALIGNMENT4), cDefaultTextCtrlSize);
+	m_add_desc_txtctrl = new wxTextCtrl(this, wxID_ANY, desc, wxPoint(20, VERTICAL_ALIGNMENT4), cDefaultTextCtrlSize);
 	new wxStaticText(this, wxID_ANY, "Selection choices", wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT-20));
 	m_selection_listctrl = new wxListBox(this, SELECTOR_LISTBOX, wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT), wxSize(250, 200));
 	m_ok_butt = new wxButton(this, OK_BUTT, "Ok", wxPoint(20, YSIZE - 80), cDefaultCtrlSize);

@@ -202,6 +202,7 @@
     <ClInclude Include="include\Transaction.h" />
     <ClInclude Include="include\TransactionType.h" />
     <ClInclude Include="include\WQuery.h" />
+    <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\ziplib\Bin\x64\Debug\bzip2.lib">

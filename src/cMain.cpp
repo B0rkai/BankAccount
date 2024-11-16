@@ -147,6 +147,7 @@ cMain::cMain()
 	m_status_bar->SetFieldsCount(1);
 	m_status_bar->SetStatusWidths(1, NULL);
 	m_status_bar->SetStatusText(" --- Database empty! Please initialize! ---");
+	wxFrame::Bind(wxEVT_MENU_OPEN, &cMain::UpdateMenu, this);
 }
 
 
@@ -384,7 +385,7 @@ ManualResolveResult cMain::ManualResolve(const String& tr_details, const QueryTo
 	String title = "Resolve ";
 	title.append(Topic2String(topic));
 	ManualResolverDialog dialog(this, title, topic, (INameResolve*)m_bank_file.get());
-	dialog.SetUp(tr_details, matches, select, create_name, optional);
+	dialog.SetUp(tr_details, matches, select, create_name, desc, optional);
 	ManualResolveResult res = (ManualResolveResult)dialog.ShowModal();
 	if (res & ManualResolve_ID_SELECTED) {
 		select = dialog.GetResolvedId();
@@ -430,7 +431,6 @@ void cMain::DoLoad() {
 		LogWarn() << "Database missing! Load DAF database file, or import new datasets!";
 		return;
 	}
-	m_initdb_menu_item->Enable(false);
 	UpdateAccFilter();
 	UpdateStatusBar();
 }
@@ -560,7 +560,7 @@ void cMain::InitMenu() {
 	m_menu_bar->Append(dbmenu, "Database");
 	m_menu_bar->Append(querymenu, "Query");
 	m_menu_bar->Append(testmenu, "Test");
-	m_initdb_menu_item = dbmenu->Append(MENU_LOAD, "Load file*");
+	m_discard_changes_menu_item = dbmenu->Append(MENU_LOAD, "Discard changes");
 	dbmenu->Append(MENU_IMPORT, "Import from file");
 	dbmenu->Append(MENU_SAVE, "Save file");
 	dbmenu->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
@@ -831,4 +831,8 @@ void cMain::Import(wxCommandEvent& evt) {
 	}
 	UpdateAccFilter();
 	UpdateStatusBar();
+}
+
+void cMain::UpdateMenu(wxEvent&) {
+	m_discard_changes_menu_item->Enable(m_bank_file->GetState() == BankAccountFile::DIRTY);
 }

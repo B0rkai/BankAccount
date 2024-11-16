@@ -15,24 +15,31 @@ bool MakeBackup(const String& file_from) {
 	return true;
 }
 
+void RemoveBackup(const String& file) {
+	String backup = file;
+	backup.RemoveLast(3).Append("backup");
+	std::remove(backup);
+}
+
 bool LoadBackup(const String& file_to) {
 	String backup = file_to;
 	backup.RemoveLast(3).Append("backup");
 	std::filesystem::copy((std::string)backup, (std::string)file_to, std::filesystem::copy_options::update_existing);
+	std::remove(backup);
 	return true;
 }
 
-static void ZipSave(const String& filename) {
+static bool ZipSave(const String& filename) {
 	ZipArchive::Ptr archive = ZipFile::Open((std::string)filename);
 	if (!archive) {
 		LogError() << "SAVE FAILED! BFA database file '" << filename.utf8_str() << "' cannot be opened";
-		return;
+		return false;
 	}
 	std::ifstream contentStream;
 	contentStream.open(DEFAULT_UNCOMPRESSED_FILE_PATH, std::ios::binary);
 	if (!contentStream.is_open()) {
 		LogError() << "SAVE FAILED! stream output file '" << DEFAULT_UNCOMPRESSED_FILE_PATH << "' cannot be opened";
-		return;
+		return false;
 	}
 	MakeBackup(filename);
 	if (archive->GetEntry(ENTRY)) {
@@ -42,7 +49,7 @@ static void ZipSave(const String& filename) {
 	if (!entry) {
 		LogError() << "SAVE FAILED! Cannot modify BFA database file.";
 		LoadBackup(filename);
-		return;
+		return false;
 	}
 
 	entry->SetPassword(PASSWORD);
@@ -54,11 +61,13 @@ static void ZipSave(const String& filename) {
 	if (!entry->SetCompressionStream(contentStream)) {
 		LogError() << "SAVE FAILED! Cannot create compression stream.";
 		LoadBackup(filename);
-		return;
+		return false;
 	}
 
 	// data from contentStream are pumped here
 	ZipFile::SaveAndClose(archive, (std::string)filename);
+	RemoveBackup(filename);
+	return true;
 }
 
 BankAccountFile::BankAccountFile(const String& filename)
@@ -108,16 +117,27 @@ void BankAccountFile::ExtractSave(const String& filename) {
 
 bool BankAccountFile::Save(const bool compress) {
 	LogDebug() << "File save started (compress = " << std::boolalpha << compress << ")";
+	String folder = String(DEFAULT_UNCOMPRESSED_FILE_PATH).BeforeLast('\\');
+	if (!std::filesystem::exists((std::string)folder)) {
+		std::filesystem::create_directories((std::string)folder);
+	}
 	{
 		std::ofstream out(DEFAULT_UNCOMPRESSED_FILE_PATH);
 		Stream(out);
 	}
 	if (compress) {
-		ZipSave(m_filename);
+		try {
+			if (!ZipSave(m_filename)) {
+				return false;
+			}
+		} catch (...) {
+			LogError() << "SAVE FAILED! BFA database file '" << m_filename.utf8_str() << "' cannot be opened";
+			return false;
+		}
 		std::remove(DEFAULT_UNCOMPRESSED_FILE_PATH);
 		LogInfo() << "BAF database file saved into: " << m_filename;
 	} else {
-		LogWarn() << "Databese saved into plain csv file!!";
+		LogWarn() << "Database saved into plain csv file!! " << DEFAULT_UNCOMPRESSED_FILE_PATH;
 	}
 	m_state = NO_CHANGE;
 	return true;

@@ -17,7 +17,7 @@ class cMain :
     wxPanel* m_main_panel = nullptr;
 
     wxMenuBar* m_menu_bar = nullptr;
-    wxMenuItem* m_initdb_menu_item = nullptr;
+    wxMenuItem* m_discard_changes_menu_item = nullptr;
     wxMenuItem* m_resetdb_menu_item = nullptr;
 
     wxStatusBar* m_status_bar = nullptr;
@@ -77,6 +77,7 @@ class cMain :
     void MergeButtonClicked(wxCommandEvent& evt);
     void AddKeywordButtonClicked(wxCommandEvent& evt);
     void Import(wxCommandEvent& evt);
+    void UpdateMenu(wxEvent&);
     void Test(wxCommandEvent& evt);
     void UpdateStatusBar();
     void UpdateAccFilter();

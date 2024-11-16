@@ -471,11 +471,18 @@ StringTable PeriodicQuery::GetTableResult() const {
 			end = en;
 		}
 	}
+	if (end < start) { // no data
+		return table;
+	}
+	const size_t column_count = end - start + 1;
 	table.emplace_back().push_back("Topic");
 	table.push_meta_back(StringTable::LEFT_ALIGNED);
+	std::vector<Money> column_totals(column_count);
+	Money grand_total;
 	for (auto& p : m_subqueries) {
 		int date_id = start;
 		std::map<CurrencyType, StringVector> row_map;
+		std::map<CurrencyType, Money> row_total_map;
 		std::set<CurrencyType> currencytypes = p.second.GetCurrencyTypes();
 		for (CurrencyType ct : currencytypes) {
 			row_map[ct].push_back(p.second.GetName());
@@ -492,6 +499,10 @@ StringTable PeriodicQuery::GetTableResult() const {
 			auto res_map = ptr->GetResults();
 			for (auto& r : row_map) {
 				if (res_map.count(r.first)) {
+					Money m(r.first, res_map[r.first].m_sum);
+					column_totals[r.second.size() - 1] += m;
+					row_total_map[r.first] += m;
+					grand_total += m;
 					r.second.push_back(MakeCurrency(r.first)->PrettyPrint(res_map[r.first].m_sum));
 				} else {
 					r.second.push_back("-");
@@ -500,27 +511,32 @@ StringTable PeriodicQuery::GetTableResult() const {
 			++date_id;
 		}
 		for (auto& r : row_map) {
+			r.second.push_back(row_total_map[r.first].PrettyPrint());
 			table.push_back(r.second);
 		}
 	}
-	size_t column_size = 0;
-	for (auto& vec : table) {
-		const size_t s = vec.size();
-		if (s > column_size) {
-			column_size = s;
-		}
-	}
-	size_t csize = column_size;
+	size_t csize = column_count;
 	// header
-	while (--csize) {
+	while (csize--) {
 		table.push_meta_back(StringTable::RIGHT_ALIGNED);
 		table.front().push_back(DateId2String(m_mode, start++));
 	}
+	table.push_meta_back(StringTable::RIGHT_ALIGNED);
+	table.front().push_back("TOTAL");
 	for (auto& vec : table) {
-		size_t s = column_size - vec.size();
+		size_t s = column_count + 2 - vec.size();
 		while (s--) {
 			vec.push_back("-");
 		}
 	}
+	if (m_subqueries.size() == 1) {
+		return table;
+	}
+	StringVector& totals = table.emplace_back();
+	totals.push_back("TOTAL");
+	for (const Money& m : column_totals) {
+		totals.push_back(m.PrettyPrint());
+	}
+	totals.push_back(grand_total.PrettyPrint());
 	return table;
 }

@@ -29,7 +29,7 @@ class ManualResolverDialog : public wxDialog {
 	void CheckState();
 public:
 	ManualResolverDialog(wxWindow* parent, const String& title, const QueryTopic topic, INameResolve* resolve_if);
-	void SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, bool optional);
+	void SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, const String& desc, bool optional);
 	Id GetResolvedId() const;
 	String GetNewName() const;
 	String GetNewKeyword() const;
