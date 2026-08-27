@@ -31,6 +31,8 @@ public:
 	inline const char* GetShortName() const { return m_short_name.c_str(); }
 	virtual CurrencyType Type() const = 0;
 	inline bool HasCents() const { return m_cents; }
+	static void SetExchangeRate(CurrencyType type, double newVal);
+	static double GetExcahngeRate(CurrencyType type);
 };
 
 Currency* MakeCurrency(const CurrencyType type);

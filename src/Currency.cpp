@@ -4,12 +4,13 @@
 #include "Currency.h"
 #include "wx\arrstr.h"
 
+// default exchange rates
 constexpr double EURHUF = 406.47;
 constexpr double USDHUF = 386.11;
 constexpr double GBPHUF = 488.72;
 constexpr double CHFHUF = 433.54;
 
-const double EXCHANGE_RATES[Currency_Count][Currency_Count] = {
+double EXCHANGE_RATES[Currency_Count][Currency_Count] = {
 	{0.,0.,0.,0.,EURHUF/100.},
 	{0.,0.,0.,0.,USDHUF/100.},
 	{0.,0.,0.,0.,GBPHUF/100.},
@@ -66,6 +67,15 @@ String Currency::PrettyPrint(const int32_t val) const {
 		str << ' ' << m_sign;
 	}
 	return str.str();
+}
+
+void Currency::SetExchangeRate(CurrencyType type, double newVal) {
+	EXCHANGE_RATES[type][HUF] = newVal / 100.;
+	EXCHANGE_RATES[HUF][type] = 1. / newVal / 100.;
+}
+
+double Currency::GetExcahngeRate(CurrencyType type) {
+	return EXCHANGE_RATES[type][HUF] * 100.;
 }
 
 class Euro : public Currency {

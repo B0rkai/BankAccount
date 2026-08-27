@@ -2,6 +2,7 @@
 #include "wx\frame.h"
 #include "wx\vscroll.h"
 #include "wx\calctrl.h"
+#include "wx\grid.h"
 
 #include "CommonTypes.h"
 #include "IManualResolve.h"
@@ -11,6 +12,67 @@
 class BankAccountFile;
 class Query;
 enum CtrIds;
+
+class ControlGroup {
+protected:
+    std::vector<wxControl*> m_controls;
+    virtual void DoInitialize(wxWindow* parent) = 0;
+public:
+    void Initialize(wxWindow* parent);
+    virtual void Show();
+    void Hide();
+};
+
+class ControlGroupUtility : public ControlGroup {
+    virtual void DoInitialize(wxWindow* parent) override;
+public:
+    wxComboBox* m_topic_combo = nullptr;
+    wxTextCtrl* m_merge_from_textctrl = nullptr;
+    wxTextCtrl* m_merge_to_textctrl = nullptr;
+    wxButton* m_merge_but = nullptr;
+    wxTextCtrl* m_keyword_target_textctrl = nullptr;
+    wxTextCtrl* m_keyword_textctrl = nullptr;
+    wxButton* m_add_keyword_but = nullptr;
+};
+
+class ControlGroupCategorize : public ControlGroup {
+    virtual void DoInitialize(wxWindow* parent) override;
+public:
+    wxCheckBox* m_automatic_chkb = nullptr;
+    wxCheckBox* m_manual_chkb = nullptr;
+    wxCheckBox* m_caution_chkb = nullptr;
+    wxCheckBox* m_override_chkb = nullptr;
+    wxButton* m_categorize_but = nullptr;
+};
+
+class ControlGroupBasicFilter : public ControlGroup {
+    virtual void DoInitialize(wxWindow* parent) override;
+public:
+    virtual void Show() override;
+    wxCheckListBox* m_acc_chklb = nullptr;
+
+    wxTextCtrl* m_client_filter_textctrl = nullptr;
+    wxTextCtrl* m_category_filter_textctrl = nullptr;
+    wxTextCtrl* m_type_filter_textctrl = nullptr;
+
+    wxCheckBox* m_use_date_filter_chkb = nullptr;
+    wxCalendarCtrl* m_date_from_calendarctrl = nullptr;
+    wxCalendarCtrl* m_date_to_calendarctrl = nullptr;
+};
+
+class ControlGroupQuery : public ControlGroup {
+    virtual void DoInitialize(wxWindow* parent) override;
+public:
+    wxCheckBox* m_show_list_chkb = nullptr;
+    wxCheckBox* m_acc_sum_chkb = nullptr;
+    wxCheckBox* m_category_sum_chkb = nullptr;
+    wxCheckBox* m_client_sum_chkb = nullptr;
+    wxCheckBox* m_type_sum_chkb = nullptr;
+    wxButton* m_query_but = nullptr;
+
+    wxComboBox* m_period_combo = nullptr;
+};
+
 
 class cMain :
     public wxFrame, public IManualResolve, public INewAccount {
@@ -22,48 +84,24 @@ class cMain :
 
     wxStatusBar* m_status_bar = nullptr;
 
-    //wxButton* m_but_init_db = nullptr;
-    wxTextCtrl* m_client_filter_textctrl = nullptr;
-    wxTextCtrl* m_category_filter_textctrl = nullptr;
-    wxTextCtrl* m_type_filter_textctrl = nullptr;
+    wxListBox* m_mode_selector_listb = nullptr;
 
-    wxCheckListBox* m_acc_chklb = nullptr;
-    wxCheckBox* m_show_list_chkb = nullptr;
-    wxCheckBox* m_acc_sum_chkb = nullptr;
-    wxCheckBox* m_category_sum_chkb = nullptr;
-    wxCheckBox* m_client_sum_chkb = nullptr;
-    wxCheckBox* m_type_sum_chkb = nullptr;
-    wxButton* m_query_but = nullptr;
+    ControlGroupBasicFilter m_ctrl_grp_basic_filter;
+    ControlGroupQuery m_ctrl_grp_query;
+    ControlGroupCategorize m_ctrl_grp_categorize;
 
-    wxComboBox* m_period_combo = nullptr;
+    ControlGroupUtility m_ctrl_grp_utility;
 
-    wxCheckBox* m_use_date_filter_chkb = nullptr;
-    wxCheckBox* m_automatic_chkb = nullptr;
-    wxCheckBox* m_manual_chkb = nullptr;
-    wxCheckBox* m_caution_chkb = nullptr;
-    wxCheckBox* m_override_chkb = nullptr;
-    wxButton* m_categorize_but = nullptr;
-
-    wxCalendarCtrl* m_date_from_calendarctrl = nullptr;
-    wxCalendarCtrl* m_date_to_calendarctrl = nullptr;
-
-    wxComboBox* m_topic_combo = nullptr;
-    wxTextCtrl* m_merge_from_textctrl = nullptr;
-    wxTextCtrl* m_merge_to_textctrl = nullptr;
-    wxButton* m_merge_but = nullptr;
-    
-    wxTextCtrl* m_keyword_target_textctrl = nullptr;
-    wxTextCtrl* m_keyword_textctrl = nullptr;
-    wxButton* m_add_keyword_but = nullptr;
-
-    wxScrolledWindow* m_window = nullptr;
-    wxStaticText* m_search_result_text = nullptr;
+    wxGrid* m_result_grid = nullptr;
+    wxTextCtrl* m_info_textctrl = nullptr;
     std::unique_ptr<BankAccountFile> m_bank_file;
-    void UIOutputText(const String& utf8);
+    void UIOutputText(const String& info);
+    void UIOutputTable(const StringTable& table);
     void PrepareQuery(Query& query);
     void InitMenu();
     void InitControls();
     void SizeUpdate(wxSizeEvent& evt);
+    void ModeSelection(wxCommandEvent& evt);
     void List(wxCommandEvent& evt);
     void Preview(CtrIds id);
     void IdChanged(wxCommandEvent& evt);
