@@ -27,12 +27,16 @@ String QueryByName::GetStringResult() const {
 bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
 	Result& res = m_results[tr->GetCurrencyType()];
 	int32_t am = tr->GetAmount();
+	int64_t normalized = Money(tr->GetCurrencyType(), am).GetValue(HUF, tr->GetDate());
 	if (am > 0) {
 		res.m_inc += am;
+		res.m_inc_normalized += normalized;
 	} else {
 		res.m_exp += am;
+		res.m_exp_normalized += normalized;
 	}
 	res.m_sum += am;
+	res.m_sum_normalized += normalized;
 	++res.m_count;
 	return true;
 }
@@ -91,11 +95,10 @@ StringTable QuerySumByTopic::GetTableResult() const {
 		QuerySum::Result exchanged_total;
 		if (totals.size() > 1) {
 			for (auto& pair : totals) {
-				Currency* curr = MakeCurrency(pair.first);
 				exchanged_total.m_count += pair.second.m_count;
-				exchanged_total.m_inc += Money(curr->Type(), pair.second.m_inc).GetValue(HUF);
-				exchanged_total.m_exp += Money(curr->Type(), pair.second.m_exp).GetValue(HUF);
-				exchanged_total.m_sum += Money(curr->Type(), pair.second.m_sum).GetValue(HUF);
+				exchanged_total.m_inc += pair.second.m_inc_normalized;
+				exchanged_total.m_exp += pair.second.m_exp_normalized;
+				exchanged_total.m_sum += pair.second.m_sum_normalized;
 			}
 			auto& row = table.emplace_back();
 			row.push_back("EXCHANGED TOTAL");
@@ -135,9 +138,9 @@ StringTable QuerySumByTopic::GetTableResult() const {
 		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_sum));
 		if (totals.size() > 1) {
 			exchanged_total.m_count += pair.second.m_count;
-			exchanged_total.m_inc += Money(curr->Type(), pair.second.m_inc).GetValue(HUF);
-			exchanged_total.m_exp += Money(curr->Type(), pair.second.m_exp).GetValue(HUF);
-			exchanged_total.m_sum += Money(curr->Type(), pair.second.m_sum).GetValue(HUF);
+			exchanged_total.m_inc += pair.second.m_inc_normalized;
+			exchanged_total.m_exp += pair.second.m_exp_normalized;
+			exchanged_total.m_sum += pair.second.m_sum_normalized;
 		}
 	}
 	// exchanged totals
@@ -164,6 +167,9 @@ std::map<CurrencyType, QuerySum::Result> QuerySumByTopic::GetResults() const {
 				total[pair.first].m_inc += pair.second.m_inc;
 				total[pair.first].m_sum += pair.second.m_sum;
 				total[pair.first].m_count += pair.second.m_count;
+				total[pair.first].m_exp_normalized += pair.second.m_exp_normalized;
+				total[pair.first].m_inc_normalized += pair.second.m_inc_normalized;
+				total[pair.first].m_sum_normalized += pair.second.m_sum_normalized;
 			} else {
 				total[pair.first] = pair.second;
 			}
@@ -499,11 +505,14 @@ StringTable PeriodicQuery::GetTableResult() const {
 			auto res_map = ptr->GetResults();
 			for (auto& r : row_map) {
 				if (res_map.count(r.first)) {
-					Money m(r.first, res_map[r.first].m_sum);
-					column_totals[r.second.size() - 1] += m;
+					const QuerySum::Result& cell = res_map[r.first];
+					Money m(r.first, cell.m_sum);
+					// converted per-transaction using each one's own date, not "today's" rate applied to the period's total
+					Money normalized_in_huf(HUF, (int32_t)cell.m_sum_normalized);
+					column_totals[r.second.size() - 1] += normalized_in_huf;
 					row_total_map[r.first] += m;
-					grand_total += m;
-					r.second.push_back(MakeCurrency(r.first)->PrettyPrint(res_map[r.first].m_sum));
+					grand_total += normalized_in_huf;
+					r.second.push_back(MakeCurrency(r.first)->PrettyPrint(cell.m_sum));
 				} else {
 					r.second.push_back("-");
 				}

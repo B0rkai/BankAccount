@@ -101,6 +101,11 @@ public:
 		int64_t m_exp = 0;
 		int64_t m_inc = 0;
 		uint32_t m_count = 0;
+		// same three totals expressed in HUF, converted per-transaction using each one's own date
+		// (not a single "current" rate applied to the aggregate) - see QueryCurrencySum::CheckTransaction
+		int64_t m_sum_normalized = 0;
+		int64_t m_exp_normalized = 0;
+		int64_t m_inc_normalized = 0;
 	};
 	QuerySum() = default;
 	virtual ~QuerySum() = default;

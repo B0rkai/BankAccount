@@ -115,6 +115,7 @@ class cMain :
     void MergeButtonClicked(wxCommandEvent& evt);
     void AddKeywordButtonClicked(wxCommandEvent& evt);
     void Import(wxCommandEvent& evt);
+    void UpdateExchangeRates(wxCommandEvent& evt);
     void UpdateMenu(wxEvent&);
     void Test(wxCommandEvent& evt);
     void UpdateStatusBar();

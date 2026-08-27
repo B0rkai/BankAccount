@@ -9,6 +9,7 @@
 #include "DataImporter.h"
 #include "IManualResolve.h"
 #include "INewAccount.h"
+#include "MnbExchangeRateClient.h"
 
 struct data {
 	String name;
@@ -185,6 +186,7 @@ void AccountManager::Stream(std::ostream& out) const {
 	m_client_man.StreamOut(out);
 	m_ttype_man.StreamOut(out);
 	StreamAccounts(out);
+	m_exchange_rates.StreamOut(out); // appended last so older save files (without this block) still load
 	m_logger.LogDebug() << "Streaming out to file finished";
 }
 
@@ -194,10 +196,13 @@ void AccountManager::Stream(std::istream& in) {
 	m_client_man.StreamIn(in);
 	m_ttype_man.StreamIn(in);
 	StreamAccounts(in);
+	m_exchange_rates.StreamIn(in); // tolerates being absent from older save files, see ExchangeRateHistory::StreamIn
 	m_logger.LogDebug() << "Streaming in from file finished";
 }
 
-AccountManager::AccountManager() :m_accounts(true), m_ttype_man("TTYM", "Transaction Type Manager", nullptr, true), m_logger(Logger::GetRef("ACCM", "Account Manager")) {}
+AccountManager::AccountManager() :m_accounts(true), m_ttype_man("TTYM", "Transaction Type Manager", nullptr, true), m_logger(Logger::GetRef("ACCM", "Account Manager")) {
+	Currency::SetHistory(&m_exchange_rates);
+}
 
 AccountManager::~AccountManager() {}
 
@@ -456,6 +461,7 @@ StringTable AccountManager::Import(const String& filename, IManualResolve* resol
 	} catch (...) {
 		m_logger.LogError() << "Import aborted";
 	}
+	UpdateExchangeRates();
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);
 	StringTable table = FormatResultTable(last_transactions);
 	m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName().utf8_str();
@@ -529,4 +535,35 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 
 StringTable AccountManager::GetTestData() const {
 	return FormatResultTable(m_accounts.back()->GetLastRecords(1u));
+}
+
+bool AccountManager::HasMissingExchangeRates() const {
+	for (const Account* acc : m_accounts) {
+		CurrencyType type = acc->GetCurrency()->Type();
+		if ((type == HUF) || !acc->Size()) {
+			continue;
+		}
+		uint16_t min_date = acc->GetFirstRecord()->GetDate();
+		uint16_t max_date = acc->GetLastRecord()->GetDate();
+		if (!m_exchange_rates.FindMissingDates(type, min_date, max_date).empty()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void AccountManager::UpdateExchangeRates() {
+	if (!HasMissingExchangeRates()) {
+		m_logger.LogInfo() << "Exchange rates: nothing missing, skipping MNB download";
+		return;
+	}
+	// MNB's whole published archive covers every currency at once, so one download is enough
+	// regardless of which account(s) triggered it.
+	if (DownloadAllRates(m_exchange_rates)) {
+		m_logger.LogInfo() << "Exchange rates: MNB archive downloaded and applied";
+	}
+}
+
+StringTable AccountManager::GetExchangeRateTable(CurrencyType type) const {
+	return m_exchange_rates.GetTable(type);
 }

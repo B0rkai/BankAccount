@@ -12,6 +12,7 @@
 #include "Query.h"
 #include "IWQuery.h"
 #include "Logger.h"
+#include "ExchangeRateHistory.h"
 
 class Query;
 class Query::Result;
@@ -27,8 +28,11 @@ class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameReso
 	ClientManager m_client_man;
 	PtrVector<Account> m_accounts;
 	CategorySystem m_category_system;
+	ExchangeRateHistory m_exchange_rates;
 	Logger& m_logger;
 	int m_new_transactions = 0;
+
+	bool HasMissingExchangeRates() const;
 
 	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
 	Id CreateTransactionTypeId(const String& type);
@@ -84,4 +88,7 @@ public:
 	StringTable MakeQuery(WQuery& query);
 
 	StringTable GetTestData() const;
+
+	void UpdateExchangeRates(); // backfills every account's missing rates from MNB
+	StringTable GetExchangeRateTable(CurrencyType type) const;
 };

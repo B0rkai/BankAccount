@@ -161,7 +161,9 @@
     <ClCompile Include="src\CommonTypes.cpp" />
     <ClCompile Include="src\Currency.cpp" />
     <ClCompile Include="src\DataImporter.cpp" />
+    <ClCompile Include="src\ExchangeRateHistory.cpp" />
     <ClCompile Include="src\Logger.cpp" />
+    <ClCompile Include="src\MnbExchangeRateClient.cpp" />
     <ClCompile Include="src\ManagerType.cpp" />
     <ClCompile Include="src\ManualResolverDialog.cpp" />
     <ClCompile Include="src\NewAccountDetailsDialog.cpp" />
@@ -185,6 +187,7 @@
     <ClInclude Include="include\CommonTypes.h" />
     <ClInclude Include="include\Currency.h" />
     <ClInclude Include="include\DataImporter.h" />
+    <ClInclude Include="include\ExchangeRateHistory.h" />
     <ClInclude Include="include\IAccount.h" />
     <ClInclude Include="include\IDataBase.h" />
     <ClInclude Include="include\IIdResolve.h" />
@@ -196,6 +199,7 @@
     <ClInclude Include="include\ManagedType.h" />
     <ClInclude Include="include\ManagerType.h" />
     <ClInclude Include="include\ManualResolverDialog.h" />
+    <ClInclude Include="include\MnbExchangeRateClient.h" />
     <ClInclude Include="include\NewAccountDetailsDialog.h" />
     <ClInclude Include="include\Query.h" />
     <ClInclude Include="include\RefCounted.h" />

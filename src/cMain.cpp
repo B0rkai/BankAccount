@@ -90,9 +90,11 @@ enum CtrIds {
 	MENU_LIST_ACCOUNTS,
 	MENU_LIST_CLIENTS,
 	MENU_LIST_CATEGORIES,
+	MENU_UPDATE_EXCHANGE_RATES,
 	MENU_TEST_MANUAL_RESOLVER,
 	MENU_TEST_NEW_ACCOUNT,
-	MENU_TEST_PERIODIC_QUERY
+	MENU_TEST_PERIODIC_QUERY,
+	MENU_TEST_EUR_RATES
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
@@ -119,9 +121,11 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_LIST_ACCOUNTS, List)
 	EVT_MENU(MENU_LIST_CLIENTS, List)
 	EVT_MENU(MENU_LIST_CATEGORIES, List)
+	EVT_MENU(MENU_UPDATE_EXCHANGE_RATES, UpdateExchangeRates)
 	EVT_MENU(MENU_TEST_MANUAL_RESOLVER, Test)
 	EVT_MENU(MENU_TEST_NEW_ACCOUNT, Test)
 	EVT_MENU(MENU_TEST_PERIODIC_QUERY, Test)
+	EVT_MENU(MENU_TEST_EUR_RATES, Test)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -588,6 +592,7 @@ void cMain::InitMenu() {
 	dbmenu->Append(MENU_SAVE, "Save file");
 	dbmenu->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
 	dbmenu->Append(MENU_EXTRACT, "Extract save file");
+	dbmenu->Append(MENU_UPDATE_EXCHANGE_RATES, "Update Exchange Rates");
 	querymenu->Append(MENU_LIST_ACCOUNTS, "List Accounts");
 	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
 	querymenu->Append(MENU_LIST_CLIENTS, "List Clients");
@@ -595,6 +600,7 @@ void cMain::InitMenu() {
 	testmenu->Append(MENU_TEST_MANUAL_RESOLVER, "ManualResolverDialog");
 	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
 	testmenu->Append(MENU_TEST_PERIODIC_QUERY, "Periodic Query");
+	testmenu->Append(MENU_TEST_EUR_RATES, "List EUR Exchange Rates");
 
 	SetMenuBar(m_menu_bar);
 }
@@ -848,6 +854,12 @@ void cMain::Test(wxCommandEvent& evt) {
 		StringTable table = paq->GetTableResult();
 		UIOutputTable(table);
 		UpdateStatusBar();
+	} else if (id == MENU_TEST_EUR_RATES) {
+		if (!m_bank_file) {
+			UIOutputText("First load the database");
+			return;
+		}
+		UIOutputTable(m_bank_file->GetExchangeRateTable(EUR));
 	}
 }
 
@@ -870,6 +882,16 @@ void cMain::Import(wxCommandEvent& evt) {
 	}
 	UpdateAccFilter();
 	UpdateStatusBar();
+}
+
+void cMain::UpdateExchangeRates(wxCommandEvent& evt) {
+	evt.Skip();
+	if (!m_bank_file) {
+		UIOutputText("First load the database");
+		return;
+	}
+	m_bank_file->UpdateExchangeRates();
+	UIOutputText("Exchange rate update finished, see the log for details.");
 }
 
 void cMain::UpdateMenu(wxEvent&) {

@@ -2,6 +2,7 @@
 #include <iomanip>
 
 #include "Currency.h"
+#include "ExchangeRateHistory.h"
 #include "wx\arrstr.h"
 
 // default exchange rates
@@ -76,6 +77,12 @@ void Currency::SetExchangeRate(CurrencyType type, double newVal) {
 
 double Currency::GetExcahngeRate(CurrencyType type) {
 	return EXCHANGE_RATES[type][HUF] * 100.;
+}
+
+static const ExchangeRateHistory* g_exchange_rate_history = nullptr;
+
+void Currency::SetHistory(const ExchangeRateHistory* history) {
+	g_exchange_rate_history = history;
 }
 
 class Euro : public Currency {
@@ -236,6 +243,23 @@ int32_t Money::GetValue(CurrencyType type) const {
 		throw "Money::GetValue() unexpected currency type";
 	}
 	return m_amount * EXCHANGE_RATES[m_currency_type][type];
+}
+
+int32_t Money::GetValue(CurrencyType type, uint16_t date) const {
+	if (type >= Currency_Count) {
+		throw "Money::GetValue() unexpected currency type";
+	}
+	if ((type == m_currency_type) || !g_exchange_rate_history) {
+		return GetValue(type); // same currency, or no history loaded yet - fall back to the static rate
+	}
+	if (type == HUF) {
+		return (int32_t)(m_amount * g_exchange_rate_history->GetRate(m_currency_type, date));
+	}
+	if (m_currency_type == HUF) {
+		double rate = g_exchange_rate_history->GetRate(type, date);
+		return (rate != 0.) ? (int32_t)(m_amount / rate) : 0;
+	}
+	return GetValue(type); // non-HUF-to-non-HUF isn't supported by the static rate either; same limitation applies here
 }
 
 Money& Money::operator+=(const Money& other) {
