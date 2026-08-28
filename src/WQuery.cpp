@@ -5,6 +5,22 @@
 
 const IIdResolve* WQueryElement::s_resolve_if = nullptr;
 
+SetCategoryQuery::SetCategoryQuery() : m_logger(Logger::GetRef("SCAT", "Set Category Query")) {}
+
+bool SetCategoryQuery::CheckTransaction(Transaction* tr) {
+    tr->GetCategoryId() = m_category_id;
+    m_logger.LogInfo() << "Category changed to ID " << (Id::Type)m_category_id << " for record: " << ContainerAsString(tr->PrintDebug(s_resolve_if)).utf8_str();
+    return true;
+}
+
+SetDescriptionQuery::SetDescriptionQuery() : m_logger(Logger::GetRef("SDSC", "Set Description Query")) {}
+
+bool SetDescriptionQuery::CheckTransaction(Transaction* tr) {
+    tr->AddDescription(m_desc); // replaces the current description, see Transaction::AddDescription
+    m_logger.LogInfo() << "Description changed to '" << m_desc.utf8_str() << "' for record: " << ContainerAsString(tr->PrintDebug(s_resolve_if)).utf8_str();
+    return true;
+}
+
 bool MergeQuery::IsOk() const {
     return (!m_others.empty() && (m_target_id != INVALID_ID));
 }

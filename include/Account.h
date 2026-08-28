@@ -48,6 +48,8 @@ public:
 	const Transaction* GetFirstRecord() const;
 	const Transaction* GetLastRecord() const;
 	const PtrVector<const Transaction> GetLastRecords(unsigned int cnt) const;
+	size_t IndexOf(const Transaction* tr) const;
+	Transaction& GetTransactionAt(size_t index);
 
 	void Sort();
 

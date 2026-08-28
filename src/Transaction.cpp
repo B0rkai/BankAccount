@@ -30,6 +30,10 @@ StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
 	return res;
 }
 
+Id Transaction::GetAccountId() const {
+    return m_parent->GetId();
+}
+
 Id Transaction::GetId(const QueryTopic topic) const {
     switch (topic) {
     case QueryTopic::ACCOUNT:

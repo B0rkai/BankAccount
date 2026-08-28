@@ -153,6 +153,21 @@ void AccountManager::ListOfAccNames(StringVector& vec) const {
 	}
 }
 
+void AccountManager::ListOfCategoryNames(StringVector& vec) const {
+	for (Id::Type i = 0; i < m_category_system.size(); ++i) {
+		vec.push_back(m_category_system.GetFullName(i));
+	}
+}
+
+Id AccountManager::GetCategoryIdByFullName(const String& fullname) const {
+	for (Id::Type i = 0; i < m_category_system.size(); ++i) {
+		if (m_category_system.GetFullName(i) == fullname) {
+			return Id(i);
+		}
+	}
+	return Id(INVALID_ID);
+}
+
 void AccountManager::StreamAccounts(std::ostream& out) const {
 	out << m_accounts.size() << ENDL;
 	for (const Account* acc : m_accounts) {
@@ -427,7 +442,7 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 	Modified();
 }
 
-StringTable AccountManager::Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if) {
+AccountManager::ImportResult AccountManager::Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if) {
 	m_new_transactions = 0;
 	RawImportData import_data;
 	ImportFromFile(filename, import_data);
@@ -466,7 +481,7 @@ StringTable AccountManager::Import(const String& filename, IManualResolve* resol
 	StringTable table = FormatResultTable(last_transactions);
 	m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName().utf8_str();
 	m_new_transactions = 0;
-	return table;
+	return ImportResult{ table, last_transactions }; // list-init copy-constructs both members; PtrVector's const m_owner blocks assignment
 }
 
 StringTable AccountManager::FormatResultTable(const PtrVector<const Transaction>& res) const {
@@ -535,6 +550,30 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 
 StringTable AccountManager::GetTestData() const {
 	return FormatResultTable(m_accounts.back()->GetLastRecords(1u));
+}
+
+AccountManager::TransactionIdentity AccountManager::Identify(const Transaction* tr) const {
+	Id account_id = tr->GetAccountId();
+	return { account_id, m_accounts.at(account_id)->IndexOf(tr) };
+}
+
+std::vector<AccountManager::TransactionIdentity> AccountManager::IdentifyAll(const PtrVector<const Transaction>& list) const {
+	std::vector<TransactionIdentity> result;
+	result.reserve(list.size());
+	for (const Transaction* tr : list) {
+		result.push_back(Identify(tr));
+	}
+	return result;
+}
+
+void AccountManager::ApplyEdit(const TransactionIdentity& identity, WQueryElement& element) {
+	Transaction& tr = m_accounts.at(identity.account_id)->GetTransactionAt(identity.position);
+	WQueryElement::SetResolveIf(this); // needed for CheckTransaction() to log via tr->PrintDebug()
+	element.PreResolve();
+	element.CheckTransaction(&tr);
+	element.Execute(this);
+	WQueryElement::SetResolveIf(nullptr);
+	Modified();
 }
 
 bool AccountManager::HasMissingExchangeRates() const {

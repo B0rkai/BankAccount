@@ -17,6 +17,7 @@
 class Query;
 class Query::Result;
 class WQuery;
+class WQueryElement;
 class Account;
 class Client;
 struct RawTransactionData;
@@ -24,6 +25,15 @@ class IManualResolve;
 class INewAccount;
 
 class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameResolve, public IWAccount {
+public:
+	// Identifies one transaction by its stable position, safe to store across time (unlike a raw
+	// Transaction* into an Account's std::vector<Transaction>, which can be invalidated by later
+	// mutation). Resolved back to a live Transaction only inside ApplyEdit().
+	struct TransactionIdentity {
+		Id account_id;
+		size_t position;
+	};
+private:
 	ManagerType<TransactionType> m_ttype_man;
 	ClientManager m_client_man;
 	PtrVector<Account> m_accounts;
@@ -79,13 +89,23 @@ public:
 	Id CreateId(const QueryTopic topic, const String& name);
 	void AddKeyword(const QueryTopic topic, Id id, const String& keyword);
 	void ListOfAccNames(StringVector& vec) const;
+	void ListOfCategoryNames(StringVector& vec) const;
+	Id GetCategoryIdByFullName(const String& fullname) const;
 
 	String GetClientInfoOfName(const String& name);
 
-	StringTable Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if);
+	struct ImportResult {
+		StringTable table;
+		PtrVector<const Transaction> transactions; // the newly imported transactions, for grid editing
+	};
+	ImportResult Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if);
 
 	StringTable MakeQuery(Query& query) const;
 	StringTable MakeQuery(WQuery& query);
+
+	TransactionIdentity Identify(const Transaction* tr) const;
+	std::vector<TransactionIdentity> IdentifyAll(const PtrVector<const Transaction>& list) const;
+	void ApplyEdit(const TransactionIdentity& identity, WQueryElement& element);
 
 	StringTable GetTestData() const;
 

@@ -114,6 +114,14 @@ const PtrVector<const Transaction> Account::GetLastRecords(unsigned int cnt) con
 	return vec;
 }
 
+size_t Account::IndexOf(const Transaction* tr) const {
+	return tr - m_transactions.data();
+}
+
+Transaction& Account::GetTransactionAt(size_t index) {
+	return m_transactions.at(index);
+}
+
 void Account::Sort() {
 	// TODO solve it
 	std::sort(m_transactions.begin(), m_transactions.end(), [](const Transaction& t1, const Transaction& t2) {

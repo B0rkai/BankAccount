@@ -10,6 +10,7 @@
 #include "Currency.h"
 #include "Query.h"
 #include "WQuery.h"
+#include "Transaction.h"
 #include "BankAccountFile.h"
 #include "ManualResolverDialog.h"
 #include "NewAccountDetailsDialog.h"
@@ -143,6 +144,7 @@ cMain::cMain()
 	m_result_grid->CreateGrid(0, 0);
 	m_result_grid->EnableEditing(false);
 	m_result_grid->SetDefaultCellFont(GetMonoSpaceFont());
+	m_result_grid->Bind(wxEVT_GRID_CELL_CHANGED, &cMain::OnGridCellChanged, this);
 
 	m_status_bar = new wxStatusBar(this, wxID_ANY, wxST_SIZEGRIP);
 	SetStatusBar(m_status_bar);
@@ -355,7 +357,7 @@ void cMain::Categorize(wxCommandEvent& evt) {
 	wq.AddWElement(cq);
 	auto table = m_bank_file->MakeQuery(wq);
 	UIOutputText(wq.WElement()->GetResult());
-	UIOutputTable(table);
+	UIOutputTable(table, wq.GetResult());
 }
 
 void cMain::LoadFile(wxCommandEvent& evt) {
@@ -442,6 +444,12 @@ void cMain::UIOutputText(const String& info) {
 }
 
 void cMain::UIOutputTable(const StringTable& table) {
+	UIOutputTable(table, PtrVector<const Transaction>());
+}
+
+void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions) {
+	m_result_grid->EnableEditing(false);
+	m_grid_identities.clear();
 	if (m_result_grid->GetNumberRows()) {
 		m_result_grid->DeleteRows(0, m_result_grid->GetNumberRows());
 	}
@@ -467,6 +475,58 @@ void cMain::UIOutputTable(const StringTable& table) {
 		}
 	}
 	m_result_grid->AutoSizeColumns();
+
+	if (transactions.empty()) {
+		return; // non-editable: List/summaries/periodic reports/exchange-rate table etc.
+	}
+	m_grid_identities = m_bank_file->IdentifyAll(transactions);
+	m_result_grid->EnableEditing(true);
+	int category_col = -1, desc_col = -1;
+	for (int c = 0; c < col_count; ++c) {
+		if (table[0][c] == "Category") {
+			category_col = c;
+		} else if (table[0][c] == "Desc") {
+			desc_col = c;
+		}
+	}
+	for (int r = 0; r < row_count; ++r) {
+		for (int c = 0; c < col_count; ++c) {
+			m_result_grid->SetReadOnly(r, c, (c != category_col) && (c != desc_col));
+		}
+	}
+	if (category_col >= 0) {
+		StringVector categories;
+		m_bank_file->ListOfCategoryNames(categories);
+		wxGridCellAttr* attr = new wxGridCellAttr();
+		attr->SetEditor(new wxGridCellChoiceEditor(wxArrayString(categories.size(), categories.data()), false));
+		m_result_grid->SetColAttr(category_col, attr);
+	}
+}
+
+void cMain::OnGridCellChanged(wxGridEvent& evt) {
+	int row = evt.GetRow();
+	if ((size_t)row >= m_grid_identities.size()) {
+		return;
+	}
+	const AccountManager::TransactionIdentity& identity = m_grid_identities[row];
+	String col_label = m_result_grid->GetColLabelValue(evt.GetCol());
+	String value = m_result_grid->GetCellValue(row, evt.GetCol());
+	if (col_label == "Category") {
+		Id id = m_bank_file->GetCategoryIdByFullName(value);
+		if (id == INVALID_ID) { // shouldn't happen from a closed dropdown, but guard anyway
+			return;
+		}
+		SetCategoryQuery q;
+		q.SetCategoryId(id);
+		m_bank_file->ApplyEdit(identity, q);
+	} else if (col_label == "Desc") {
+		SetDescriptionQuery q;
+		q.SetDescription(value);
+		m_bank_file->ApplyEdit(identity, q);
+	} else {
+		return;
+	}
+	UpdateStatusBar();
 }
 
 void cMain::PrepareQuery(Query& q) {
@@ -725,12 +785,18 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 			result.append(PrettyTable(qe_table)); // further tables stay as plain text
 		}
 	}
+	bool grid_is_transaction_list = false;
 	if (!table.empty()) {
 		grid_table = table; // the transaction list, when present, takes priority for the grid
+		grid_is_transaction_list = true;
 	}
 
 	UIOutputText(result);
-	UIOutputTable(grid_table);
+	if (grid_is_transaction_list) {
+		UIOutputTable(grid_table, q.GetResult()); // editable - it's an actual transaction list
+	} else {
+		UIOutputTable(grid_table); // aggregate/sum table - not editable
+	}
 }
 
 void cMain::MergeButtonClicked(wxCommandEvent& evt) {
@@ -792,7 +858,7 @@ void cMain::MergeButtonClicked(wxCommandEvent& evt) {
 		return;
 	}
 	auto table = m_bank_file->MakeQuery(wq);
-	UIOutputTable(table);
+	UIOutputTable(table, wq.GetResult());
 	UpdateStatusBar();
 }
 
@@ -873,8 +939,8 @@ void cMain::Import(wxCommandEvent& evt) {
 			LogInfo() << "Import cancelled by user";
 			return;     // the user changed idea...
 		}
-		StringTable table = m_bank_file->Import(openFileDialog.GetPath(), this, this);
-		UIOutputTable(table);
+		AccountManager::ImportResult result = m_bank_file->Import(openFileDialog.GetPath(), this, this);
+		UIOutputTable(result.table, result.transactions);
 	} catch (const char*& problem) {
 		String error = "ERROR: ";
 		error.append(problem);

@@ -88,3 +88,27 @@ public:
 
 };
 
+// Single-transaction edits applied via AccountManager::ApplyEdit() rather than a full MakeQuery()
+// scan - e.g. inline edits made in the results grid.
+class SetCategoryQuery : public WQueryElement {
+    GETQUERYTOPIC(CATEGORY)
+    Id m_category_id = INVALID_ID;
+    Logger& m_logger;
+    virtual bool CheckTransaction(Transaction* tr) override;
+    virtual void Execute(IWAccount* account_if) override {}
+public:
+    SetCategoryQuery();
+    inline void SetCategoryId(const Id id) { m_category_id = id; }
+};
+
+class SetDescriptionQuery : public WQueryElement {
+    GETQUERYTOPIC(MEMO)
+    String m_desc;
+    Logger& m_logger;
+    virtual bool CheckTransaction(Transaction* tr) override;
+    virtual void Execute(IWAccount* account_if) override {}
+public:
+    SetDescriptionQuery();
+    inline void SetDescription(const String& desc) { m_desc = desc; }
+};
+

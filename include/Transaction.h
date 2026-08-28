@@ -31,6 +31,7 @@ public:
 	inline Id& GetTypeId() { return m_type_id; }
 	inline Id GetCategoryId() const { return m_category_id; }
 	inline Id& GetCategoryId() { return m_category_id; }
+	Id GetAccountId() const;
 	Id GetId(const QueryTopic topic) const;
 	Id& GetId(const QueryTopic topic);
 	CurrencyType GetCurrencyType() const;

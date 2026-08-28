@@ -7,10 +7,12 @@
 #include "CommonTypes.h"
 #include "IManualResolve.h"
 #include "INewAccount.h"
+#include "AccountManager.h" // for AccountManager::TransactionIdentity
 
 // wxButton;
 class BankAccountFile;
 class Query;
+class Transaction;
 enum CtrIds;
 
 class ControlGroup {
@@ -95,8 +97,11 @@ class cMain :
     wxGrid* m_result_grid = nullptr;
     wxTextCtrl* m_info_textctrl = nullptr;
     std::unique_ptr<BankAccountFile> m_bank_file;
+    std::vector<AccountManager::TransactionIdentity> m_grid_identities;
     void UIOutputText(const String& info);
     void UIOutputTable(const StringTable& table);
+    void UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions);
+    void OnGridCellChanged(wxGridEvent& evt);
     void PrepareQuery(Query& query);
     void InitMenu();
     void InitControls();
