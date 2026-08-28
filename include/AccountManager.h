@@ -2,6 +2,7 @@
 #include <vector>
 #include <ostream>
 #include <unordered_map>
+#include <functional>
 #include "IDataBase.h"
 #include "IIdResolve.h"
 #include "INameResolve.h"
@@ -109,6 +110,10 @@ public:
 
 	StringTable GetTestData() const;
 
-	void UpdateExchangeRates(); // backfills every account's missing rates from MNB
+	// Backfills every account's missing rates from MNB. No-op if nothing is missing. Runs
+	// synchronously on the calling thread - callers on the UI thread should run this on a
+	// background thread and use report_phase to drive a progress indicator, since the MNB
+	// fetch can take 10-30+ seconds.
+	void UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase = nullptr);
 	StringTable GetExchangeRateTable(CurrencyType type) const;
 };

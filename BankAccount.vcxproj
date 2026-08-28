@@ -171,6 +171,7 @@
     <ClCompile Include="src\ManualResolverDialog.cpp" />
     <ClCompile Include="src\NewAccountDetailsDialog.cpp" />
     <ClCompile Include="src\Query.cpp" />
+    <ClCompile Include="src\RunWithProgress.cpp" />
     <ClCompile Include="src\Transaction.cpp" />
     <ClCompile Include="src\TransactionType.cpp" />
     <ClCompile Include="src\ManagedType.cpp" />
@@ -209,6 +210,7 @@
     <ClInclude Include="include\NewAccountDetailsDialog.h" />
     <ClInclude Include="include\Query.h" />
     <ClInclude Include="include\RefCounted.h" />
+    <ClInclude Include="include\RunWithProgress.h" />
     <ClInclude Include="include\Transaction.h" />
     <ClInclude Include="include\TransactionType.h" />
     <ClInclude Include="include\WQuery.h" />

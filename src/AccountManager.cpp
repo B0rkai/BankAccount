@@ -476,7 +476,10 @@ AccountManager::ImportResult AccountManager::Import(const String& filename, IMan
 	} catch (...) {
 		m_logger.LogError() << "Import aborted";
 	}
-	UpdateExchangeRates();
+	// Deliberately NOT calling UpdateExchangeRates() here: it can take 10-30+ seconds (a network
+	// fetch), and unlike everything else in Import() it never needs to show a manual-resolve
+	// dialog, so the caller (cMain) runs it afterwards on a background thread with a progress
+	// dialog instead of blocking the UI thread synchronously as part of this call.
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);
 	StringTable table = FormatResultTable(last_transactions);
 	m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName().utf8_str();
@@ -591,14 +594,14 @@ bool AccountManager::HasMissingExchangeRates() const {
 	return false;
 }
 
-void AccountManager::UpdateExchangeRates() {
+void AccountManager::UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase) {
 	if (!HasMissingExchangeRates()) {
 		m_logger.LogInfo() << "Exchange rates: nothing missing, skipping MNB download";
 		return;
 	}
 	// MNB's whole published archive covers every currency at once, so one download is enough
 	// regardless of which account(s) triggered it.
-	if (DownloadAllRates(m_exchange_rates)) {
+	if (DownloadAllRates(m_exchange_rates, report_phase)) {
 		m_logger.LogInfo() << "Exchange rates: MNB archive downloaded and applied";
 	}
 }

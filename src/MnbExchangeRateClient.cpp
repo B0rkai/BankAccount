@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cctype>
+#include <chrono>
 #define NOMINMAX // windows.h's min/max macros break ZipLib's template code (e.g. clamp<T>) once both are included here
 #include <windows.h>
 #include <winhttp.h>
@@ -26,7 +27,16 @@ const wchar_t* MNB_PATH = L"/Root/ExchangeRate/arfolyam.xlsx";
 
 // Downloads the resource at MNB_HOST/MNB_PATH over HTTPS GET and returns its raw bytes, or an
 // empty string on failure (already logged).
-std::string HttpGet() {
+std::string HttpGet(const std::function<void(const std::string&)>& report_phase) {
+	auto report = [&](const std::string& phase) { if (report_phase) report_phase(phase); };
+
+	using Clock = std::chrono::steady_clock;
+	auto ms_since = [](Clock::time_point since) {
+		return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - since).count();
+	};
+	auto t_start = Clock::now();
+
+	report("Connecting to MNB...");
 	std::string response;
 	// WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY respects WPAD/PAC-based system proxy settings instead of
 	// the legacy machine-wide "default" WinHTTP proxy (which is usually unconfigured).
@@ -35,6 +45,8 @@ std::string HttpGet() {
 		LogError() << "MNB fetch: WinHttpOpen failed (error " << (unsigned long)GetLastError() << ")";
 		return response;
 	}
+	LogInfo() << "MNB fetch: WinHttpOpen (incl. WPAD proxy auto-detect) took " << ms_since(t_start) << " ms";
+	auto t_connect = Clock::now();
 	// Without explicit timeouts, a stalled DNS lookup or connection attempt (dead network, silently
 	// dropping firewall, missing proxy) blocks this call - and the whole UI thread - indefinitely.
 	WinHttpSetTimeouts(hSession, 10000, 10000, 15000, 20000);
@@ -44,6 +56,7 @@ std::string HttpGet() {
 		WinHttpCloseHandle(hSession);
 		return response;
 	}
+	LogInfo() << "MNB fetch: WinHttpConnect (DNS + TCP connect) took " << ms_since(t_connect) << " ms";
 	HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", MNB_PATH, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
 	if (!hRequest) {
 		LogError() << "MNB fetch: could not open HTTPS request (error " << (unsigned long)GetLastError() << ")";
@@ -51,20 +64,32 @@ std::string HttpGet() {
 		WinHttpCloseHandle(hSession);
 		return response;
 	}
+	// The TLS handshake below reliably takes 15-20+ seconds - confirmed via a plain `curl.exe`
+	// request to the same URL (twice, from separate processes, both ~18-19s) that this is a
+	// property of connecting to MNB's server from this network, not of this app's WinHTTP code
+	// or WinHTTP's (opt-in, never-enabled-here) certificate revocation checking. There is no
+	// client-side fix for this; it's inherent to reaching this specific host.
+	report("Handshaking (TLS)...");
+	auto t_send = Clock::now();
 	bool ok = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) != FALSE;
 	if (!ok) {
 		LogError() << "MNB fetch: WinHttpSendRequest failed (error " << (unsigned long)GetLastError() << ")";
 	}
+	LogInfo() << "MNB fetch: WinHttpSendRequest (incl. TLS handshake) took " << ms_since(t_send) << " ms";
+	auto t_headers = Clock::now();
 	ok = ok && (WinHttpReceiveResponse(hRequest, NULL) != FALSE);
 	if (!ok) {
 		LogError() << "MNB fetch: WinHttpReceiveResponse failed (error " << (unsigned long)GetLastError() << ")";
 	}
+	LogInfo() << "MNB fetch: WinHttpReceiveResponse (server time-to-first-byte) took " << ms_since(t_headers) << " ms";
 	if (ok) {
 		DWORD status = 0, status_size = sizeof(status);
 		WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_FLAG_NUMBER | WINHTTP_QUERY_STATUS_CODE, WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX);
 		if (status != 200) {
 			LogError() << "MNB fetch: server returned HTTP status " << status;
 		}
+		report("Downloading exchange rate archive...");
+		auto t_read = Clock::now();
 		DWORD available = 0;
 		while (WinHttpQueryDataAvailable(hRequest, &available) && (available > 0)) {
 			std::vector<char> buffer(available);
@@ -75,11 +100,12 @@ std::string HttpGet() {
 			}
 			response.append(buffer.data(), read);
 		}
-		LogInfo() << "MNB fetch: downloaded " << response.size() << " byte(s)";
+		LogInfo() << "MNB fetch: downloaded " << response.size() << " byte(s), body transfer took " << ms_since(t_read) << " ms";
 	}
 	WinHttpCloseHandle(hRequest);
 	WinHttpCloseHandle(hConnect);
 	WinHttpCloseHandle(hSession);
+	LogInfo() << "MNB fetch: HttpGet total " << ms_since(t_start) << " ms";
 	return response;
 }
 
@@ -164,7 +190,11 @@ std::string ExtractColumnLetters(const std::string& cell_ref) {
 	return col;
 }
 
-std::vector<Cell> ParseCells(const std::string& xml, size_t start, size_t end) {
+// keep_column, when set, lets a cell be skipped entirely (no value extraction/allocation, just
+// advancing past it) once its column letters are known but before its value is parsed - the
+// per-row worksheet scan uses this to ignore the ~76 of ~80 published currency columns this app
+// doesn't track, which matters since this runs once per row for tens of thousands of rows.
+std::vector<Cell> ParseCells(const std::string& xml, size_t start, size_t end, const std::function<bool(const std::string&)>& keep_column = nullptr) {
 	std::vector<Cell> cells;
 	size_t pos = start;
 	while (((pos = xml.find("<c ", pos)) != std::string::npos) && (pos < end)) {
@@ -173,22 +203,32 @@ std::vector<Cell> ParseCells(const std::string& xml, size_t start, size_t end) {
 			break;
 		}
 		std::string tag = xml.substr(pos, tag_end - pos);
-		Cell cell;
+		std::string col;
 		size_t r_pos = tag.find("r=\"");
 		if (r_pos != std::string::npos) {
 			size_t r_start = r_pos + 3;
 			size_t r_end = tag.find('"', r_start);
-			cell.col = ExtractColumnLetters(tag.substr(r_start, r_end - r_start));
+			col = ExtractColumnLetters(tag.substr(r_start, r_end - r_start));
 		}
+		bool self_closing = (tag[tag.size() - 1] == '/'); // self-closing <c .../>, i.e. blank cell
+		size_t cell_close = std::string::npos;
+		if (!self_closing) {
+			cell_close = xml.find("</c>", tag_end);
+			if ((cell_close == std::string::npos) || (cell_close > end)) {
+				break;
+			}
+		}
+		if (keep_column && !keep_column(col)) {
+			pos = self_closing ? (tag_end + 1) : (cell_close + 4);
+			continue;
+		}
+		Cell cell;
+		cell.col = col;
 		cell.is_shared_string = (tag.find("t=\"s\"") != std::string::npos);
-		if (tag[tag.size() - 1] == '/') { // self-closing <c .../>, i.e. blank cell
+		if (self_closing) {
 			cells.push_back(cell);
 			pos = tag_end + 1;
 			continue;
-		}
-		size_t cell_close = xml.find("</c>", tag_end);
-		if ((cell_close == std::string::npos) || (cell_close > end)) {
-			break;
 		}
 		size_t v_start = xml.find("<v>", tag_end);
 		if ((v_start != std::string::npos) && (v_start < cell_close)) {
@@ -264,6 +304,8 @@ void ParseWorksheet(ExchangeRateHistory& history, const std::vector<std::string>
 		}
 	}
 
+	auto keep_column = [&](const std::string& col) { return (col == "A") || tracked_columns.count(col) != 0; };
+
 	size_t added = 0;
 	size_t pos = unit_end;
 	while ((pos = sheet_xml.find("<row ", pos)) != std::string::npos) {
@@ -272,7 +314,7 @@ void ParseWorksheet(ExchangeRateHistory& history, const std::vector<std::string>
 		if (row_end == std::string::npos) {
 			break;
 		}
-		std::vector<Cell> cells = ParseCells(sheet_xml, row_start, row_end);
+		std::vector<Cell> cells = ParseCells(sheet_xml, row_start, row_end, keep_column);
 		uint16_t date = 0;
 		for (const Cell& cell : cells) {
 			if ((cell.col == "A") && !cell.is_shared_string && !cell.value.empty()) {
@@ -301,12 +343,20 @@ void ParseWorksheet(ExchangeRateHistory& history, const std::vector<std::string>
 
 } // namespace
 
-bool DownloadAllRates(ExchangeRateHistory& history) {
+bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase) {
+	auto report = [&](const std::string& phase) { if (report_phase) report_phase(phase); };
+
+	using Clock = std::chrono::steady_clock;
+	auto ms_since = [](Clock::time_point since) {
+		return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - since).count();
+	};
 	try {
-		std::string xlsx = HttpGet();
+		std::string xlsx = HttpGet(report_phase);
 		if (xlsx.empty()) {
 			return false; // already logged by HttpGet
 		}
+		report("Unpacking archive...");
+		auto t_unzip = Clock::now();
 		std::istringstream zip_stream(xlsx);
 		ZipArchive::Ptr archive = ZipArchive::Create(zip_stream);
 		if (!archive) {
@@ -315,12 +365,16 @@ bool DownloadAllRates(ExchangeRateHistory& history) {
 		}
 		std::string shared_strings_xml = ReadEntry(archive, "xl/sharedStrings.xml");
 		std::string sheet_xml = ReadEntry(archive, "xl/worksheets/sheet1.xml");
+		LogInfo() << "MNB fetch: unzip + read entries took " << ms_since(t_unzip) << " ms";
 		if (sheet_xml.empty()) {
 			LogError() << "MNB fetch: could not read the worksheet from the downloaded archive";
 			return false;
 		}
+		report("Parsing exchange rates...");
+		auto t_parse = Clock::now();
 		std::vector<std::string> shared_strings = ParseSharedStrings(shared_strings_xml);
 		ParseWorksheet(history, shared_strings, sheet_xml);
+		LogInfo() << "MNB fetch: parsing (shared strings + worksheet) took " << ms_since(t_parse) << " ms";
 		return true;
 	} catch (const std::exception& e) {
 		LogError() << "MNB fetch: unexpected error while processing the archive: " << e.what();

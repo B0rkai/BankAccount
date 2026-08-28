@@ -15,6 +15,7 @@
 #include "ManualResolverDialog.h"
 #include "NewAccountDetailsDialog.h"
 #include "LogViewerFrame.h"
+#include "RunWithProgress.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -946,6 +947,10 @@ void cMain::Import(wxCommandEvent& evt) {
 			return;     // the user changed idea...
 		}
 		AccountManager::ImportResult result = m_bank_file->Import(openFileDialog.GetPath(), this, this);
+		RunBlockingWithProgress(this, "Updating exchange rates", "Starting...",
+			[this](const std::function<void(const std::string&)>& report_phase) {
+				m_bank_file->UpdateExchangeRates(report_phase);
+			});
 		UIOutputTable(result.table, result.transactions);
 	} catch (const char*& problem) {
 		String error = "ERROR: ";
@@ -962,7 +967,10 @@ void cMain::UpdateExchangeRates(wxCommandEvent& evt) {
 		UIOutputText("First load the database");
 		return;
 	}
-	m_bank_file->UpdateExchangeRates();
+	RunBlockingWithProgress(this, "Updating exchange rates", "Starting...",
+		[this](const std::function<void(const std::string&)>& report_phase) {
+			m_bank_file->UpdateExchangeRates(report_phase);
+		});
 	UIOutputText("Exchange rate update finished, see the log for details.");
 }
 
