@@ -14,6 +14,7 @@
 #include "BankAccountFile.h"
 #include "ManualResolverDialog.h"
 #include "NewAccountDetailsDialog.h"
+#include "LogViewerFrame.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -95,7 +96,8 @@ enum CtrIds {
 	MENU_TEST_MANUAL_RESOLVER,
 	MENU_TEST_NEW_ACCOUNT,
 	MENU_TEST_PERIODIC_QUERY,
-	MENU_TEST_EUR_RATES
+	MENU_TEST_EUR_RATES,
+	MENU_VIEW_LOG
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
@@ -127,6 +129,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_TEST_NEW_ACCOUNT, Test)
 	EVT_MENU(MENU_TEST_PERIODIC_QUERY, Test)
 	EVT_MENU(MENU_TEST_EUR_RATES, Test)
+	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -643,9 +646,11 @@ void cMain::InitMenu() {
 	m_menu_bar = new wxMenuBar();
 	wxMenu* dbmenu = new wxMenu();
 	wxMenu* querymenu = new wxMenu();
+	wxMenu* viewmenu = new wxMenu();
 	wxMenu* testmenu = new wxMenu();
 	m_menu_bar->Append(dbmenu, "Database");
 	m_menu_bar->Append(querymenu, "Query");
+	m_menu_bar->Append(viewmenu, "View");
 	m_menu_bar->Append(testmenu, "Test");
 	m_discard_changes_menu_item = dbmenu->Append(MENU_LOAD, "Discard changes");
 	dbmenu->Append(MENU_IMPORT, "Import from file");
@@ -657,6 +662,7 @@ void cMain::InitMenu() {
 	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
 	querymenu->Append(MENU_LIST_CLIENTS, "List Clients");
 	querymenu->Append(MENU_LIST_CATEGORIES, "List Categories");
+	viewmenu->Append(MENU_VIEW_LOG, "Show Log Viewer");
 	testmenu->Append(MENU_TEST_MANUAL_RESOLVER, "ManualResolverDialog");
 	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
 	testmenu->Append(MENU_TEST_PERIODIC_QUERY, "Periodic Query");
@@ -958,6 +964,21 @@ void cMain::UpdateExchangeRates(wxCommandEvent& evt) {
 	}
 	m_bank_file->UpdateExchangeRates();
 	UIOutputText("Exchange rate update finished, see the log for details.");
+}
+
+void cMain::ShowLogViewer(wxCommandEvent& evt) {
+	evt.Skip();
+	if (m_log_viewer_frame) {
+		m_log_viewer_frame->Raise();
+		m_log_viewer_frame->SetFocus();
+		return;
+	}
+	m_log_viewer_frame = new LogViewerFrame(this);
+	m_log_viewer_frame->Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) {
+		m_log_viewer_frame = nullptr;
+		e.Skip();
+	});
+	m_log_viewer_frame->Show();
 }
 
 void cMain::UpdateMenu(wxEvent&) {

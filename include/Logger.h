@@ -1,5 +1,6 @@
 #pragma once
 #include "CommonTypes.h"
+#include "LogData.h"
 #include <ostream>
 #include <sstream>
 #include <unordered_map>
@@ -36,6 +37,10 @@ class Log {
 protected:
     static bool s_initialized;
     std::ostringstream m_temp_stream;
+    std::string m_time;
+    std::string m_component;
+    std::string m_level;
+    size_t m_prefix_len = 0;
 public:
     virtual ~Log();
     //static LogLevel& ReportingLevel();

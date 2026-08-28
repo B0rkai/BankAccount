@@ -163,6 +163,9 @@
     <ClCompile Include="src\DataImporter.cpp" />
     <ClCompile Include="src\ExchangeRateHistory.cpp" />
     <ClCompile Include="src\Logger.cpp" />
+    <ClCompile Include="src\LogData.cpp" />
+    <ClCompile Include="src\LogViewerFrame.cpp" />
+    <ClCompile Include="src\LogViewerPanel.cpp" />
     <ClCompile Include="src\MnbExchangeRateClient.cpp" />
     <ClCompile Include="src\ManagerType.cpp" />
     <ClCompile Include="src\ManualResolverDialog.cpp" />
@@ -196,6 +199,9 @@
     <ClInclude Include="include\INewAccount.h" />
     <ClInclude Include="include\IWQuery.h" />
     <ClInclude Include="include\Logger.h" />
+    <ClInclude Include="include\LogData.h" />
+    <ClInclude Include="include\LogViewerFrame.h" />
+    <ClInclude Include="include\LogViewerPanel.h" />
     <ClInclude Include="include\ManagedType.h" />
     <ClInclude Include="include\ManagerType.h" />
     <ClInclude Include="include\ManualResolverDialog.h" />

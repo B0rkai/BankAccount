@@ -20,14 +20,23 @@ Log::Log() {
     time_t timestamp = time(&timestamp);
     struct tm datetime = *localtime(&timestamp);
     auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() % 1000;
+    std::ostringstream time_stream;
+    time_stream << datetime.tm_year + 1900 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mon + 1 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mday << " " << std::setfill('0') << std::setw(2) << datetime.tm_hour << ":" << std::setfill('0') << std::setw(2) << datetime.tm_min << ":" << std::setfill('0') << std::setw(2) << datetime.tm_sec << "." << std::setfill('0') << std::setw(3) << millis;
+    m_time = time_stream.str();
     m_temp_stream << "[" << datetime.tm_year + 1900 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mon + 1 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mday << "][" << std::setfill('0') << std::setw(2) << datetime.tm_hour << ":" << std::setfill('0') << std::setw(2) << datetime.tm_min << ":" << std::setfill('0') << std::setw(2) << datetime.tm_sec << "." << std::setfill('0') << std::setw(3) << millis << "]";
 }
 
 Log::Log(const char* level) : Log() {
+    m_component = "MAIN";
+    m_level = level;
     m_temp_stream << "[MAIN][" << level << "]: ";
+    m_prefix_len = m_temp_stream.str().size();
 
 }Log::Log(const char* comp, const char* level) : Log() {
+    m_component = comp;
+    m_level = level;
     m_temp_stream << "[" << comp << "][" << level << "]: ";
+    m_prefix_len = m_temp_stream.str().size();
 }
 
 bool Log::s_initialized = false;
@@ -44,6 +53,10 @@ void Log::InitLoggingSystem() {
 
 Log::Log(const Log& copy) {
     m_temp_stream << copy.m_temp_stream.str();
+    m_time = copy.m_time;
+    m_component = copy.m_component;
+    m_level = copy.m_level;
+    m_prefix_len = copy.m_prefix_len;
     copy.m_valid = false;
 }
 
@@ -51,9 +64,17 @@ Log::~Log() {
     if (!s_initialized || !m_valid) {
         return;
     }
+    std::string full = m_temp_stream.str();
     m_temp_stream << std::endl;
     std::ofstream out(DEFAULT_LOG_LOCATION, std::ofstream::app);
     out << m_temp_stream.str();
+
+    LogEntry entry;
+    entry.time = m_time;
+    entry.component = m_component;
+    entry.level = m_level;
+    entry.message = full.substr(m_prefix_len);
+    LogHistory::Record(entry);
 }
 
 LOGFUNC_DEF(Debug);

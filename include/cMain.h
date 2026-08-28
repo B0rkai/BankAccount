@@ -13,6 +13,7 @@
 class BankAccountFile;
 class Query;
 class Transaction;
+class LogViewerFrame;
 enum CtrIds;
 
 class ControlGroup {
@@ -98,6 +99,7 @@ class cMain :
     wxTextCtrl* m_info_textctrl = nullptr;
     std::unique_ptr<BankAccountFile> m_bank_file;
     std::vector<AccountManager::TransactionIdentity> m_grid_identities;
+    LogViewerFrame* m_log_viewer_frame = nullptr;
     void UIOutputText(const String& info);
     void UIOutputTable(const StringTable& table);
     void UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions);
@@ -121,6 +123,7 @@ class cMain :
     void AddKeywordButtonClicked(wxCommandEvent& evt);
     void Import(wxCommandEvent& evt);
     void UpdateExchangeRates(wxCommandEvent& evt);
+    void ShowLogViewer(wxCommandEvent& evt);
     void UpdateMenu(wxEvent&);
     void Test(wxCommandEvent& evt);
     void UpdateStatusBar();
