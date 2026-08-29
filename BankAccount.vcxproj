@@ -110,13 +110,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Users\borka\source\xlnt\build\source\Debug</AdditionalLibraryDirectories>
+      <AdditionalDependencies>xlntd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -125,9 +126,9 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;EXCEL_EXPORT_AVAILABLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Program Files (x86)\OpenXLSX.Library\include\OpenXLSX\headers;C:\Program Files (x86)\OpenXLSX.Library\include\OpenXLSX</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <Optimization>Full</Optimization>
@@ -137,8 +138,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Program Files (x86)\OpenXLSX.Library\lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenXLSX.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Users\borka\source\xlnt\build\source\Release</AdditionalLibraryDirectories>
+      <AdditionalDependencies>xlnt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -162,13 +163,7 @@
     <ClCompile Include="src\CommonTypes.cpp" />
     <ClCompile Include="src\Currency.cpp" />
     <ClCompile Include="src\DataImporter.cpp" />
-    <ClCompile Include="src\ExcelExport.cpp">
-      <!-- OpenXLSX.lib on this machine is prebuilt Release-only (/MD, no iterator debugging) -
-           it cannot link into a Debug build's CRT (/MDd). Excel export is Release|x64 only. -->
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="src\ExcelExport.cpp" />
     <ClCompile Include="src\ExchangeRateHistory.cpp" />
     <ClCompile Include="src\Logger.cpp" />
     <ClCompile Include="src\LogData.cpp" />

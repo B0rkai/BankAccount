@@ -1010,7 +1010,6 @@ void cMain::UpdateExchangeRates(wxCommandEvent& evt) {
 
 void cMain::ExportToExcel(wxCommandEvent& evt) {
 	evt.Skip();
-#ifdef EXCEL_EXPORT_AVAILABLE
 	if (!m_result_grid->GetNumberRows()) {
 		UIOutputText("Nothing to export - run a query or list first.");
 		return;
@@ -1025,11 +1024,6 @@ void cMain::ExportToExcel(wxCommandEvent& evt) {
 	} else {
 		UIOutputText("ERROR: Export failed, see the log for details.");
 	}
-#else
-	// OpenXLSX.lib on this machine is prebuilt Release-only (/MD, no iterator debugging) and
-	// can't link into a Debug build's CRT - see BankAccount.vcxproj's ExcelExport.cpp entry.
-	UIOutputText("Excel export is only available in Release builds.");
-#endif
 }
 
 void cMain::ShowLogViewer(wxCommandEvent& evt) {
