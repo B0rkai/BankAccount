@@ -80,8 +80,21 @@ public:
 			}
 		}
 		for (const Child* child : m_children) {
-			if (child->CheckKeywords(word, m_full_mapping)) {
-				m_logger.LogDebug() << "CheckKeywords() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
+			if (child->CheckDefinitiveKeywords(word, m_full_mapping)) {
+				m_logger.LogDebug() << "CheckDefinitiveKeywords() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
+				results.insert(child->GetId());
+			}
+		}
+		return results;
+	}
+
+	// Suggestion-tier keyword matches: never auto-resolve on their own (see MappedType), only
+	// ever offered to the interactive manual-resolve dialog as a pre-selected candidate.
+	IdSet SearchIdsSuggested(const String& word) const {
+		IdSet results;
+		for (const Child* child : m_children) {
+			if (child->CheckSuggestedKeywords(word, m_full_mapping)) {
+				m_logger.LogDebug() << "CheckSuggestedKeywords() match of ID: " << (Id::Type)child->GetId() << " " << child->GetName().utf8_str() << " with '" << word.utf8_str() << "'";
 				results.insert(child->GetId());
 			}
 		}
@@ -146,9 +159,9 @@ public:
 		return (Id)s;
 	}
 
-	bool AddKeyword(const Id id, const String& keyword) {
-		if (m_children.at(id)->AddKeyword(keyword)) {
-			m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id << " " << GetName(id).utf8_str();
+	bool AddKeyword(const Id id, const String& keyword, bool definitive = true) {
+		if (m_children.at(id)->AddKeyword(keyword, definitive)) {
+			m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id << " " << GetName(id).utf8_str() << (definitive ? "" : " (suggestion)");
 			return true;
 		}
 		return false;

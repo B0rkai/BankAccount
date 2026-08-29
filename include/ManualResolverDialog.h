@@ -11,6 +11,8 @@ class ManualResolverDialog : public wxDialog {
 	wxButton* m_ok_butt = nullptr;
 	wxButton* m_def_butt = nullptr;
 	wxButton* m_cancel_butt = nullptr;
+	wxButton* m_copy_exact_butt = nullptr;
+	wxCheckBox* m_keyword_definitive_chkb = nullptr;
 	wxTextCtrl* m_search_txtctrl = nullptr;
 	wxTextCtrl* m_create_new_txtctrl = nullptr;
 	wxTextCtrl* m_add_keyword_txtctrl = nullptr;
@@ -20,19 +22,22 @@ class ManualResolverDialog : public wxDialog {
 	QueryTopic m_topic;
 	INameResolve* m_resolve_if = nullptr;
 	std::vector<Id> m_id_choices;
+	String m_exact_value; // the raw incoming text (e.g. bank's transaction-type string), if any
 	bool m_ok = true;
 	void PopulateSelectionChoices(const IdSet& matches, const Id select = Id(INVALID_ID));
 	void SearchTextChanged(wxCommandEvent& evt);
 	void NewTextChanged(wxCommandEvent& evt);
 	void Selected(wxCommandEvent& evt);
 	void ButtonClicked(wxCommandEvent& evt); // ok, default or abort
+	void CopyExactValueClicked(wxCommandEvent& evt);
 	void CheckState();
 public:
 	ManualResolverDialog(wxWindow* parent, const String& title, const QueryTopic topic, INameResolve* resolve_if);
-	void SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, const String& desc, bool optional);
+	void SetUp(const String& tr_details, const IdSet& matches, const Id& select, const String& create, const String& desc, bool optional, const String& exact_value = cStringEmpty);
 	Id GetResolvedId() const;
 	String GetNewName() const;
 	String GetNewKeyword() const;
+	bool IsKeywordDefinitive() const;
 	String GetDescription() const;
 	wxDECLARE_EVENT_TABLE();
 };

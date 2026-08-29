@@ -37,6 +37,7 @@ class Log {
 protected:
     static bool s_initialized;
     std::ostringstream m_temp_stream;
+    std::string m_date;
     std::string m_time;
     std::string m_component;
     std::string m_level;

@@ -35,7 +35,13 @@ std::vector<uint16_t> ExchangeRateHistory::FindMissingDates(CurrencyType type, u
 	const std::map<uint16_t, double>& rates = m_rates[type];
 	uint16_t date = min_date;
 	while (true) {
-		if (!rates.count(date)) {
+		// MNB never publishes a rate for Saturday/Sunday, so a weekend day is never actually
+		// "missing" - GetRate()'s nearest-earlier-date fallback already covers it correctly at
+		// lookup time. Without this, every account with more than a week of history would show
+		// as perpetually missing rates (every weekend, forever), triggering a fresh MNB download
+		// on essentially every import or explicit update regardless of whether anything new was
+		// actually needed.
+		if (!IsWeekend(date) && !rates.count(date)) {
 			missing.push_back(date);
 		}
 		if (date == max_date) {
@@ -44,6 +50,22 @@ std::vector<uint16_t> ExchangeRateHistory::FindMissingDates(CurrencyType type, u
 		++date;
 	}
 	return missing;
+}
+
+size_t ExchangeRateHistory::PruneToDates(const std::set<uint16_t>& dates) {
+	size_t removed = 0;
+	for (int c = 0; c < Currency_Count; ++c) {
+		std::map<uint16_t, double>& rates = m_rates[c];
+		for (auto it = rates.begin(); it != rates.end(); ) {
+			if (dates.count(it->first)) {
+				++it;
+			} else {
+				it = rates.erase(it);
+				++removed;
+			}
+		}
+	}
+	return removed;
 }
 
 StringTable ExchangeRateHistory::GetTable(CurrencyType type) const {

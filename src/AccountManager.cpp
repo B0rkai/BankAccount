@@ -1,5 +1,7 @@
 #include <sstream>
 #include <algorithm>
+#include <fstream>
+#include <set>
 #include "AccountManager.h"
 #include "CommonTypes.h"
 #include "Account.h"
@@ -269,20 +271,137 @@ StringTable AccountManager::GetSummary(const QueryTopic topic) {
 	}
 }
 
-void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& keyword) {
+void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& keyword, bool definitive) {
 	bool change = false;
 	if (topic == QueryTopic::TYPE) {
-		change = m_ttype_man.AddKeyword(id, keyword);
+		change = m_ttype_man.AddKeyword(id, keyword, definitive);
 	} else if (topic == QueryTopic::CLIENT) {
-		change = m_client_man.AddKeyword(id, keyword);
+		change = m_client_man.AddKeyword(id, keyword, definitive);
 	} else if (topic == QueryTopic::CATEGORY) {
-		change = m_category_system.AddKeyword(id, keyword);
+		change = m_category_system.AddKeyword(id, keyword, definitive);
 	} else {
 		m_logger.LogError() << "AddKeyword() wrong topic";
 	}
 	if (change) {
 		Modified();
 	}
+}
+
+namespace {
+    std::vector<String> SplitOn(const String& text, char sep) {
+        std::vector<String> parts;
+        size_t start = 0;
+        while (true) {
+            size_t pos = text.find(sep, start);
+            if (pos == String::npos) {
+                parts.push_back(text.substr(start));
+                break;
+            }
+            parts.push_back(text.substr(start, pos - start));
+            start = pos + 1;
+        }
+        return parts;
+    }
+
+    bool TopicFromTag(const String& tag, QueryTopic& out) {
+        if (tag == "CLIENT") { out = QueryTopic::CLIENT; return true; }
+        if (tag == "CATEGORY") { out = QueryTopic::CATEGORY; return true; }
+        if (tag == "TYPE") { out = QueryTopic::TYPE; return true; }
+        return false;
+    }
+}
+
+bool AccountManager::ApplyRecoveryFile(const String& path) {
+    std::ifstream in(std::string(path.utf8_str()));
+    if (!in) {
+        m_logger.LogError() << "ApplyRecoveryFile: could not open " << path.utf8_str();
+        return false;
+    }
+    std::string raw_line;
+    int line_no = 0;
+    int entries_created = 0, keywords_added = 0, transactions_added = 0;
+    while (std::getline(in, raw_line)) {
+        ++line_no;
+        // Only strip a stray trailing '\r' (in case the file has CRLF endings) and leading
+        // whitespace before the tag - NOT a general Trim(), which would eat trailing tabs and
+        // silently drop empty trailing fields (e.g. an omitted groupname/keywords column).
+        while (!raw_line.empty() && ((raw_line.back() == '\r') || (raw_line.back() == '\n'))) {
+            raw_line.pop_back();
+        }
+        String line = wxString::FromUTF8(raw_line.c_str());
+        line.Trim(false); // leading whitespace only
+        if (line.empty() || line.StartsWith("#")) {
+            continue;
+        }
+        std::vector<String> f = SplitOn(line, '\t');
+        if (f.size() < 9) {
+            f.resize(9); // pad so a genuinely-omitted trailing optional field just reads as empty
+        }
+        const String& tag = f[0];
+        QueryTopic topic;
+        long v1 = 0, v2 = 0, v3 = 0, v4 = 0, v5 = 0;
+        if (TopicFromTag(tag, topic) && (tag != "KEYWORD")) {
+            // CLIENT|CATEGORY|TYPE  expected_id  name  groupname(may be empty)  keywords(pipe-separated, may be empty)
+            if (!f[1].ToLong(&v1) || f[2].empty()) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed " << tag.utf8_str() << " row";
+                return false;
+            }
+            String fullname = f[3].empty() ? f[2] : (f[3] + "::" + f[2]);
+            Id new_id = CreateId(topic, fullname);
+            if (new_id != (Id::Type)v1) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": expected id " << v1
+                    << " but got " << (Id::Type)new_id << " for '" << f[2].utf8_str()
+                    << "' - stopping; recovery rows must be applied in the same order the originals were created";
+                return false;
+            }
+            for (const String& kw : SplitOn(f[4], '|')) {
+                if (!kw.empty()) {
+                    AddKeyword(topic, new_id, kw, true);
+                    ++keywords_added;
+                }
+            }
+            ++entries_created;
+        } else if (tag == "KEYWORD") {
+            // KEYWORD  topic  id  keyword  definitive(1/0, optional - defaults to 1)
+            QueryTopic kw_topic;
+            if (!TopicFromTag(f[1], kw_topic) || !f[2].ToLong(&v1) || f[3].empty()) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed KEYWORD row";
+                return false;
+            }
+            v2 = 1;
+            if (!f[4].empty()) {
+                f[4].ToLong(&v2);
+            }
+            AddKeyword(kw_topic, Id((Id::Type)v1), f[3], v2 != 0);
+            ++keywords_added;
+        } else if (tag == "TRANSACTION") {
+            // TRANSACTION  account_id  date_serial  type_id  amount  client_id  category_id(optional)  memo(optional)  desc(optional)
+            if (!f[1].ToLong(&v1) || !f[2].ToLong(&v2) || !f[3].ToLong(&v3) || !f[4].ToLong(&v4) || !f[5].ToLong(&v5)) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed TRANSACTION row";
+                return false;
+            }
+            long category_id = 0;
+            f[6].ToLong(&category_id); // stays 0 (Uncategorized) if empty/unparseable
+            if ((size_t)v1 >= m_accounts.size()) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": invalid account id " << v1;
+                return false;
+            }
+            m_accounts[(Id::Type)v1]->AddTransaction((uint16_t)v2, Id((Id::Type)v3), (int32_t)v4, Id((Id::Type)v5), f[7].c_str(), Id((Id::Type)category_id), f[8].c_str());
+            ++transactions_added;
+        } else {
+            m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": unrecognized tag '" << tag.utf8_str() << "'";
+            return false;
+        }
+    }
+    for (Account* acc : m_accounts) {
+        acc->Sort();
+    }
+    m_logger.LogInfo() << "ApplyRecoveryFile: created " << entries_created << " new entrie(s), applied "
+        << keywords_added << " keyword(s), added " << transactions_added << " transaction(s) - not saved yet";
+    if (entries_created || keywords_added || transactions_added) {
+        Modified();
+    }
+    return true;
 }
 
 void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id to) {
@@ -370,6 +489,19 @@ IdSet AccountManager::SearchIds(const QueryTopic topic, const String& name, bool
 	}
 }
 
+IdSet AccountManager::SearchIdsSuggested(const QueryTopic topic, const String& name) const {
+	switch (topic) {
+	case QueryTopic::CLIENT:
+		return m_client_man.SearchIdsSuggested(name);
+	case QueryTopic::CATEGORY:
+		return m_category_system.SearchIdsSuggested(name);
+	case QueryTopic::TYPE:
+		return m_ttype_man.SearchIdsSuggested(name);
+	default:
+		return {};
+	}
+}
+
 static String PrepareTransactionDetails(const RawTransactionData& data, const String& resolved_client = cStringEmpty) {
 	String details;
 	details.append(std::to_string(RawTransactionData::index)).append("/").append(std::to_string(RawTransactionData::size)).append(cDIVIDER);
@@ -395,19 +527,27 @@ Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTo
 	IdSet ids = SearchIds(topic, name, false);
 	Id id(INVALID_ID);
 	if (ids.size() == 1) {
-		return *ids.begin(); // perfect match
+		return *ids.begin(); // perfect (definitive) match
 	} else if (ids.size() > 1) {
-		resolve_if->DoManualResolve(PrepareTransactionDetails(data), cStringEmpty, data.desc, topic, ids, id, optional);
+		resolve_if->DoManualResolve(PrepareTransactionDetails(data), cStringEmpty, data.desc, topic, ids, id, optional, name);
 		return id;
 	}
+	// No definitive match. A suggestion-tier keyword match is a stronger signal than the generic
+	// low-confidence fallback below, so it takes priority - but, unlike a definitive match, it
+	// never auto-resolves on its own even when unique: it only ever pre-selects a candidate for
+	// the user to confirm.
 	String create;
-	ids = SearchIds(topic, name, true);
+	ids = SearchIdsSuggested(topic, name);
+	if (ids.empty()) {
+		ids = SearchIds(topic, name, true);
+		if (ids.empty()) {
+			create = name;
+		}
+	}
 	if (ids.size() == 1) {
 		id = *ids.begin();
-	} else if (ids.empty()) {
-		create = name;
 	}
-	resolve_if->DoManualResolve(PrepareTransactionDetails(data), create, data.desc, topic, ids, id, optional);
+	resolve_if->DoManualResolve(PrepareTransactionDetails(data), create, data.desc, topic, ids, id, optional, name);
 	return id;
 }
 
@@ -594,14 +734,31 @@ bool AccountManager::HasMissingExchangeRates() const {
 	return false;
 }
 
-void AccountManager::UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase) {
+void AccountManager::UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase, FetchCancelToken* cancel_token) {
+	// Only dates our own transactions actually fall on are worth caching a rate for - MNB's
+	// archive covers every day since 1949, which is thousands of times more than any real
+	// account needs and bloats the saved database with rates nothing ever looks up. Computed
+	// and pruned against unconditionally (not just when a fetch is about to happen) so that
+	// rates cached before this existed get cleaned out the first time this runs, even if
+	// nothing new turns out to be missing.
+	std::set<uint16_t> wanted_dates;
+	for (Account* acc : m_accounts) {
+		for (size_t i = 0; i < acc->Size(); ++i) {
+			wanted_dates.insert(acc->GetTransactionAt(i).GetDate());
+		}
+	}
+	size_t pruned = m_exchange_rates.PruneToDates(wanted_dates);
+	if (pruned) {
+		m_logger.LogInfo() << "Exchange rates: pruned " << pruned << " cached rate(s) for dates none of our transactions fall on";
+		Modified();
+	}
 	if (!HasMissingExchangeRates()) {
 		m_logger.LogInfo() << "Exchange rates: nothing missing, skipping MNB download";
 		return;
 	}
 	// MNB's whole published archive covers every currency at once, so one download is enough
 	// regardless of which account(s) triggered it.
-	if (DownloadAllRates(m_exchange_rates, report_phase)) {
+	if (DownloadAllRates(m_exchange_rates, report_phase, &wanted_dates, cancel_token)) {
 		m_logger.LogInfo() << "Exchange rates: MNB archive downloaded and applied";
 	}
 }

@@ -8,7 +8,8 @@
 // LogViewerPanel - can be lifted into a separate log-viewer project unchanged.
 
 struct LogEntry {
-    std::string time;
+    std::string date; // "YYYY.MM.DD"
+    std::string time; // "HH:MM:SS.mmm"
     std::string component;
     std::string level;
     std::string message;

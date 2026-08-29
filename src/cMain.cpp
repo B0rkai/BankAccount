@@ -16,6 +16,8 @@
 #include "NewAccountDetailsDialog.h"
 #include "LogViewerFrame.h"
 #include "RunWithProgress.h"
+#include "ExcelExport.h"
+#include "MnbExchangeRateClient.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -98,7 +100,9 @@ enum CtrIds {
 	MENU_TEST_NEW_ACCOUNT,
 	MENU_TEST_PERIODIC_QUERY,
 	MENU_TEST_EUR_RATES,
-	MENU_VIEW_LOG
+	MENU_VIEW_LOG,
+	MENU_EXPORT_EXCEL,
+	MENU_APPLY_RECOVERY // TEMPORARY: post-crash dump-recovery helper, remove once no longer needed
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
@@ -130,7 +134,9 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_TEST_NEW_ACCOUNT, Test)
 	EVT_MENU(MENU_TEST_PERIODIC_QUERY, Test)
 	EVT_MENU(MENU_TEST_EUR_RATES, Test)
+	EVT_MENU(MENU_APPLY_RECOVERY, Test)
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
+	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -388,17 +394,18 @@ void cMain::UpdateAccFilter() {
 	}
 }
 
-ManualResolveResult cMain::ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, String& desc, bool optional) {
+ManualResolveResult cMain::ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, bool& keyword_definitive, String& desc, bool optional, const String& exact_value) {
 	String title = "Resolve ";
 	title.append(Topic2String(topic));
 	ManualResolverDialog dialog(this, title, topic, (INameResolve*)m_bank_file.get());
-	dialog.SetUp(tr_details, matches, select, create_name, desc, optional);
+	dialog.SetUp(tr_details, matches, select, create_name, desc, optional, exact_value);
 	ManualResolveResult res = (ManualResolveResult)dialog.ShowModal();
 	if (res & ManualResolve_ID_SELECTED) {
 		select = dialog.GetResolvedId();
 	}
 	if (res & ManualResolve_KEYWORD) {
 		keyword = dialog.GetNewKeyword();
+		keyword_definitive = dialog.IsKeywordDefinitive();
 	}
 	if (res & ManualResolve_NEW_CHILD) {
 		create_name = dialog.GetNewName();
@@ -407,9 +414,10 @@ ManualResolveResult cMain::ManualResolve(const String& tr_details, const QueryTo
 	return res;
 }
 
-void cMain::DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional) {
+void cMain::DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional, const String& exact_value) {
 	String keyword;
-	ManualResolveResult res = ManualResolve(details, topic, ids, id, create, keyword, desc, optional);
+	bool keyword_definitive = true;
+	ManualResolveResult res = ManualResolve(details, topic, ids, id, create, keyword, keyword_definitive, desc, optional, exact_value);
 	if (res == ManualResolve_ABORT) {
 		throw "abort"; // quick exit
 	} else if (res & ManualResolve_NEW_CHILD) {
@@ -418,7 +426,7 @@ void cMain::DoManualResolve(const String& details, String create, String& desc, 
 		id = Id(0);
 	}
 	if (res & ManualResolve_KEYWORD) {
-		m_bank_file->AddKeyword(topic, id, keyword);
+		m_bank_file->AddKeyword(topic, id, keyword, keyword_definitive);
 	}
 }
 
@@ -663,11 +671,15 @@ void cMain::InitMenu() {
 	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
 	querymenu->Append(MENU_LIST_CLIENTS, "List Clients");
 	querymenu->Append(MENU_LIST_CATEGORIES, "List Categories");
+	querymenu->AppendSeparator();
+	querymenu->Append(MENU_EXPORT_EXCEL, "Export Results to Excel...");
 	viewmenu->Append(MENU_VIEW_LOG, "Show Log Viewer");
 	testmenu->Append(MENU_TEST_MANUAL_RESOLVER, "ManualResolverDialog");
 	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
 	testmenu->Append(MENU_TEST_PERIODIC_QUERY, "Periodic Query");
 	testmenu->Append(MENU_TEST_EUR_RATES, "List EUR Exchange Rates");
+	testmenu->AppendSeparator();
+	testmenu->Append(MENU_APPLY_RECOVERY, "Apply Recovery File... (TEMPORARY)");
 
 	SetMenuBar(m_menu_bar);
 }
@@ -887,7 +899,7 @@ void cMain::AddKeywordButtonClicked(wxCommandEvent& evt) {
 	} else {
 		return;
 	}
-	m_bank_file->AddKeyword(topic, id, keyword);
+	m_bank_file->AddKeyword(topic, id, keyword, m_ctrl_grp_utility.m_keyword_definitive_chkb->GetValue());
 }
 
 void cMain::Test(wxCommandEvent& evt) {
@@ -896,7 +908,8 @@ void cMain::Test(wxCommandEvent& evt) {
 	if (id == MENU_TEST_MANUAL_RESOLVER) {
 		Id id(INVALID_ID);
 		String new_name, keyword, description;
-		ManualResolveResult res = ManualResolve(PrettyTable(m_bank_file->GetTestData()), QueryTopic::CLIENT, IdSet(), id, new_name, keyword, description, false);
+		bool keyword_definitive = true;
+		ManualResolveResult res = ManualResolve(PrettyTable(m_bank_file->GetTestData()), QueryTopic::CLIENT, IdSet(), id, new_name, keyword, keyword_definitive, description, false, cStringEmpty);
 		if (res == ManualResolve_ABORT) {
 			LogWarn() << "TEST: User aborted the ManualResolveDialog";
 		} else if (res & ManualResolve_ID_SELECTED) {
@@ -933,6 +946,23 @@ void cMain::Test(wxCommandEvent& evt) {
 			return;
 		}
 		UIOutputTable(m_bank_file->GetExchangeRateTable(EUR));
+	} else if (id == MENU_APPLY_RECOVERY) {
+		if (!m_bank_file) {
+			UIOutputText("First load the database");
+			return;
+		}
+		wxFileDialog openFileDialog(this, "Select recovery data file", "", "recovery.txt",
+			"Text files (*.txt)|*.txt|All files (*.*)|*.*", wxFD_OPEN | wxFD_FILE_MUST_EXIST);
+		if (openFileDialog.ShowModal() == wxID_CANCEL) {
+			return;
+		}
+		if (m_bank_file->ApplyRecoveryFile(openFileDialog.GetPath())) {
+			UIOutputText("Recovery applied in memory - review it (e.g. List Clients/Categories, run a query), then Save manually if it looks right. Nothing is written to disk until you Save.");
+		} else {
+			UIOutputText("ERROR: recovery stopped partway - see the log for the exact row/reason. Nothing is saved automatically; you can fix the recovery file and just reload the database to start over cleanly.");
+		}
+		UpdateAccFilter();
+		UpdateStatusBar();
 	}
 }
 
@@ -947,10 +977,12 @@ void cMain::Import(wxCommandEvent& evt) {
 			return;     // the user changed idea...
 		}
 		AccountManager::ImportResult result = m_bank_file->Import(openFileDialog.GetPath(), this, this);
+		FetchCancelToken cancel_token;
 		RunBlockingWithProgress(this, "Updating exchange rates", "Starting...",
-			[this](const std::function<void(const std::string&)>& report_phase) {
-				m_bank_file->UpdateExchangeRates(report_phase);
-			});
+			[this, &cancel_token](const std::function<void(const std::string&)>& report_phase) {
+				m_bank_file->UpdateExchangeRates(report_phase, &cancel_token);
+			},
+			[&cancel_token]() { cancel_token.Cancel(); });
 		UIOutputTable(result.table, result.transactions);
 	} catch (const char*& problem) {
 		String error = "ERROR: ";
@@ -967,11 +999,37 @@ void cMain::UpdateExchangeRates(wxCommandEvent& evt) {
 		UIOutputText("First load the database");
 		return;
 	}
+	FetchCancelToken cancel_token;
 	RunBlockingWithProgress(this, "Updating exchange rates", "Starting...",
-		[this](const std::function<void(const std::string&)>& report_phase) {
-			m_bank_file->UpdateExchangeRates(report_phase);
-		});
+		[this, &cancel_token](const std::function<void(const std::string&)>& report_phase) {
+			m_bank_file->UpdateExchangeRates(report_phase, &cancel_token);
+		},
+		[&cancel_token]() { cancel_token.Cancel(); });
 	UIOutputText("Exchange rate update finished, see the log for details.");
+}
+
+void cMain::ExportToExcel(wxCommandEvent& evt) {
+	evt.Skip();
+#ifdef EXCEL_EXPORT_AVAILABLE
+	if (!m_result_grid->GetNumberRows()) {
+		UIOutputText("Nothing to export - run a query or list first.");
+		return;
+	}
+	wxFileDialog saveDialog(this, "Export Results to Excel", "", "export.xlsx",
+		"Excel files (*.xlsx)|*.xlsx", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+	if (saveDialog.ShowModal() == wxID_CANCEL) {
+		return;
+	}
+	if (ExportGridToExcel(m_result_grid, saveDialog.GetPath())) {
+		UIOutputText("Exported to " + saveDialog.GetPath());
+	} else {
+		UIOutputText("ERROR: Export failed, see the log for details.");
+	}
+#else
+	// OpenXLSX.lib on this machine is prebuilt Release-only (/MD, no iterator debugging) and
+	// can't link into a Debug build's CRT - see BankAccount.vcxproj's ExcelExport.cpp entry.
+	UIOutputText("Excel export is only available in Release builds.");
+#endif
 }
 
 void cMain::ShowLogViewer(wxCommandEvent& evt) {
@@ -1028,6 +1086,9 @@ void ControlGroupUtility::DoInitialize(wxWindow* parent) {
 	m_controls.push_back(m_keyword_target_textctrl = new wxTextCtrl(parent, ADD_KEYWORD_TEXT_CTRL, "", wxPoint(HORIZONTAL_ALIGN_3A, MAJOR_VERTICAL_ALIGN_1), cDefaultCtrlSize));
 	m_controls.push_back(new wxStaticText(parent, wxID_ANY, "Keyword", wxPoint(HORIZONTAL_ALIGN_3A, MAJOR_VERTICAL_ALIGN_2 - 18)));
 	m_controls.push_back(m_keyword_textctrl = new wxTextCtrl(parent, wxID_ANY, "", wxPoint(HORIZONTAL_ALIGN_3A, MAJOR_VERTICAL_ALIGN_2), cDefaultCtrlSize));
+	m_controls.push_back(m_keyword_definitive_chkb = new wxCheckBox(parent, wxID_ANY, "Auto-resolve automatically", wxPoint(HORIZONTAL_ALIGN_3A + cDefaultCtrlSize.GetWidth() + 15, MAJOR_VERTICAL_ALIGN_2 + 3)));
+	m_keyword_definitive_chkb->SetValue(true);
+	m_keyword_definitive_chkb->SetToolTip("Checked: a future exact/unique match on this keyword resolves silently.\nUnchecked: a future match only pre-selects this as a suggestion in the manual-resolve dialog.");
 
 	m_controls.push_back(m_add_keyword_but = new wxButton(parent, KEYWORD_BUTT, "Add keyword", wxPoint(HORIZONTAL_ALIGN_3A, MAJOR_VERTICAL_ALIGN_3), cDefaultCtrlSize));
 }

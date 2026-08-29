@@ -125,7 +125,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;EXCEL_EXPORT_AVAILABLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Program Files (x86)\OpenXLSX.Library\include\OpenXLSX\headers;C:\Program Files (x86)\OpenXLSX.Library\include\OpenXLSX</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -137,7 +137,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Program Files (x86)\OpenXLSX.Library\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>OpenXLSX.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -161,6 +162,13 @@
     <ClCompile Include="src\CommonTypes.cpp" />
     <ClCompile Include="src\Currency.cpp" />
     <ClCompile Include="src\DataImporter.cpp" />
+    <ClCompile Include="src\ExcelExport.cpp">
+      <!-- OpenXLSX.lib on this machine is prebuilt Release-only (/MD, no iterator debugging) -
+           it cannot link into a Debug build's CRT (/MDd). Excel export is Release|x64 only. -->
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="src\ExchangeRateHistory.cpp" />
     <ClCompile Include="src\Logger.cpp" />
     <ClCompile Include="src\LogData.cpp" />
@@ -191,6 +199,7 @@
     <ClInclude Include="include\CommonTypes.h" />
     <ClInclude Include="include\Currency.h" />
     <ClInclude Include="include\DataImporter.h" />
+    <ClInclude Include="include\ExcelExport.h" />
     <ClInclude Include="include\ExchangeRateHistory.h" />
     <ClInclude Include="include\IAccount.h" />
     <ClInclude Include="include\IDataBase.h" />

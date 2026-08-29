@@ -40,11 +40,38 @@ void NamedType::Stream(std::ostream& out) const {
     StreamString(out, m_name);
 }
 
-bool MappedType::AddKeyword(const String& acc) {
+namespace {
+    // Suggestion-tier keywords are stored with this reserved leading marker so the tier survives
+    // through the existing single-StringSet stream format unchanged - bank transaction/keyword
+    // text never legitimately starts with it, and every keyword already on disk (which has no
+    // marker) is automatically "definitive", matching pre-existing behavior with no migration.
+    const char* const SUGGESTED_KEYWORD_MARKER = "~";
+
+    bool ExtractSuggested(const String& stored, String& bare) {
+        return stored.StartsWith(SUGGESTED_KEYWORD_MARKER, &bare);
+    }
+}
+
+bool MappedType::AddKeyword(const String& acc, bool definitive) {
     if (acc.empty()) {
         return false;
     }
-    return m_keywords.insert(acc).second;
+    String stored = definitive ? acc : (String(SUGGESTED_KEYWORD_MARKER) + acc);
+    return m_keywords.insert(stored).second;
+}
+
+StringVector MappedType::GetDisplayKeywords() const {
+    StringVector display;
+    display.reserve(m_keywords.size());
+    for (const String& key : m_keywords) {
+        String bare;
+        if (ExtractSuggested(key, bare)) {
+            display.push_back(bare + "*");
+        } else {
+            display.push_back(key);
+        }
+    }
+    return display;
 }
 
 bool MappedType::Merge(const MappedType* other) {
@@ -61,17 +88,34 @@ void MappedType::Stream(std::istream& in) {
     StreamContainer(in, m_keywords);
 }
 
-bool MappedType::CheckKeywords(const String& text, bool fullmatch) const {
-    if (fullmatch) {
-        for (const String& key : m_keywords) {
+bool MappedType::CheckDefinitiveKeywords(const String& text, bool fullmatch) const {
+    for (const String& key : m_keywords) {
+        String bare;
+        if (ExtractSuggested(key, bare)) {
+            continue; // suggestion-tier, not definitive
+        }
+        if (fullmatch) {
             if (text.CmpNoCase(key) == 0) {
                 return true;
             }
+        } else if (caseInsensitiveStringContains(text, key)) {
+            return true;
         }
-        return false;
     }
+    return false;
+}
+
+bool MappedType::CheckSuggestedKeywords(const String& text, bool fullmatch) const {
     for (const String& key : m_keywords) {
-        if (caseInsensitiveStringContains(text, key)) {
+        String bare;
+        if (!ExtractSuggested(key, bare)) {
+            continue; // definitive-tier, not a suggestion
+        }
+        if (fullmatch) {
+            if (text.CmpNoCase(bare) == 0) {
+                return true;
+            }
+        } else if (caseInsensitiveStringContains(text, bare)) {
             return true;
         }
     }
@@ -104,7 +148,7 @@ StringVector ManagedType::GetInfoVector() const {
     }
     name.append(GetName());
     info.push_back(name);
-    info.push_back(ContainerAsString(GetKeywords()));
+    info.push_back(ContainerAsString(GetDisplayKeywords()));
     return info;
 }
 

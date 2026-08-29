@@ -1,4 +1,5 @@
 #include "CommonTypes.h"
+#include <ctime>
 #include <iomanip>
 #include <sstream>
 #include "wx\font.h"
@@ -111,6 +112,18 @@ void StreamString(std::istream& in, String& out) {
     out = wxString::FromUTF8(str.c_str());
     out.Trim(false);
     out.Trim(true);
+}
+
+bool IsWeekend(uint16_t excelSerialDate) {
+    int day, month, year;
+    ExcelSerialDateToDMY(excelSerialDate, day, month, year);
+    std::tm tm{};
+    tm.tm_year = year - 1900;
+    tm.tm_mon = month - 1;
+    tm.tm_mday = day;
+    tm.tm_hour = 12; // clear of any DST-transition edge case
+    std::mktime(&tm); // normalizes tm and fills in tm_wday as a side effect
+    return (tm.tm_wday == 0) || (tm.tm_wday == 6); // Sunday=0, Saturday=6
 }
 
 String GetDateFormat(const uint16_t date) {

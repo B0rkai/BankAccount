@@ -20,10 +20,12 @@ Log::Log() {
     time_t timestamp = time(&timestamp);
     struct tm datetime = *localtime(&timestamp);
     auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() % 1000;
-    std::ostringstream time_stream;
-    time_stream << datetime.tm_year + 1900 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mon + 1 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mday << " " << std::setfill('0') << std::setw(2) << datetime.tm_hour << ":" << std::setfill('0') << std::setw(2) << datetime.tm_min << ":" << std::setfill('0') << std::setw(2) << datetime.tm_sec << "." << std::setfill('0') << std::setw(3) << millis;
+    std::ostringstream date_stream, time_stream;
+    date_stream << datetime.tm_year + 1900 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mon + 1 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mday;
+    time_stream << std::setfill('0') << std::setw(2) << datetime.tm_hour << ":" << std::setfill('0') << std::setw(2) << datetime.tm_min << ":" << std::setfill('0') << std::setw(2) << datetime.tm_sec << "." << std::setfill('0') << std::setw(3) << millis;
+    m_date = date_stream.str();
     m_time = time_stream.str();
-    m_temp_stream << "[" << datetime.tm_year + 1900 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mon + 1 << "." << std::setfill('0') << std::setw(2) << datetime.tm_mday << "][" << std::setfill('0') << std::setw(2) << datetime.tm_hour << ":" << std::setfill('0') << std::setw(2) << datetime.tm_min << ":" << std::setfill('0') << std::setw(2) << datetime.tm_sec << "." << std::setfill('0') << std::setw(3) << millis << "]";
+    m_temp_stream << "[" << m_date << "][" << m_time << "]";
 }
 
 Log::Log(const char* level) : Log() {
@@ -53,6 +55,7 @@ void Log::InitLoggingSystem() {
 
 Log::Log(const Log& copy) {
     m_temp_stream << copy.m_temp_stream.str();
+    m_date = copy.m_date;
     m_time = copy.m_time;
     m_component = copy.m_component;
     m_level = copy.m_level;
@@ -70,6 +73,7 @@ Log::~Log() {
     out << m_temp_stream.str();
 
     LogEntry entry;
+    entry.date = m_date;
     entry.time = m_time;
     entry.component = m_component;
     entry.level = m_level;

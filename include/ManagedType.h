@@ -34,8 +34,19 @@ protected:
 	inline StringSet& GetKeywords() { return m_keywords; }
 public:
 	inline const StringSet& GetKeywords() const { return m_keywords; }
-	bool CheckKeywords(const String& text, bool fullmatch = false) const;
-	bool AddKeyword(const String& acc);
+	// A keyword added with definitive=false is a "suggestion": CheckSuggestedKeywords() can
+	// still find it, but it's meant to only ever pre-select a candidate in the interactive
+	// manual-resolve dialog for the user to confirm - never to silently auto-resolve on its own
+	// the way a definitive keyword (CheckDefinitiveKeywords()) does. Both tiers share the same
+	// underlying keyword set/stream format - the tier is a reserved leading marker on the stored
+	// string (see ManagedType.cpp), not a separate field, so existing saved keywords (which have
+	// no marker) are automatically definitive and no file migration is needed.
+	bool CheckDefinitiveKeywords(const String& text, bool fullmatch = false) const;
+	bool CheckSuggestedKeywords(const String& text, bool fullmatch = false) const;
+	bool AddKeyword(const String& acc, bool definitive = true);
+	// For UI listings: definitive keywords as-is, suggestion-tier ones with a trailing '*' -
+	// never exposes the internal marker convention outside this class.
+	StringVector GetDisplayKeywords() const;
 	bool Merge(const MappedType* other);
 	virtual bool DoMerge(const MappedType* other) { return false; }; // optional for extra data
 	void Stream(std::ostream& out) const;

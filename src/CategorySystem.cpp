@@ -16,7 +16,7 @@ CategorySystem::~CategorySystem() {}
 
 Id CategorySystem::Categorize(const String& text) {
 	for (const Category* cat : m_children) {
-		if (cat->CheckKeywords(text.c_str())) {
+		if (cat->CheckDefinitiveKeywords(text.c_str())) {
 			m_logger.LogInfo() << "Record categorized to " << cat->GetFullName().utf8_str() << " from '" << text.utf8_str() << "'";
 			return cat->GetId();
 		}

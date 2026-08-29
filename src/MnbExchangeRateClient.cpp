@@ -20,14 +20,48 @@
 
 #pragma comment(lib, "winhttp.lib")
 
+void FetchCancelToken::SetActiveHandle(void* handle) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	m_active_handle = handle;
+}
+
+bool FetchCancelToken::TryClaimHandle(void* handle) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	if (m_active_handle == handle) {
+		m_active_handle = nullptr;
+		return true;
+	}
+	return false;
+}
+
+void FetchCancelToken::Cancel() {
+	m_cancelled = true;
+	void* handle;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		handle = m_active_handle;
+		m_active_handle = nullptr;
+	}
+	if (handle) {
+		// Documented WinHTTP cancellation idiom: closing a handle with a blocking call
+		// outstanding on it (from another thread) makes that call fail promptly instead of
+		// waiting out whatever timeout would otherwise eventually apply - or never applies, if
+		// the connection died in a way the configured timeouts don't catch. Clearing
+		// m_active_handle under the same lock before closing means the normal cleanup path's
+		// TryClaimHandle() for this same handle will see it already gone and skip its own close,
+		// so a Cancel() racing against normal completion can never double-close a handle.
+		WinHttpCloseHandle((HINTERNET)handle);
+	}
+}
+
 namespace {
 
 const wchar_t* MNB_HOST = L"www.mnb.hu";
 const wchar_t* MNB_PATH = L"/Root/ExchangeRate/arfolyam.xlsx";
 
 // Downloads the resource at MNB_HOST/MNB_PATH over HTTPS GET and returns its raw bytes, or an
-// empty string on failure (already logged).
-std::string HttpGet(const std::function<void(const std::string&)>& report_phase) {
+// empty string on failure or cancellation (already logged).
+std::string HttpGet(const std::function<void(const std::string&)>& report_phase, FetchCancelToken* cancel_token) {
 	auto report = [&](const std::string& phase) { if (report_phase) report_phase(phase); };
 
 	using Clock = std::chrono::steady_clock;
@@ -35,6 +69,10 @@ std::string HttpGet(const std::function<void(const std::string&)>& report_phase)
 		return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - since).count();
 	};
 	auto t_start = Clock::now();
+
+	if (cancel_token && cancel_token->IsCancelled()) {
+		return "";
+	}
 
 	report("Connecting to MNB...");
 	std::string response;
@@ -45,6 +83,7 @@ std::string HttpGet(const std::function<void(const std::string&)>& report_phase)
 		LogError() << "MNB fetch: WinHttpOpen failed (error " << (unsigned long)GetLastError() << ")";
 		return response;
 	}
+	if (cancel_token) cancel_token->SetActiveHandle(hSession);
 	LogInfo() << "MNB fetch: WinHttpOpen (incl. WPAD proxy auto-detect) took " << ms_since(t_start) << " ms";
 	auto t_connect = Clock::now();
 	// Without explicit timeouts, a stalled DNS lookup or connection attempt (dead network, silently
@@ -53,22 +92,34 @@ std::string HttpGet(const std::function<void(const std::string&)>& report_phase)
 	HINTERNET hConnect = WinHttpConnect(hSession, MNB_HOST, INTERNET_DEFAULT_HTTPS_PORT, 0);
 	if (!hConnect) {
 		LogError() << "MNB fetch: WinHttpConnect failed (error " << (unsigned long)GetLastError() << ")";
-		WinHttpCloseHandle(hSession);
+		if (!cancel_token || cancel_token->TryClaimHandle(hSession)) {
+			WinHttpCloseHandle(hSession);
+		}
 		return response;
 	}
+	if (cancel_token) cancel_token->SetActiveHandle(hConnect); // supersedes hSession as the handle to close on cancel
 	LogInfo() << "MNB fetch: WinHttpConnect (DNS + TCP connect) took " << ms_since(t_connect) << " ms";
 	HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", MNB_PATH, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
 	if (!hRequest) {
 		LogError() << "MNB fetch: could not open HTTPS request (error " << (unsigned long)GetLastError() << ")";
-		WinHttpCloseHandle(hConnect);
+		// hSession was already superseded as the tracked "active" handle once hConnect
+		// succeeded (see SetActiveHandle(hConnect) above), so Cancel() can only be racing to
+		// close hConnect at this point - hSession needs no TryClaimHandle guard.
+		if (!cancel_token || cancel_token->TryClaimHandle(hConnect)) {
+			WinHttpCloseHandle(hConnect);
+		}
 		WinHttpCloseHandle(hSession);
 		return response;
 	}
+	if (cancel_token) cancel_token->SetActiveHandle(hRequest); // supersedes hConnect
 	// The TLS handshake below reliably takes 15-20+ seconds - confirmed via a plain `curl.exe`
 	// request to the same URL (twice, from separate processes, both ~18-19s) that this is a
 	// property of connecting to MNB's server from this network, not of this app's WinHTTP code
 	// or WinHTTP's (opt-in, never-enabled-here) certificate revocation checking. There is no
-	// client-side fix for this; it's inherent to reaching this specific host.
+	// client-side fix for this; it's inherent to reaching this specific host. It has also, once,
+	// hung far longer than that with no active connection visible at all - hence cancel_token:
+	// a user-triggered abort or an outer hard timeout can close hRequest/hConnect/hSession from
+	// another thread to force this call to fail rather than hang indefinitely.
 	report("Handshaking (TLS)...");
 	auto t_send = Clock::now();
 	bool ok = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) != FALSE;
@@ -102,9 +153,17 @@ std::string HttpGet(const std::function<void(const std::string&)>& report_phase)
 		}
 		LogInfo() << "MNB fetch: downloaded " << response.size() << " byte(s), body transfer took " << ms_since(t_read) << " ms";
 	}
-	WinHttpCloseHandle(hRequest);
+	// hConnect/hSession are no longer the tracked "active" handle (superseded by hRequest above),
+	// so only hRequest's close needs to race-guard against a concurrent Cancel().
+	if (!cancel_token || cancel_token->TryClaimHandle(hRequest)) {
+		WinHttpCloseHandle(hRequest);
+	}
 	WinHttpCloseHandle(hConnect);
 	WinHttpCloseHandle(hSession);
+	if (cancel_token && cancel_token->IsCancelled()) {
+		LogWarn() << "MNB fetch: cancelled";
+		return "";
+	}
 	LogInfo() << "MNB fetch: HttpGet total " << ms_since(t_start) << " ms";
 	return response;
 }
@@ -258,7 +317,7 @@ const std::pair<const char*, CurrencyType> TRACKED_CURRENCIES[] = {
 	{"EUR", EUR}, {"USD", USD}, {"GBP", GBP}, {"CHF", CHF}
 };
 
-void ParseWorksheet(ExchangeRateHistory& history, const std::vector<std::string>& shared_strings, const std::string& sheet_xml) {
+void ParseWorksheet(ExchangeRateHistory& history, const std::vector<std::string>& shared_strings, const std::string& sheet_xml, const std::set<uint16_t>* wanted_dates) {
 	size_t header_start, header_end;
 	if (!FindRow(sheet_xml, 1, header_start, header_end)) {
 		LogError() << "MNB fetch: could not find the header row in the MNB archive";
@@ -322,7 +381,7 @@ void ParseWorksheet(ExchangeRateHistory& history, const std::vector<std::string>
 				break;
 			}
 		}
-		if (date != 0) {
+		if ((date != 0) && (!wanted_dates || wanted_dates->count(date))) {
 			for (const Cell& cell : cells) {
 				auto it = tracked_columns.find(cell.col);
 				if ((it == tracked_columns.end()) || cell.is_shared_string || cell.value.empty()) {
@@ -343,7 +402,8 @@ void ParseWorksheet(ExchangeRateHistory& history, const std::vector<std::string>
 
 } // namespace
 
-bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase) {
+bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase,
+                      const std::set<uint16_t>* wanted_dates, FetchCancelToken* cancel_token) {
 	auto report = [&](const std::string& phase) { if (report_phase) report_phase(phase); };
 
 	using Clock = std::chrono::steady_clock;
@@ -351,9 +411,9 @@ bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(con
 		return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - since).count();
 	};
 	try {
-		std::string xlsx = HttpGet(report_phase);
+		std::string xlsx = HttpGet(report_phase, cancel_token);
 		if (xlsx.empty()) {
-			return false; // already logged by HttpGet
+			return false; // already logged by HttpGet (failure or cancellation)
 		}
 		report("Unpacking archive...");
 		auto t_unzip = Clock::now();
@@ -373,7 +433,7 @@ bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(con
 		report("Parsing exchange rates...");
 		auto t_parse = Clock::now();
 		std::vector<std::string> shared_strings = ParseSharedStrings(shared_strings_xml);
-		ParseWorksheet(history, shared_strings, sheet_xml);
+		ParseWorksheet(history, shared_strings, sheet_xml, wanted_dates);
 		LogInfo() << "MNB fetch: parsing (shared strings + worksheet) took " << ms_since(t_parse) << " ms";
 		return true;
 	} catch (const std::exception& e) {

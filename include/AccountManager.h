@@ -24,6 +24,7 @@ class Client;
 struct RawTransactionData;
 class IManualResolve;
 class INewAccount;
+class FetchCancelToken;
 
 class AccountManager : /*public IDataBase,*/ public IIdResolve, public INameResolve, public IWAccount {
 public:
@@ -70,6 +71,7 @@ private:
 	void StreamAccounts(std::istream& in);
 
 	IdSet SearchIds(const QueryTopic topic, const String& name, bool low_confidence) const;
+	IdSet SearchIdsSuggested(const QueryTopic topic, const String& name) const;
 	Id ProcessOneTopic(const RawTransactionData& data, const QueryTopic topic, const String& name, IManualResolve* resolve_if, bool optional = false);
 	void ProcessOneTransaction(Account* acc, const RawTransactionData& data, IManualResolve* resolve_if);
 	//void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional, IManualResolve* resolve_if);
@@ -88,7 +90,13 @@ public:
 	StringTable GetSummary(const QueryTopic topic);
 
 	Id CreateId(const QueryTopic topic, const String& name);
-	void AddKeyword(const QueryTopic topic, Id id, const String& keyword);
+	void AddKeyword(const QueryTopic topic, Id id, const String& keyword, bool definitive = true);
+	// TEMPORARY post-crash recovery helper: replays CLIENT/CATEGORY/TYPE creations, keyword
+	// additions, and transactions from a tab-separated recovery file (built from a memory dump)
+	// through this app's own normal creation methods - never touches the file format directly.
+	// Applies rows in order and stops at the first failure; nothing is saved to disk by this call
+	// itself (caller must Save() explicitly after reviewing the result). Remove once no longer needed.
+	bool ApplyRecoveryFile(const String& path);
 	void ListOfAccNames(StringVector& vec) const;
 	void ListOfCategoryNames(StringVector& vec) const;
 	Id GetCategoryIdByFullName(const String& fullname) const;
@@ -113,7 +121,11 @@ public:
 	// Backfills every account's missing rates from MNB. No-op if nothing is missing. Runs
 	// synchronously on the calling thread - callers on the UI thread should run this on a
 	// background thread and use report_phase to drive a progress indicator, since the MNB
-	// fetch can take 10-30+ seconds.
-	void UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase = nullptr);
+	// fetch can take 10-30+ seconds (rarely, far longer, if the connection dies in a way that
+	// doesn't trip WinHTTP's own timeouts) - pass cancel_token so that thread can be aborted.
+	// Only rates for dates this app's own transactions actually fall on are kept, not MNB's
+	// entire published history - there's no use for the rest, and it makes the saved database
+	// unnecessarily large.
+	void UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase = nullptr, FetchCancelToken* cancel_token = nullptr);
 	StringTable GetExchangeRateTable(CurrencyType type) const;
 };

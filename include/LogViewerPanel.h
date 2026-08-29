@@ -16,6 +16,12 @@ class LogListCtrl : public wxListCtrl {
     wxListItemAttr m_attr_debug;
     wxListItemAttr m_attr_warn;
     wxListItemAttr m_attr_error;
+    // Cached "YYYY.MM.DD" strings for today/yesterday, used to render the Date column as a
+    // relative label. Recomputed only when an appended entry's date no longer matches the
+    // cached today (i.e. at most once per real calendar day), not on every render.
+    std::string m_today_date;
+    std::string m_yesterday_date;
+    void RecalculateRelativeDates();
 
     virtual wxString OnGetItemText(long item, long column) const override;
     virtual wxListItemAttr* OnGetItemAttr(long item) const override;

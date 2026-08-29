@@ -35,6 +35,7 @@ public:
     wxButton* m_merge_but = nullptr;
     wxTextCtrl* m_keyword_target_textctrl = nullptr;
     wxTextCtrl* m_keyword_textctrl = nullptr;
+    wxCheckBox* m_keyword_definitive_chkb = nullptr;
     wxButton* m_add_keyword_but = nullptr;
 };
 
@@ -123,13 +124,14 @@ class cMain :
     void AddKeywordButtonClicked(wxCommandEvent& evt);
     void Import(wxCommandEvent& evt);
     void UpdateExchangeRates(wxCommandEvent& evt);
+    void ExportToExcel(wxCommandEvent& evt);
     void ShowLogViewer(wxCommandEvent& evt);
     void UpdateMenu(wxEvent&);
     void Test(wxCommandEvent& evt);
     void UpdateStatusBar();
     void UpdateAccFilter();
-    virtual ManualResolveResult ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, String& desc, bool optional) override;
-    virtual void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional) override;
+    virtual ManualResolveResult ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, bool& keyword_definitive, String& desc, bool optional, const String& exact_value) override;
+    virtual void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional, const String& exact_value) override;
     virtual void SetDirty() override;
     virtual bool NewAccountDetails(const String& acc_number, String& name, String& bank, CurrencyType curr) override;
 public:

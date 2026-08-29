@@ -180,6 +180,7 @@ void StreamContainer(std::istream& in, StringContainer& container) {
 
 void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear);
 int DMYToExcelSerialDate(int nDay, int nMonth, int nYear);
+bool IsWeekend(uint16_t excelSerialDate); // MNB never publishes rates on Saturday/Sunday
 
 String GetDateFormat(const uint16_t date);
 StringVector ParseMultiValueString(const String& val);
