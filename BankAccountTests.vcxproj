@@ -118,6 +118,7 @@
     <ClCompile Include="tests\AccountManagerTests.cpp" />
     <ClCompile Include="tests\CommonTypesTests.cpp" />
     <ClCompile Include="tests\Crc32Tests.cpp" />
+    <ClCompile Include="tests\CurrencyTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="BankAccountCore.vcxproj">
