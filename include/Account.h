@@ -11,6 +11,7 @@
 #include "AccountNumber.h"
 
 class Logger;
+class IJournal;
 
 enum CurrencyType : Id::Type;
 class Currency;
@@ -25,12 +26,13 @@ class Account : public IAccount, public NumberedType, public NamedType {
 	std::list<String> m_memos;
 	std::list<String> m_descriptions;
 	Logger& m_logger;
+	IJournal& m_journal;
 	bool RunQuery(Query& query, const Transaction* tr) const;
 	virtual const String& GetAccName() const override;
 	virtual String* AddDescription(const String& str) override;
 	inline virtual Id GetId() const override { return NumberedType::GetId(); }
 public:
-	Account(const Id::Type id, const String& acc_number, const String& acc_name, const CurrencyType curr);
+	Account(const Id::Type id, const String& acc_number, const String& acc_name, const CurrencyType curr, IJournal& journal);
 
 	inline String GetAccNumber() const { return m_acc_number->GetString(); }
 	bool CheckAccNumber(const String& other);

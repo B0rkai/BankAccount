@@ -56,10 +56,10 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Stri
 	acc_name.append(std::to_string(size + 1));
 	Modified();
 	newaccount_if->NewAccountDetails(*acc_num_ptr, acc_name, bname, curr);
-	m_accounts.push_back(new Account(size, account_number, acc_name, curr));
+	m_accounts.push_back(new Account(size, account_number, acc_name, curr, m_journal));
 	m_accounts.back()->SetGroupName(bank_name);
 	m_logger.LogInfo() << "NEW Account '" << m_accounts.back()->GetName() << "' created";
-	Journal::AppendAccount(Id((Id::Type)size), account_number, acc_name, bname, MakeCurrency(curr)->GetShortName());
+	m_journal.AppendAccount(Id((Id::Type)size), account_number, acc_name, bname, MakeCurrency(curr)->GetShortName());
 	return (uint8_t)size;
 }
 
@@ -192,7 +192,7 @@ void AccountManager::StreamAccounts(std::istream& in) {
 		StreamString(in, acc_numb);
 		StreamString(in, acc_name);
 		StreamString(in, curr_name);
-		m_accounts.push_back(new Account(i, acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type()));
+		m_accounts.push_back(new Account(i, acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type(), m_journal));
 		m_accounts.back()->SetGroupName(bank_name.c_str());
 		m_accounts.back()->Stream(in);
 		m_accounts.back()->Sort();
@@ -220,7 +220,7 @@ void AccountManager::Stream(std::istream& in) {
 	m_logger.LogDebug() << "Streaming in from file finished";
 }
 
-AccountManager::AccountManager() :m_accounts(true), m_ttype_man("TTYM", "Transaction Type Manager", nullptr, true), m_logger(Logger::GetRef("ACCM", "Account Manager")) {
+AccountManager::AccountManager(IJournal& journal) :m_accounts(true), m_ttype_man("TTYM", "Transaction Type Manager", nullptr, true), m_logger(Logger::GetRef("ACCM", "Account Manager")), m_journal(journal) {
 	Currency::SetHistory(&m_exchange_rates);
 }
 
@@ -287,7 +287,7 @@ void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& key
 	}
 	if (change) {
 		Modified();
-		Journal::AppendKeyword(topic, id, keyword, definitive);
+		m_journal.AppendKeyword(topic, id, keyword, definitive);
 	}
 }
 
@@ -330,7 +330,7 @@ bool AccountManager::RenameId(const QueryTopic topic, Id id, const String& new_n
 	}
 	if (change) {
 		Modified();
-		Journal::AppendRename(topic, id, new_name);
+		m_journal.AppendRename(topic, id, new_name);
 	}
 	return change;
 }
@@ -512,7 +512,7 @@ AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& p
             }
             if (new_id == INVALID_ID) {
                 new_id = Id((Id::Type)m_accounts.size());
-                m_accounts.push_back(new Account((Id::Type)new_id, f[2], f[3], MakeCurrency(f[5].c_str())->Type()));
+                m_accounts.push_back(new Account((Id::Type)new_id, f[2], f[3], MakeCurrency(f[5].c_str())->Type(), m_journal));
                 m_accounts.back()->SetGroupName(f[4]);
             }
             if (new_id != (Id::Type)v1) {
@@ -607,7 +607,7 @@ void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id t
 	}
 	if (change) {
 		Modified();
-		Journal::AppendMerge(topic, from, to);
+		m_journal.AppendMerge(topic, from, to);
 	}
 }
 
@@ -654,7 +654,7 @@ Id AccountManager::CreateId(const QueryTopic topic, const String& name) {
 	}
 	if (size_after != size_before) {
 		Modified();
-		Journal::AppendCreate(topic, ret, name);
+		m_journal.AppendCreate(topic, ret, name);
 	}
 	return ret;
 }
@@ -834,7 +834,12 @@ StringTable AccountManager::MakeQuery(Query& query) const {
 		return {};
 	}
 	m_logger.LogDebug() << "Read-only Query execution started";
-	QueryElement::SetResolveIf(this);
+	// Self-heals the process-wide history pointer on every call rather than relying solely on
+	// the one set at construction - see Currency::SetHistory's declaration for why this, and
+	// not threading ExchangeRateHistory through the QueryElement/WQueryElement virtual chain,
+	// is the deliberate fix here.
+	Currency::SetHistory(&m_exchange_rates);
+	QueryResolveScope resolve_scope(this);
 	for(QueryElement* qe : query) {
 		qe->PreResolve();
 	}
@@ -848,15 +853,15 @@ StringTable AccountManager::MakeQuery(Query& query) const {
 	std::sort(query.GetResult().begin(), query.GetResult().end(), [](const Transaction* t1, const Transaction* t2) {
 		return (t1->GetDate() < t2->GetDate());
 	});
-	QueryElement::SetResolveIf(nullptr);
 	m_logger.LogDebug() << "Read-only Query execution finished";
 	return FormatResultTable(query.GetResult());
 }
 
 StringTable AccountManager::MakeQuery(WQuery& query) {
 	m_logger.LogDebug() << "Write Query execution started";
-	QueryElement::SetResolveIf(this);
-	WQueryElement::SetResolveIf(this);
+	Currency::SetHistory(&m_exchange_rates);
+	QueryResolveScope resolve_scope(this);
+	WQueryResolveScope wresolve_scope(this);
 	for (auto* qe : query) {
 		qe->PreResolve();
 	}
@@ -871,8 +876,6 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 	} catch (...) {
 		m_logger.LogWarn() << "User aboted WQuery execution";
 	}
-	QueryElement::SetResolveIf(nullptr);
-	WQueryElement::SetResolveIf(nullptr);
 	if (changed) {
 		Modified();
 	}
@@ -907,14 +910,13 @@ std::vector<AccountManager::TransactionIdentity> AccountManager::IdentifyAll(con
 
 void AccountManager::ApplyEdit(const TransactionIdentity& identity, WQueryElement& element) {
 	Transaction& tr = m_accounts.at(identity.account_id)->GetTransactionAt(identity.position);
-	WQueryElement::SetResolveIf(this); // needed for CheckTransaction() to log via tr->PrintDebug()
+	WQueryResolveScope resolve_scope(this); // needed for CheckTransaction() to log via tr->PrintDebug()
 	element.PreResolve();
 	bool changed = element.CheckTransaction(&tr);
 	element.Execute(this);
-	WQueryElement::SetResolveIf(nullptr);
 	Modified();
 	if (changed) {
-		Journal::AppendTransactionEdit(identity.account_id, identity.position, element.GetTopic(), tr);
+		m_journal.AppendTransactionEdit(identity.account_id, identity.position, element.GetTopic(), tr);
 	}
 }
 
@@ -937,7 +939,7 @@ bool AccountManager::HasMissingExchangeRates() const {
 	return false;
 }
 
-void AccountManager::UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase, FetchCancelToken* cancel_token) {
+void AccountManager::UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase, FetchCancelToken* cancel_token, IExchangeRateFetcher& fetcher) {
 	// Only dates our own transactions actually fall on are worth caching a rate for - MNB's
 	// archive covers every day since 1949, which is thousands of times more than any real
 	// account needs and bloats the saved database with rates nothing ever looks up. Computed
@@ -961,7 +963,7 @@ void AccountManager::UpdateExchangeRates(const std::function<void(const std::str
 	}
 	// MNB's whole published archive covers every currency at once, so one download is enough
 	// regardless of which account(s) triggered it.
-	if (DownloadAllRates(m_exchange_rates, report_phase, &wanted_dates, cancel_token)) {
+	if (fetcher.Fetch(m_exchange_rates, report_phase, &wanted_dates, cancel_token)) {
 		m_logger.LogInfo() << "Exchange rates: MNB archive downloaded and applied";
 		Modified();
 	}

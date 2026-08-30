@@ -162,7 +162,25 @@ through the analogous `INewAccount`/`NewAccountDetailsDialog` flow.
 
 **Logging**: `Logger`/`Log` ([include/Logger.h](include/Logger.h)) is a lightweight per-component logger
 (`Logger::GetRef(id, name)`) with `LogDebug()/LogInfo()/LogWarn()/LogError()` streaming into an
-ostringstream; output goes to the `log/` directory.
+ostringstream. Each line is broadcast through `LogHistory`/`ILogSink` ([include/LogData.h](include/LogData.h))
+rather than written to disk directly - `LogViewerPanel` subscribes as a sink for the in-app Log
+Viewer, and `FileLogSink` (`Logger.h`) is the one that actually writes `log/BankAccount.log`.
+Logging is inert (every call is a no-op, no directory/file ever created) until
+`cApp::OnInit()` explicitly calls `Log::InitLoggingSystem()` and registers a `FileLogSink` -
+this is deliberate: it means constructing domain objects (`AccountManager`, `ManagerType<T>`,
+...) outside a running `cApp` (e.g. in a test) produces zero log I/O with no per-call-site
+changes needed anywhere.
+
+**Testability seams**: a few places where `AccountManager` would otherwise reach out to a real
+file or the network directly are instead behind a small injected interface, each defaulting to
+the real implementation so no existing call site had to change: `IJournal` ([include/Journal.h](include/Journal.h))
+for the crash-recovery journal's per-mutation `Append*` calls (`RealJournal` is the default,
+`NullJournal` is a no-op for tests), and `IExchangeRateFetcher` ([include/MnbExchangeRateClient.h](include/MnbExchangeRateClient.h))
+for the MNB rate download (`MnbExchangeRateFetcher` is the default). Separately,
+`QueryResolveScope`/`WQueryResolveScope` ([include/Query.h](include/Query.h)/[include/WQuery.h](include/WQuery.h)) are RAII
+guards around `QueryElement`/`WQueryElement`'s resolver statics - used by `AccountManager::MakeQuery`/`ApplyEdit`,
+and equally usable directly by a test that wants to exercise one `QueryElement`/`WQueryElement`
+in isolation with a fake `INameResolve`/`IIdResolve`, without a full `AccountManager`.
 
 ## Notes
 

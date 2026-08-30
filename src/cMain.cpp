@@ -21,6 +21,7 @@
 #include "MnbExchangeRateClient.h"
 #include "Journal.h"
 #include "AddKeywordDialog.h"
+#include "GuiHelpers.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 

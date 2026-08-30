@@ -54,3 +54,22 @@ private:
 // leaving it to hang indefinitely.
 bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase = nullptr,
                       const std::set<uint16_t>* wanted_dates = nullptr, FetchCancelToken* cancel_token = nullptr);
+
+// Injectable seam around the network fetch above, so AccountManager::UpdateExchangeRates() can
+// be exercised (e.g. in a test) without ever making a real HTTPS request to MNB - the domain
+// code depends only on this interface, not on WinHTTP or the MNB archive format directly.
+class IExchangeRateFetcher {
+public:
+    virtual ~IExchangeRateFetcher() = default;
+    virtual bool Fetch(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase,
+                        const std::set<uint16_t>* wanted_dates, FetchCancelToken* cancel_token) = 0;
+};
+
+// Production default: a thin pass-through to DownloadAllRates() above - MnbExchangeRateClient's
+// actual WinHTTP/parsing logic is completely unchanged by this seam's existence.
+class MnbExchangeRateFetcher : public IExchangeRateFetcher {
+public:
+    static MnbExchangeRateFetcher& Instance();
+    virtual bool Fetch(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase,
+                        const std::set<uint16_t>* wanted_dates, FetchCancelToken* cancel_token) override;
+};

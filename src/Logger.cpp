@@ -44,11 +44,6 @@ Log::Log(const char* level) : Log() {
 bool Log::s_initialized = false;
 
 void Log::InitLoggingSystem() {
-    String path(DEFAULT_LOG_LOCATION);
-    String dir = path.BeforeLast('\\');
-    if (!std::filesystem::exists((std::string)dir)) {
-        std::filesystem::create_directories((std::string)dir);
-    }
     s_initialized = true;
     LogInfo() << "Logging system initialized";
 }
@@ -68,17 +63,30 @@ Log::~Log() {
         return;
     }
     std::string full = m_temp_stream.str();
-    m_temp_stream << std::endl;
-    std::ofstream out(DEFAULT_LOG_LOCATION, std::ofstream::app);
-    out << m_temp_stream.str();
-
     LogEntry entry;
     entry.date = m_date;
     entry.time = m_time;
     entry.component = m_component;
     entry.level = m_level;
     entry.message = full.substr(m_prefix_len);
+    // Broadcasts to every registered ILogSink (LogHistory's in-memory scrollback, and - once
+    // one is registered by the real app's startup, see cApp::OnInit - FileLogSink's real file
+    // write). Nothing here writes to disk directly any more.
     LogHistory::Record(entry);
+}
+
+FileLogSink::FileLogSink() {
+    String path(DEFAULT_LOG_LOCATION);
+    String dir = path.BeforeLast('\\');
+    if (!std::filesystem::exists((std::string)dir)) {
+        std::filesystem::create_directories((std::string)dir);
+    }
+}
+
+void FileLogSink::OnLogEntry(const LogEntry& entry) {
+    std::ofstream out(DEFAULT_LOG_LOCATION, std::ofstream::app);
+    out << "[" << entry.date << "][" << entry.time << "][" << entry.component << "]["
+        << entry.level << "]: " << entry.message << std::endl;
 }
 
 LOGFUNC_DEF(Debug);
@@ -87,9 +95,10 @@ LOGFUNC_DEF(Warn);
 LOGFUNC_DEF(Error);
 
 Logger::Logger(const char* id, const char* component_name) : m_comp_id(id), m_comp_name(component_name) {
-    if (!Log::Initialized()) {
-        Log::InitLoggingSystem();
-    }
+    // Deliberately does NOT lazily call Log::InitLoggingSystem() - logging only becomes active
+    // once the real app explicitly arms it in cApp::OnInit(). A process that never does that
+    // (e.g. a future test binary constructing AccountManager/ManagerType<T> directly) gets
+    // every LogX() call as a true no-op instead of implicit log\ directory/file creation.
     ::LogDebug(m_comp_id) << "Logger object of " << m_comp_name << " is created";
 }
 

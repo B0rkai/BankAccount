@@ -2,7 +2,6 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
-#include "wx\font.h"
 
 
 const char* cCharArrEmpty = "";
@@ -166,7 +165,3 @@ StringVector ParseMultiValueString(const String& val) {
     return vals;
 }
 
-const wxFont& GetMonoSpaceFont() {
-    static wxFont font = wxFont(wxSize(7, 14), wxFontFamily::wxFONTFAMILY_TELETYPE, wxFontStyle::wxFONTSTYLE_NORMAL, wxFontWeight::wxFONTWEIGHT_NORMAL);
-    return font;
-}

@@ -184,6 +184,3 @@ bool IsWeekend(uint16_t excelSerialDate); // MNB never publishes rates on Saturd
 
 String GetDateFormat(const uint16_t date);
 StringVector ParseMultiValueString(const String& val);
-
-class wxFont;
-const wxFont& GetMonoSpaceFont();

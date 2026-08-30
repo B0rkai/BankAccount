@@ -7,8 +7,8 @@
 
 #include <algorithm>
 
-Account::Account(const Id::Type id, const String& acc_number, const String& acc_name, const CurrencyType curr)
-: NumberedType(id), NamedType(acc_name), m_acc_number(AccountNumber::Create(acc_number)), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")) {}
+Account::Account(const Id::Type id, const String& acc_number, const String& acc_name, const CurrencyType curr, IJournal& journal)
+: NumberedType(id), NamedType(acc_name), m_acc_number(AccountNumber::Create(acc_number)), m_curr(MakeCurrency(curr)), m_logger(Logger::GetRef("ACCO", "Bank Account object")), m_journal(journal) {}
 
 bool Account::CheckAccNumber(const String& other) {
 	return m_acc_number->IsEqual(other);
@@ -53,7 +53,7 @@ void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_
 	if (desc_ptr) {
 		new_tra.SetDiscription(desc_ptr);
 	}
-	Journal::AppendTransaction(GetId(), date, type_id, amount, client_id, category_id, memo, desc);
+	m_journal.AppendTransaction(GetId(), date, type_id, amount, client_id, category_id, memo, desc);
 }
 
 bool Account::RunQuery(Query& query, const Transaction* tr) const {
@@ -90,7 +90,7 @@ void Account::MakeQuery(WQuery& query, bool& changed) {
 	for (auto& tr : m_transactions) {
 		if (RunQuery(query, &tr) && query.WElement()->CheckTransaction(&tr)) {
 			changed = true;
-			Journal::AppendTransactionEdit(GetId(), position, query.WElement()->GetTopic(), tr);
+			m_journal.AppendTransactionEdit(GetId(), position, query.WElement()->GetTopic(), tr);
 			if (query.ReturnList()) {
 				query.GetResult().emplace_back(&tr);
 			}

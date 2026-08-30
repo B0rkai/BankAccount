@@ -443,3 +443,13 @@ bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(con
 	}
 	return false;
 }
+
+MnbExchangeRateFetcher& MnbExchangeRateFetcher::Instance() {
+	static MnbExchangeRateFetcher instance;
+	return instance;
+}
+
+bool MnbExchangeRateFetcher::Fetch(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase,
+                                    const std::set<uint16_t>* wanted_dates, FetchCancelToken* cancel_token) {
+	return DownloadAllRates(history, report_phase, wanted_dates, cancel_token);
+}

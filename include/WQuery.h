@@ -33,6 +33,15 @@ public:
     virtual void Execute(IWAccount* account_if) = 0;
 };
 
+// RAII guard around WQueryElement::SetResolveIf() - see QueryResolveScope (Query.h) for the
+// same rationale (exception-safety of the set/reset pair, and a reusable test seam).
+class WQueryResolveScope {
+public:
+    explicit WQueryResolveScope(const IIdResolve* resif) { WQueryElement::SetResolveIf(resif); }
+    ~WQueryResolveScope() { WQueryElement::SetResolveIf(nullptr); }
+    WQueryResolveScope(const WQueryResolveScope&) = delete;
+};
+
 class MergeQuery : public WQueryElement {
 protected:
     Id m_target_id = INVALID_ID;

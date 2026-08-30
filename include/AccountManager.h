@@ -14,6 +14,8 @@
 #include "IWQuery.h"
 #include "Logger.h"
 #include "ExchangeRateHistory.h"
+#include "Journal.h"
+#include "MnbExchangeRateClient.h"
 
 class Query;
 class Query::Result;
@@ -42,6 +44,7 @@ private:
 	CategorySystem m_category_system;
 	ExchangeRateHistory m_exchange_rates;
 	Logger& m_logger;
+	IJournal& m_journal;
 	int m_new_transactions = 0;
 
 	bool HasMissingExchangeRates() const;
@@ -79,7 +82,10 @@ protected:
 	void Stream(std::ostream& out) const;
 	void Stream(std::istream& in);
 public:
-	AccountManager();
+	// journal defaults to the real, disk-backed Journal - pass a NullJournal (or any other
+	// IJournal) to construct an AccountManager (and the Account(s) it creates) that never
+	// touches db\journal.txt, e.g. in a test.
+	explicit AccountManager(IJournal& journal = RealJournal::Instance());
 	~AccountManager();
 	size_t CountAccounts() const;
 	size_t CountClients() const;
@@ -151,7 +157,9 @@ public:
 	// doesn't trip WinHTTP's own timeouts) - pass cancel_token so that thread can be aborted.
 	// Only rates for dates this app's own transactions actually fall on are kept, not MNB's
 	// entire published history - there's no use for the rest, and it makes the saved database
-	// unnecessarily large.
-	void UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase = nullptr, FetchCancelToken* cancel_token = nullptr);
+	// unnecessarily large. fetcher defaults to the real MNB/WinHTTP client - pass a fake
+	// IExchangeRateFetcher (e.g. in a test) to exercise this without any network access.
+	void UpdateExchangeRates(const std::function<void(const std::string&)>& report_phase = nullptr, FetchCancelToken* cancel_token = nullptr,
+		IExchangeRateFetcher& fetcher = MnbExchangeRateFetcher::Instance());
 	StringTable GetExchangeRateTable(CurrencyType type) const;
 };

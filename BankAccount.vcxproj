@@ -168,6 +168,7 @@
     <ClCompile Include="src\DataImporter.cpp" />
     <ClCompile Include="src\ExcelExport.cpp" />
     <ClCompile Include="src\ExchangeRateHistory.cpp" />
+    <ClCompile Include="src\GuiHelpers.cpp" />
     <ClCompile Include="src\Logger.cpp" />
     <ClCompile Include="src\LogData.cpp" />
     <ClCompile Include="src\LogViewerFrame.cpp" />
@@ -202,6 +203,7 @@
     <ClInclude Include="include\DataImporter.h" />
     <ClInclude Include="include\ExcelExport.h" />
     <ClInclude Include="include\ExchangeRateHistory.h" />
+    <ClInclude Include="include\GuiHelpers.h" />
     <ClInclude Include="include\IAccount.h" />
     <ClInclude Include="include\IDataBase.h" />
     <ClInclude Include="include\IIdResolve.h" />

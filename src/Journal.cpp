@@ -26,6 +26,7 @@ namespace {
 	}
 
 	FILE* s_journal_file = nullptr;
+	bool s_suppressed = false;
 
 	// Opens (creating if necessary) db\journal.txt and keeps it open for the rest of the
 	// process's life, with Windows sharing flags that deny write access to any other
@@ -36,6 +37,15 @@ namespace {
 	// the same sharing violation as an external one) and because it means the lock is
 	// naturally held for exactly as long as the journal is in use.
 	bool EnsureOpen() {
+		if (s_suppressed) {
+			// Silent, unlogged no-op - this is a deliberate, expected state (recovery-journal
+			// replay) rather than a failure, unlike the real open errors below. Gating here
+			// rather than only in Append() means CheckBaseline()/WriteBaseline() (reached via
+			// ReadAll(), called from BankAccountFile.cpp) are equally suppressed, not just
+			// Append() - closing the gap a suppressed caller could otherwise still hit the
+			// real file through.
+			return false;
+		}
 		if (s_journal_file) {
 			return true;
 		}
@@ -151,10 +161,6 @@ bool Journal::CheckBaseline(uint32_t crc) {
 	return pending > 0;
 }
 
-namespace {
-	bool s_suppressed = false;
-}
-
 void Journal::SetSuppressed(bool suppressed) {
 	s_suppressed = suppressed;
 }
@@ -234,4 +240,37 @@ void Journal::AppendMerge(QueryTopic topic, const IdSet& from, Id to) {
 		from_csv.append(String(id));
 	}
 	Append("MERGE", { TopicToTag(topic), from_csv, String(to) });
+}
+
+RealJournal& RealJournal::Instance() {
+	static RealJournal instance;
+	return instance;
+}
+
+void RealJournal::AppendTransactionEdit(Id account_id, size_t position, QueryTopic topic, const Transaction& tr) {
+	Journal::AppendTransactionEdit(account_id, position, topic, tr);
+}
+
+void RealJournal::AppendTransaction(Id account_id, uint16_t date, Id type_id, int32_t amount, Id client_id, Id category_id, const String& memo, const String& desc) {
+	Journal::AppendTransaction(account_id, date, type_id, amount, client_id, category_id, memo, desc);
+}
+
+void RealJournal::AppendCreate(QueryTopic topic, Id new_id, const String& name) {
+	Journal::AppendCreate(topic, new_id, name);
+}
+
+void RealJournal::AppendAccount(Id account_id, const String& account_number, const String& name, const String& bank, const String& currency) {
+	Journal::AppendAccount(account_id, account_number, name, bank, currency);
+}
+
+void RealJournal::AppendKeyword(QueryTopic topic, Id id, const String& keyword, bool definitive) {
+	Journal::AppendKeyword(topic, id, keyword, definitive);
+}
+
+void RealJournal::AppendRename(QueryTopic topic, Id id, const String& new_name) {
+	Journal::AppendRename(topic, id, new_name);
+}
+
+void RealJournal::AppendMerge(QueryTopic topic, const IdSet& from, Id to) {
+	Journal::AppendMerge(topic, from, to);
 }

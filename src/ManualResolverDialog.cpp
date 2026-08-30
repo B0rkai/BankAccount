@@ -1,5 +1,6 @@
 #include "ManualResolverDialog.h"
 #include "INameResolve.h"
+#include "GuiHelpers.h"
 
 #include "IManualResolve.h"
 

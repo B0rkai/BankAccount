@@ -54,6 +54,19 @@ public:
 	inline virtual bool IsOk() const = 0;
 };
 
+// RAII guard around QueryElement::SetResolveIf() - resets to nullptr unconditionally when the
+// guard goes out of scope, including via an exception unwinding past it (the plain set-then-
+// reset calls this replaces were not exception-safe: a throw between them left s_resolve_if
+// pointing at a possibly-dangling AccountManager for the next, unrelated call to see). Also
+// usable directly by anything - a test included - that wants to exercise a single QueryElement
+// in isolation with its own INameResolve, without needing a full AccountManager.
+class QueryResolveScope {
+public:
+	explicit QueryResolveScope(const INameResolve* resif) { QueryElement::SetResolveIf(resif); }
+	~QueryResolveScope() { QueryElement::SetResolveIf(nullptr); }
+	QueryResolveScope(const QueryResolveScope&) = delete;
+};
+
 class QueryByName : public QueryElement {
 protected:
 	StringSet m_names;

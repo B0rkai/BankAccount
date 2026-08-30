@@ -1,5 +1,6 @@
 #include "NewAccountDetailsDialog.h"
 #include "Currency.h"
+#include "GuiHelpers.h"
 
 enum CTRL_IDs {
 	OK_BUTT = 12000,

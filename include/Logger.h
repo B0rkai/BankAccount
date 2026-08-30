@@ -59,6 +59,16 @@ public:
     virtual ~LoggerMap();
 };
 
+// The concrete sink that gives the real app its log\BankAccount.log file, wired up via the
+// existing ILogSink/LogHistory observer mechanism instead of being hardcoded into Log::~Log()
+// - lets a process that never registers one (e.g. a future test binary) produce zero file I/O
+// from ordinary logging calls, with no change to any LogDebug()/LogInfo()/etc. call site.
+class FileLogSink : public ILogSink {
+public:
+    FileLogSink();
+    virtual void OnLogEntry(const LogEntry& entry) override;
+};
+
 class Logger {
     const char* m_comp_name;
     const char* m_comp_id;
