@@ -2,6 +2,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cwctype>
+#include <algorithm>
 
 #include "wx/wx.h"
 #include "wx/windowid.h"
@@ -108,7 +109,8 @@ enum CtrIds {
 #ifdef _DEBUG
 	MENU_REPLAY_JOURNAL,
 #endif
-	MENU_CTX_ADD_KEYWORD
+	MENU_CTX_ADD_KEYWORD,
+	MENU_CTX_MERGE_SELECTED
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
@@ -147,6 +149,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
 	EVT_MENU(MENU_CTX_ADD_KEYWORD, OnAddKeywordFromContextMenu)
+	EVT_MENU(MENU_CTX_MERGE_SELECTED, OnMergeSelectedFromContextMenu)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -160,12 +163,17 @@ cMain::cMain()
 	m_info_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "Standby", wxPoint(20, 170), wxSize(1325, 60), wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
 	m_info_textctrl->SetFont(GetMonoSpaceFont());
 
-	m_result_grid = new wxGrid(m_main_panel, wxID_ANY, wxPoint(20, 235), wxSize(1325, 405));
+	new wxStaticText(m_main_panel, wxID_ANY, "Filter:", wxPoint(20, 240));
+	m_grid_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(65, 237), wxSize(300, 24));
+	m_grid_filter_textctrl->Bind(wxEVT_TEXT, &cMain::OnGridFilterTextChanged, this);
+
+	m_result_grid = new wxGrid(m_main_panel, wxID_ANY, wxPoint(20, 270), wxSize(1325, 370));
 	m_result_grid->CreateGrid(0, 0);
 	m_result_grid->EnableEditing(false);
 	m_result_grid->SetDefaultCellFont(GetMonoSpaceFont());
 	m_result_grid->Bind(wxEVT_GRID_CELL_CHANGED, &cMain::OnGridCellChanged, this);
 	m_result_grid->Bind(wxEVT_GRID_CELL_RIGHT_CLICK, &cMain::OnGridCellRightClick, this);
+	m_result_grid->Bind(wxEVT_GRID_LABEL_LEFT_CLICK, &cMain::OnGridLabelLeftClick, this);
 
 	m_status_bar = new wxStatusBar(this, wxID_ANY, wxST_SIZEGRIP);
 	SetStatusBar(m_status_bar);
@@ -509,11 +517,61 @@ void cMain::UIOutputTable(const StringTable& table) {
 	UIOutputTable(table, PtrVector<const Transaction>());
 }
 
-void cMain::PopulateGrid(const StringTable& table) {
+namespace {
+	// Amount/ID cells (any StringTable::RIGHT_ALIGNED column) are pretty-printed with currency
+	// signs/thousands separators/padding, so plain string comparison would sort "1 234" before
+	// "999". Strip everything but digits and a leading minus sign and compare as an integer
+	// magnitude instead. (For an amount column mixing currencies with different cents-formatting
+	// this is only approximately value-correct across currencies - acceptable for a quick sort,
+	// not a currency-aware total.)
+	long long ExtractSignedMagnitude(const String& cell) {
+		std::string text = cell.ToStdString();
+		std::string digits;
+		bool negative = false;
+		bool seen_digit = false;
+		for (char ch : text) {
+			if ((ch == '-') && !seen_digit) {
+				negative = true;
+			} else if ((ch >= '0') && (ch <= '9')) {
+				digits.push_back(ch);
+				seen_digit = true;
+			}
+		}
+		if (digits.empty()) {
+			return 0;
+		}
+		long long magnitude = 0;
+		try {
+			magnitude = std::stoll(digits);
+		} catch (...) {
+			return 0;
+		}
+		return negative ? -magnitude : magnitude;
+	}
+
+	int CompareCellValues(const String& a, const String& b, bool numeric) {
+		if (numeric) {
+			long long va = ExtractSignedMagnitude(a);
+			long long vb = ExtractSignedMagnitude(b);
+			if (va < vb) return -1;
+			if (va > vb) return 1;
+			return 0;
+		}
+		return a.CmpNoCase(b);
+	}
+
+	bool RowMatchesFilter(const StringVector& row, const wxString& filter_lower) {
+		for (const String& cell : row) {
+			if (cell.Lower().Contains(filter_lower)) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+void cMain::FillGridWidget(const StringTable& table) {
 	m_result_grid->EnableEditing(false);
-	m_grid_identities.clear();
-	m_grid_entity_mode = false;
-	m_grid_entity_id_col = -1;
 	if (m_result_grid->GetNumberRows()) {
 		m_result_grid->DeleteRows(0, m_result_grid->GetNumberRows());
 	}
@@ -541,14 +599,106 @@ void cMain::PopulateGrid(const StringTable& table) {
 	m_result_grid->AutoSizeColumns();
 }
 
-void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions) {
-	PopulateGrid(table);
-	if (transactions.empty()) {
-		return; // non-editable: List/summaries/periodic reports/exchange-rate table etc.
+void cMain::SetGridData(const StringTable& table) {
+	m_grid_master_table = table;
+	m_grid_master_identities.clear();
+	m_grid_identities.clear();
+	m_grid_entity_mode = false;
+	m_grid_editable_transactions = false;
+	m_grid_entity_id_col = -1;
+	m_grid_sort_col = -1;
+	m_grid_sort_ascending = true;
+	if (m_grid_filter_textctrl) {
+		m_grid_filter_textctrl->ChangeValue(wxEmptyString);
 	}
+}
+
+void cMain::RenderGrid() {
+	std::vector<size_t> order;
+	const size_t data_rows = m_grid_master_table.empty() ? 0 : (m_grid_master_table.size() - 1);
+	order.reserve(data_rows);
+	wxString filter_lower = m_grid_filter_textctrl ? m_grid_filter_textctrl->GetValue().Lower() : wxString();
+	for (size_t i = 0; i < data_rows; ++i) {
+		if (filter_lower.IsEmpty() || RowMatchesFilter(m_grid_master_table[i + 1], filter_lower)) {
+			order.push_back(i);
+		}
+	}
+	if ((m_grid_sort_col >= 0) && !m_grid_master_table.empty() &&
+		((size_t)m_grid_sort_col < m_grid_master_table.front().size())) {
+		const int sort_col = m_grid_sort_col;
+		const bool ascending = m_grid_sort_ascending;
+		const bool numeric = (m_grid_master_table.GetMetaData(sort_col) == StringTable::RIGHT_ALIGNED);
+		std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+			int cmp = CompareCellValues(m_grid_master_table[a + 1][sort_col], m_grid_master_table[b + 1][sort_col], numeric);
+			return ascending ? (cmp < 0) : (cmp > 0);
+		});
+	}
+	StringTable view = m_grid_master_table; // copies per-column alignment metadata too
+	if (!view.empty()) {
+		view.erase(view.begin() + 1, view.end());
+	}
+	std::vector<AccountManager::TransactionIdentity> new_identities;
+	if (m_grid_editable_transactions) {
+		new_identities.reserve(order.size());
+	}
+	for (size_t idx : order) {
+		view.push_back(m_grid_master_table[idx + 1]);
+		if (m_grid_editable_transactions) {
+			new_identities.push_back(m_grid_master_identities[idx]);
+		}
+	}
+	m_grid_identities = std::move(new_identities);
+	FillGridWidget(view);
+	if (m_grid_editable_transactions) {
+		ApplyTransactionEditableColumns();
+	} else if (m_grid_entity_mode) {
+		ApplyEntityEditableColumns();
+	}
+	// wxGrid only paints a sort arrow when SetUseNativeColLabels()/UseNativeColHeader() is on,
+	// and those switch column headers to the OS-themed look while leaving row labels on wx's
+	// plain flat style - the two clash visibly. Drawing the indicator as a plain text suffix
+	// instead keeps every part of the grid on the same rendering path.
+	if ((m_grid_sort_col >= 0) && (m_grid_sort_col < m_result_grid->GetNumberCols())) {
+		String label = m_result_grid->GetColLabelValue(m_grid_sort_col);
+		// Plain ASCII rather than a Unicode arrow glyph - this file has no BOM, so a literal
+		// non-ASCII byte's interpretation would depend on the compiler's guessed source
+		// encoding instead of being unambiguous.
+		label += m_grid_sort_ascending ? " ^" : " v";
+		m_result_grid->SetColLabelValue(m_grid_sort_col, label);
+	}
+}
+
+void cMain::OnGridLabelLeftClick(wxGridEvent& evt) {
+	int col = evt.GetCol();
+	if ((col < 0) || m_grid_master_table.empty()) {
+		evt.Skip(); // row-label or corner click, or nothing to sort
+		return;
+	}
+	if (m_grid_sort_col == col) {
+		m_grid_sort_ascending = !m_grid_sort_ascending;
+	} else {
+		m_grid_sort_col = col;
+		m_grid_sort_ascending = true;
+	}
+	RenderGrid();
+}
+
+void cMain::OnGridFilterTextChanged(wxCommandEvent&) {
+	RenderGrid();
+}
+
+void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions) {
+	SetGridData(table);
+	if (!transactions.empty()) {
+		m_grid_editable_transactions = true;
+		m_grid_master_identities = m_bank_file->IdentifyAll(transactions);
+	}
+	RenderGrid();
+}
+
+void cMain::ApplyTransactionEditableColumns() {
 	const int col_count = m_result_grid->GetNumberCols();
 	const int row_count = m_result_grid->GetNumberRows();
-	m_grid_identities = m_bank_file->IdentifyAll(transactions);
 	m_result_grid->EnableEditing(true);
 	int category_col = -1, desc_col = -1;
 	for (int c = 0; c < col_count; ++c) {
@@ -574,19 +724,22 @@ void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transa
 }
 
 void cMain::UIOutputEntityTable(const StringTable& table, QueryTopic topic) {
-	PopulateGrid(table);
-	if (table.empty()) {
-		return;
+	SetGridData(table);
+	if (!table.empty()) {
+		m_grid_entity_mode = true;
+		m_grid_entity_topic = topic;
 	}
-	m_grid_entity_mode = true;
-	m_grid_entity_topic = topic;
+	RenderGrid();
+}
+
+void cMain::ApplyEntityEditableColumns() {
 	const int col_count = m_result_grid->GetNumberCols();
 	const int row_count = m_result_grid->GetNumberRows();
 	// Every List(Clients|Categories|Types|Accounts) table starts with an "ID" column, but
 	// the editable name column's label differs for accounts (AccountManager::List()'s own
 	// "Account name" vs the generic ManagerType<Child>::GetInfos()'s "Name") - look up both
 	// by label rather than assume a fixed index either way.
-	String name_col_label = (topic == QueryTopic::ACCOUNT) ? "Account name" : "Name";
+	String name_col_label = (m_grid_entity_topic == QueryTopic::ACCOUNT) ? "Account name" : "Name";
 	int name_col = -1;
 	for (int c = 0; c < col_count; ++c) {
 		String label = m_result_grid->GetColLabelValue(c);
@@ -617,7 +770,7 @@ void cMain::OnGridCellChanged(wxGridEvent& evt) {
 	String col_label = m_result_grid->GetColLabelValue(evt.GetCol());
 	String value = m_result_grid->GetCellValue(row, evt.GetCol());
 	if (m_grid_entity_mode) {
-		// The only editable column here is the name column PopulateGrid/UIOutputEntityTable
+		// The only editable column here is the name column ApplyEntityEditableColumns
 		// left unlocked, so col_label doesn't need re-checking - just read the row's own ID
 		// cell (self-describing regardless of row order) and rename.
 		String id_text = m_result_grid->GetCellValue(row, m_grid_entity_id_col);
@@ -721,8 +874,37 @@ void cMain::OnGridCellRightClick(wxGridEvent& evt) {
 	m_context_menu_topic = topic;
 	m_context_menu_target_id = target_id;
 	m_context_menu_target_name = target_name;
+	m_context_menu_merge_others.clear();
+	// Merge only makes sense for CLIENT/CATEGORY/TYPE (the only topics with a MergeQuery),
+	// and only in the entity listing, where a whole row is one entity and other whole rows
+	// can be selected alongside it via GetSelectedRows() (row-label click/drag selection).
+	if (m_grid_entity_mode &&
+		((topic == QueryTopic::CLIENT) || (topic == QueryTopic::CATEGORY) || (topic == QueryTopic::TYPE))) {
+		for (int r : m_result_grid->GetSelectedRows()) {
+			if ((r < 0) || (r >= m_result_grid->GetNumberRows())) {
+				continue;
+			}
+			long other_id_val;
+			if (!m_result_grid->GetCellValue(r, m_grid_entity_id_col).ToLong(&other_id_val)) {
+				continue;
+			}
+			Id other_id((Id::Type)other_id_val);
+			if (other_id != target_id) {
+				m_context_menu_merge_others.insert(other_id);
+			}
+		}
+	}
 	wxMenu menu;
-	menu.Append(MENU_CTX_ADD_KEYWORD, "Add keyword...");
+	if (!m_context_menu_merge_others.empty()) {
+		// Multiple entities selected - "Add keyword..." only ever targets the single row
+		// clicked, which would be misleading/ambiguous here, so offer only the merge.
+		String label = "Merge ";
+		label << (unsigned long)(m_context_menu_merge_others.size() + 1) << " selected "
+			<< Topic2String(topic) << "s into '" << target_name << "'...";
+		menu.Append(MENU_CTX_MERGE_SELECTED, label);
+	} else {
+		menu.Append(MENU_CTX_ADD_KEYWORD, "Add keyword...");
+	}
 	m_result_grid->PopupMenu(&menu, evt.GetPosition());
 }
 
@@ -742,6 +924,38 @@ void cMain::OnAddKeywordFromContextMenu(wxCommandEvent& evt) {
 	if (m_grid_entity_mode) {
 		UIOutputEntityTable(m_bank_file->GetSummary(m_context_menu_topic), m_context_menu_topic);
 	}
+	UpdateStatusBar();
+}
+
+void cMain::OnMergeSelectedFromContextMenu(wxCommandEvent& evt) {
+	evt.Skip();
+	if (m_context_menu_merge_others.empty()) {
+		return; // menu item isn't offered without this, but guard anyway
+	}
+	String confirm_msg = "Merge ";
+	confirm_msg << (unsigned long)(m_context_menu_merge_others.size() + 1) << " selected "
+		<< Topic2String(m_context_menu_topic) << "s into '" << m_context_menu_target_name
+		<< "'? This cannot be undone (short of not saving).";
+	if (wxMessageBox(confirm_msg, wxT("Confirm Merge"), wxICON_QUESTION | wxYES_NO) != wxYES) {
+		return;
+	}
+	MergeQuery* mq = nullptr;
+	if (m_context_menu_topic == QueryTopic::CLIENT) {
+		mq = new ClientMergeQuery;
+	} else if (m_context_menu_topic == QueryTopic::CATEGORY) {
+		mq = new CategoryMergeQuery;
+	} else if (m_context_menu_topic == QueryTopic::TYPE) {
+		mq = new TypeMergeQuery;
+	} else {
+		return; // OnGridCellRightClick only offers this menu item for these three topics
+	}
+	mq->AddTargetId(m_context_menu_target_id);
+	mq->AddOtherIds(m_context_menu_merge_others);
+	WQuery wq;
+	wq.AddWElement(mq);
+	m_bank_file->MakeQuery(wq);
+	// Re-list rather than leave the now-merged-away rows showing, same as the rename flow.
+	UIOutputEntityTable(m_bank_file->GetSummary(m_context_menu_topic), m_context_menu_topic);
 	UpdateStatusBar();
 }
 
@@ -949,7 +1163,7 @@ void cMain::SizeUpdate(wxSizeEvent& evt) {
 		m_info_textctrl->SetSize(evt.GetSize().GetWidth() - 55, 60);
 	}
 	if (m_result_grid) {
-		m_result_grid->SetSize(evt.GetSize() - wxSize(55, 325));
+		m_result_grid->SetSize(evt.GetSize() - wxSize(55, 360));
 	}
 }
 

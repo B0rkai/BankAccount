@@ -97,9 +97,20 @@ class cMain :
     ControlGroupUtility m_ctrl_grp_utility;
 
     wxGrid* m_result_grid = nullptr;
+    wxTextCtrl* m_grid_filter_textctrl = nullptr;
     wxTextCtrl* m_info_textctrl = nullptr;
     std::unique_ptr<BankAccountFile> m_bank_file;
     std::vector<AccountManager::TransactionIdentity> m_grid_identities;
+    // Full, unsorted/unfiltered result behind whatever is currently displayed in
+    // m_result_grid, plus its parallel identities (transaction mode only) - kept around so
+    // a header click (sort) or typing in the filter box can re-derive the displayed rows
+    // without re-running the query. m_grid_identities above always mirrors the *displayed*
+    // (sorted/filtered) row order; m_grid_master_identities mirrors m_grid_master_table.
+    StringTable m_grid_master_table;
+    std::vector<AccountManager::TransactionIdentity> m_grid_master_identities;
+    bool m_grid_editable_transactions = false;
+    int m_grid_sort_col = -1;
+    bool m_grid_sort_ascending = true;
     // Set only while the grid shows a CLIENT/CATEGORY/TYPE/ACCOUNT listing (List Clients/
     // Categories/Types/Accounts) rather than transactions - OnGridCellChanged needs this to
     // know which manager an edited "Name" cell's row belongs to, and m_grid_entity_id_col
@@ -119,15 +130,37 @@ class cMain :
     QueryTopic m_context_menu_topic = QueryTopic::CLIENT;
     Id m_context_menu_target_id = Id(INVALID_ID);
     String m_context_menu_target_name;
+    // Populated alongside the above, only when the right-click landed on a CLIENT/CATEGORY/
+    // TYPE entity row while other whole rows were also selected (GetSelectedRows()) - the
+    // other selected entities' ids, to merge into m_context_menu_target_id. Empty otherwise,
+    // which is what OnGridCellRightClick uses to decide whether to offer "Merge..." (and hide
+    // the single-target "Add keyword...") at all.
+    IdSet m_context_menu_merge_others;
     LogViewerFrame* m_log_viewer_frame = nullptr;
     void UIOutputText(const String& info);
     void UIOutputTable(const StringTable& table);
     void UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions);
     void UIOutputEntityTable(const StringTable& table, QueryTopic topic);
-    void PopulateGrid(const StringTable& table);
+    // Resets the grid's cached master data/mode to `table`; callers then set whichever mode
+    // flags apply (m_grid_editable_transactions/m_grid_master_identities or m_grid_entity_mode/
+    // m_grid_entity_topic) before calling RenderGrid().
+    void SetGridData(const StringTable& table);
+    // Fills m_result_grid's cells from `table` as-is (no caching, no mode logic) - the raw
+    // widget-population step shared by RenderGrid.
+    void FillGridWidget(const StringTable& table);
+    // Rebuilds the displayed grid from m_grid_master_table/m_grid_master_identities, applying
+    // the current filter text (m_grid_filter_textctrl) and sort column/direction, then
+    // reapplies whichever per-mode editable-column rules apply. Call after SetGridData, after
+    // a header click changes sort state, or after the filter text changes.
+    void RenderGrid();
+    void ApplyTransactionEditableColumns();
+    void ApplyEntityEditableColumns();
+    void OnGridLabelLeftClick(wxGridEvent& evt);
+    void OnGridFilterTextChanged(wxCommandEvent& evt);
     void OnGridCellChanged(wxGridEvent& evt);
     void OnGridCellRightClick(wxGridEvent& evt);
     void OnAddKeywordFromContextMenu(wxCommandEvent& evt);
+    void OnMergeSelectedFromContextMenu(wxCommandEvent& evt);
     void PrepareQuery(Query& query);
     void InitMenu();
     void InitControls();

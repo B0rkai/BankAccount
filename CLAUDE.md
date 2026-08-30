@@ -102,6 +102,23 @@ utility panels), wires wx event handlers, and drives load/save/import/query/cate
 actions. It also implements the `IManualResolve` and `INewAccount` callback interfaces so the
 backend can pop up resolution/new-account dialogs without depending on wx types.
 
+**Result grid**: `cMain::m_result_grid` is populated by three writer paths — `UIOutputTable`
+(read-only aggregate/summary tables), `UIOutputTable(table, transactions)` (editable Category/
+Desc columns, keyed off `AccountManager::TransactionIdentity` via `IdentifyAll`), and
+`UIOutputEntityTable` (editable Name column for List Clients/Categories/Types/Accounts). All
+three funnel through `SetGridData` (caches the full unsorted/unfiltered `StringTable` into
+`m_grid_master_table` plus its identities) and `RenderGrid` (derives the displayed rows from
+that cache by applying the filter-box text and the active sort column/direction, then
+repopulates the widget and reapplies the per-mode editable-column rules) — click a column
+header to sort (`StringTable::RIGHT_ALIGNED` columns like Amount/ID sort numerically, others as
+case-insensitive text); the sort indicator is a plain text suffix (` ^`/` v`) rather than
+`wxGrid`'s native arrow, since that only renders via `SetUseNativeColLabels()`/
+`UseNativeColHeader()`, which restyle column headers to the OS theme while leaving row labels
+on wx's plain style, an inconsistent look. Right-clicking an entity row offers "Add
+keyword..."; if other whole rows are also selected (drag/shift/ctrl-click on row labels -
+`wxGrid::GetSelectedRows()`), Client/Category/Type rows instead offer "Merge N selected...
+into '\<clicked row\>'" (Account has no `MergeQuery`, so no merge option there).
+
 **Domain/backend layers** (no UI dependency, in `include`/`src` outside `cMain`/dialogs):
 
 - `AccountManager` ([include/AccountManager.h](include/AccountManager.h)) is the aggregate root: owns all `Account`s
