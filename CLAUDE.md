@@ -11,16 +11,28 @@ by amount/date, and periodic yearly/monthly/daily summaries).
 
 ## Build
 
-There is no CMake/Makefile — this is a Visual Studio solution built with MSBuild.
+There is no CMake/Makefile — this is a Visual Studio solution built with MSBuild, with three
+projects:
 
-- Solution: `BankAccount.sln`, project: `BankAccount.vcxproj`.
-- Configurations: Debug/Release x86 and x64. **Only the x64 configurations are actually wired
-  up** (they set `IncludePath` and link `external/*.lib`); the Win32 configs are stale/unused.
-- Language standard: C++17. Character set: Unicode.
+- `BankAccountCore.vcxproj` — a static library with every GUI-free domain file (`AccountManager`,
+  `Account`, `Query`/`WQuery`, `ManagerType`/`ManagedType`, `Currency`, `Journal`, `Logger`, ...).
+  No wx GUI headers, no `cMain`/dialogs.
+- `BankAccount.vcxproj` — the real app (`cApp`/`cMain`/dialogs), links `BankAccountCore.lib` via
+  a `<ProjectReference>`.
+- `BankAccountTests.vcxproj` — a GoogleTest console exe (`tests/*.cpp`), also links
+  `BankAccountCore.lib`; never links wx GUI libs or xlnt (nothing it depends on needs them).
+
+All three build from `BankAccount.sln`. Configurations: Debug/Release x86 and x64. **Only the
+x64 configurations are actually wired up** (they set `IncludePath` and link `external/*.lib`);
+the Win32 configs are stale/unused. Language standard: C++17. Character set: Unicode.
+
 - Build from the IDE, or from a Developer Command Prompt:
   ```
   msbuild BankAccount.sln /p:Configuration=Debug /p:Platform=x64
   ```
+  (builds all three projects; MSBuild resolves `BankAccountCore` first via the project
+  reference). Build a single project the same way by pointing at its `.vcxproj` instead of the
+  `.sln`.
 - If `msbuild` isn't on `PATH` (e.g. no Developer Command Prompt, VS installed at a non-default
   location such as `E:\VS` instead of under `C:\Program Files`), locate it via `vswhere` instead of
   guessing a path:
@@ -30,9 +42,19 @@ There is no CMake/Makefile — this is a Visual Studio solution built with MSBui
   ```
   then invoke the returned path directly, e.g.
   `& <path> BankAccount.sln /p:Configuration=Debug /p:Platform=x64`.
-- No automated test suite/runner exists. `cMain::Test` and the `MENU_TEST_*` menu items
-  (Manual Resolver / New Account / Periodic Query) are manual, ad-hoc UI smoke tests wired to
-  hardcoded sample data (`AccountManager::GetTestData()`), not a real test framework.
+- **Automated tests**: `BankAccountTests.exe` (built above) is a normal GoogleTest binary — run
+  it directly, e.g. `x64\Debug\BankAccountTests.exe`. Add new test files under `tests/` and add
+  them to `BankAccountTests.vcxproj`'s `<ClCompile>` list - this solution uses explicit,
+  non-globbing file lists throughout, so a new file silently won't compile until it's added to
+  the relevant `.vcxproj` (and, for IDE display, the matching `.vcxproj.filters`).
+  `AccountManager` is abstract (`Modified() = 0`); tests need a trivial subclass overriding it
+  (see `TestAccountManager` in [tests/AccountManagerTests.cpp](tests/AccountManagerTests.cpp)) -
+  construct it with a `NullJournal` (`Journal.h`) to avoid touching `db\journal.txt`, and never
+  call `Log::InitLoggingSystem()` to keep `LogDebug()`/etc. as true no-ops (see the Testability
+  seams note under Core architecture). Separately, `cMain::Test` and the `MENU_TEST_*` menu items
+  (Manual Resolver / New Account / Periodic Query) remain manual, ad-hoc UI smoke tests wired to
+  hardcoded sample data (`AccountManager::GetTestData()`) - useful for eyeballing UI flows, not a
+  substitute for the GoogleTest suite above.
 
 ### External dependencies (not vendored in `include`/`src`)
 
@@ -57,6 +79,15 @@ The project expects these to exist as siblings/fixed paths on the dev machine, o
   Debug and Release.
 - Prebuilt wxWidgets/ZipLib/zlib/bzip2/lzma `.lib`/`.pdb` files are checked into `external/`
   and used for Release|x64 and general linking (`AdditionalLibraryDirectories`).
+- **GoogleTest** (`BankAccountTests.vcxproj` only) is a source checkout at
+  `C:\Users\<user>\source\googletest`, built locally via CMake the same way as xlnt:
+  `cmake -G "Visual Studio 17 2022" -A x64 -Dgtest_force_shared_crt=ON -DBUILD_GMOCK=ON` from a
+  `build` subfolder, then `cmake --build . --config Debug` and `--config Release`.
+  `-Dgtest_force_shared_crt=ON` is required - GoogleTest's CMake default is the static CRT
+  (`/MT`/`/MTd`), which mismatches this solution's default dynamic CRT (`/MD`/`/MDd`) and fails
+  to link otherwise. Produces `build\lib\Debug\{gtest,gtest_main}.lib` and
+  `build\lib\Release\{gtest,gtest_main}.lib` (same filenames per config, unlike xlnt's
+  `xlntd.lib`/`xlnt.lib` split), referenced directly from `BankAccountTests.vcxproj`.
 
 If these paths don't exist on a new machine, the build will fail on missing headers/libs before
 any source-level issue — check that first.

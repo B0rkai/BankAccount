@@ -4,8 +4,6 @@
 
 #include "IManualResolve.h"
 
-const String cINACTIVE("INACTIVE");
-
 enum CTRL_IDs {
 	SEARCH_TXTCTRL = 11000,
 	NEW_TXTCTRL,

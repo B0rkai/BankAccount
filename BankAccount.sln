@@ -5,6 +5,10 @@ VisualStudioVersion = 17.11.35303.130
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BankAccount", "BankAccount.vcxproj", "{E8D3F77A-4BFB-42DB-A93D-6675F0E29566}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BankAccountCore", "BankAccountCore.vcxproj", "{0CD48326-39DD-4765-A6C3-9517E4A7FA93}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BankAccountTests", "BankAccountTests.vcxproj", "{BC2DC4DB-0042-4731-98D8-BF3646BB4485}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +25,22 @@ Global
 		{E8D3F77A-4BFB-42DB-A93D-6675F0E29566}.Release|x64.Build.0 = Release|x64
 		{E8D3F77A-4BFB-42DB-A93D-6675F0E29566}.Release|x86.ActiveCfg = Release|Win32
 		{E8D3F77A-4BFB-42DB-A93D-6675F0E29566}.Release|x86.Build.0 = Release|Win32
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Debug|x64.ActiveCfg = Debug|x64
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Debug|x64.Build.0 = Debug|x64
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Debug|x86.ActiveCfg = Debug|Win32
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Debug|x86.Build.0 = Debug|Win32
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Release|x64.ActiveCfg = Release|x64
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Release|x64.Build.0 = Release|x64
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Release|x86.ActiveCfg = Release|Win32
+		{0CD48326-39DD-4765-A6C3-9517E4A7FA93}.Release|x86.Build.0 = Release|Win32
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Debug|x64.ActiveCfg = Debug|x64
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Debug|x64.Build.0 = Debug|x64
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Debug|x86.ActiveCfg = Debug|Win32
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Debug|x86.Build.0 = Debug|Win32
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Release|x64.ActiveCfg = Release|x64
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Release|x64.Build.0 = Release|x64
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Release|x86.ActiveCfg = Release|Win32
+		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

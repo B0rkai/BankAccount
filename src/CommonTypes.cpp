@@ -1,4 +1,5 @@
 #include "CommonTypes.h"
+#include "IManualResolve.h"
 #include <ctime>
 #include <iomanip>
 #include <sstream>
@@ -7,6 +8,11 @@
 const char* cCharArrEmpty = "";
 const char* cDIVIDER("  |  ");
 const String cStringEmpty;
+// Declared in IManualResolve.h (part of that interface's protocol - it's a sentinel
+// IManualResolve::DoManualResolve()'s callers/implementers compare 'create' against), but
+// defined here rather than in any one concrete IManualResolve implementer (ManualResolverDialog
+// is only the real app's implementer, and WQuery.cpp - domain code - depends on this symbol too).
+const String cINACTIVE("INACTIVE");
 
 bool IsEndl(const char& c) {
     return ((c == ENDL) || (c == CRET));
