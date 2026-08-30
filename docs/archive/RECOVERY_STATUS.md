@@ -1,7 +1,9 @@
-# Crash recovery status (scratch note, not a permanent doc)
+# Crash recovery status (archived scratch note, not a permanent doc)
 
-Delete this file once the durable-journal work below is finished — it's a handoff
-note for picking this back up in a fresh session, not project documentation.
+The durable-journal work this note tracked is finished (baseline-on-load, delete-on-
+graceful-exit, and the session-long file lock all landed and were verified live).
+Archived here rather than deleted, as a record of the design decisions and bugs
+found along the way; nothing here is meant to be kept up to date going forward.
 
 ## 2026-08-29 crash-recovery incident: CLOSED
 
@@ -246,3 +248,52 @@ than "Yes"/"No" - worth remembering if driving this dialog again.)
 This closes out the crash-recovery journal work: format, mutation-site coverage,
 baseline guard, replay engine, and now the user-facing trigger are all implemented
 and verified. Both Debug and Release build clean.
+
+## Baseline-on-load, exit cleanup, and session-long file lock (2026-08-30)
+
+User-reported gap after live-testing the above: a fresh journal (first mutation of a
+session, before any Save) had no `BASELINE` line at all, since only `Save()` wrote
+one - `WriteBaseline()` is now also called from `BankAccountFile::Load()`, right after
+`CheckBaseline()`, whenever nothing is pending to offer for recovery (no journal, a
+stale one, or an empty one). When something *is* pending, `Load()` still leaves the
+journal untouched, same as before, so its entries survive for a possible replay.
+
+Also: a graceful app exit (`cMain::~cMain()`) now always calls `Journal::Reset()`
+after the existing save-or-discard prompt, regardless of which the user chose - a
+clean shutdown never needs crash-recovery on the next launch, since either the
+changes just got saved (already re-baselined) or were knowingly left unsaved.
+
+Both of these plus a third ask (a lock so nothing else can edit the journal while a
+session is running) share one mechanism now: `Journal::Reset()` used to
+`std::remove()` the file and every other `Journal` method opened/closed it per call
+via a fresh `std::ofstream`/`ifstream`. Rewritten so all `Journal` file I/O
+(`Append`/`WriteBaseline`/`CheckBaseline`) goes through one `FILE*`, opened lazily on
+first use via `CreateFileA(..., FILE_SHARE_READ, ..., OPEN_ALWAYS, ...)` and kept open
+for the rest of the process's life - `FILE_SHARE_READ` without `FILE_SHARE_WRITE`
+means any other write-seeking handle on `db\journal.txt`, including one from a second
+instance of this app pointed at the same database, gets denied with a sharing
+violation, while read-only access (e.g. `ApplyRecoveryFile`'s own `ifstream`, or
+someone just looking at the file) still works. `Reset()` closes that handle (Windows
+won't delete a file this process still has open) and then actually deletes the file
+via `std::remove()` - a follow-up correction from an initial version that only
+truncated it to 0 bytes, functionally equivalent for `CheckBaseline()` but not what
+was asked for: the file itself, not just its content, should only exist between
+sessions when the last one didn't exit gracefully. `EnsureOpen()` lazily
+reopens/recreates it afterwards if the app keeps running (e.g. "Discard changes"
+reloading right after). New `Journal::Close()` releases the handle without deleting;
+called from `cMain::~cMain()` right after `Reset()`, as the last step of a graceful
+shutdown (redundant with the close `Reset()` already did, but kept for a clear
+single last-step call in the destructor).
+
+**Verified live in the sandbox**: a fresh load with no prior journal wrote
+`BASELINE\t<crc>` immediately, before any mutation. While one instance ran, a
+`System.IO.File.Open(..., FileShare.None)` write attempt from outside the process was
+denied ("A folyamat nem éri el a következő fájlt..." - Hungarian-locale sharing
+violation), while a read-only open with `FileShare.ReadWrite` still succeeded.
+Launching a second instance against the same sandbox database logged "cannot
+open/lock db\journal.txt (Win32 error 32) - is another instance of this app already
+running against this database?" and the second instance stayed up and usable rather
+than crashing (only its journal writes are silently unprotected, same as if the lock
+had never existed). A graceful exit with no pending changes (Alt+F4, no dirty state)
+left `db\journal.txt` at 0 bytes and unlocked afterward. Both Debug and Release build
+clean.

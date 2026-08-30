@@ -122,6 +122,13 @@ bool BankAccountFile::Load() {
 	}
 	m_state = NO_CHANGE;
 	m_pending_recovery = Journal::CheckBaseline(crc);
+	if (!m_pending_recovery) {
+		// Nothing worth offering to replay (no journal, a stale one, or an empty one) -
+		// (re)establish the baseline against what was just loaded right now, rather than
+		// waiting for the first Save(), so the very first mutation this session has a
+		// valid baseline to append against instead of landing in a headerless journal.
+		Journal::WriteBaseline(crc);
+	}
 	return true;
 }
 

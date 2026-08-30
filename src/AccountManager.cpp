@@ -291,6 +291,50 @@ void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& key
 	}
 }
 
+bool AccountManager::RenameId(const QueryTopic topic, Id id, const String& new_name) {
+	if (strlen(new_name) == 0) {
+		m_logger.LogError() << "RenameId() empty name";
+		return false;
+	}
+	bool change = false;
+	if (topic == QueryTopic::TYPE) {
+		change = m_ttype_man.Rename(id, new_name);
+	} else if (topic == QueryTopic::CLIENT) {
+		change = m_client_man.Rename(id, new_name);
+	} else if (topic == QueryTopic::CATEGORY) {
+		change = m_category_system.Rename(id, new_name);
+	} else if (topic == QueryTopic::ACCOUNT) {
+		// Not ManagerType-backed (Account lives in m_accounts, not inside a ManagerType<T>
+		// collection), so it can't reuse ManagerType<Child>::Rename() - same duplicate-name
+		// guard applied by hand instead, for the same reason: two accounts sharing a
+		// display name would be genuinely confusing in query filters/dropdowns.
+		Account* acc = m_accounts.at(id);
+		if (acc->GetName() != new_name) {
+			bool duplicate = false;
+			for (const Account* other : m_accounts) {
+				if ((other != acc) && other->CheckName(new_name)) {
+					m_logger.LogError() << "RenameId() '" << new_name.utf8_str() << "' already matches a different account: " << other->GetName().utf8_str();
+					duplicate = true;
+					break;
+				}
+			}
+			if (!duplicate) {
+				String old_name = acc->GetName();
+				acc->SetName(new_name);
+				m_logger.LogInfo() << "Account ID: " << (Id::Type)id << " renamed from '" << old_name.utf8_str() << "' to '" << new_name.utf8_str() << "'";
+				change = true;
+			}
+		}
+	} else {
+		m_logger.LogError() << "RenameId() wrong topic";
+	}
+	if (change) {
+		Modified();
+		Journal::AppendRename(topic, id, new_name);
+	}
+	return change;
+}
+
 namespace {
     std::vector<String> SplitOn(const String& text, char sep) {
         std::vector<String> parts;
@@ -317,6 +361,16 @@ namespace {
         if (tag == "MEMO") { out = QueryTopic::MEMO; return true; }
         return false;
     }
+
+    // Like TopicFromTag, but also accepts ACCOUNT - used only for parsing a topic *field*
+    // inside a KEYWORD/EDIT_TXN/MERGE/RENAME row (e.g. RENAME's own topic column). NOT used
+    // for the top-level row-tag dispatch below, where "ACCOUNT" is already a distinct,
+    // real tag (account creation) with its own dedicated branch - accepting it in
+    // TopicFromTag itself would misroute those rows into the generic CREATE branch instead.
+    bool TopicFieldFromTag(const String& tag, QueryTopic& out) {
+        if (tag == "ACCOUNT") { out = QueryTopic::ACCOUNT; return true; }
+        return TopicFromTag(tag, out);
+    }
 }
 
 AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& path, bool suppress_journal) {
@@ -340,7 +394,7 @@ AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& p
     std::vector<String> summary_lines;
     std::string raw_line;
     int line_no = 0;
-    int entries_created = 0, keywords_added = 0, transactions_added = 0, transactions_edited = 0, merges_applied = 0;
+    int entries_created = 0, keywords_added = 0, transactions_added = 0, transactions_edited = 0, merges_applied = 0, renames_applied = 0;
     while (std::getline(in, raw_line)) {
         ++line_no;
         // Only strip a stray trailing '\r' (in case the file has CRLF endings) and leading
@@ -485,6 +539,17 @@ AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& p
             Merge(merge_topic, from_ids, Id((Id::Type)v1));
             summary_lines.push_back("Merged " + std::to_string(from_ids.size()) + " " + f[1] + "(s) into #" + String(Id((Id::Type)v1)));
             ++merges_applied;
+        } else if (tag == "RENAME") {
+            // RENAME  topic(incl. ACCOUNT)  id  new_name
+            QueryTopic rename_topic;
+            if (!TopicFieldFromTag(f[1], rename_topic) || !f[2].ToLong(&v1) || f[3].empty()) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed RENAME row";
+                return result;
+            }
+            if (RenameId(rename_topic, Id((Id::Type)v1), f[3])) {
+                summary_lines.push_back(f[1] + " #" + String(Id((Id::Type)v1)) + " renamed to '" + f[3] + "'");
+                ++renames_applied;
+            }
         } else {
             m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": unrecognized tag '" << tag.utf8_str() << "'";
             return result;
@@ -506,8 +571,9 @@ AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& p
     }
     m_logger.LogInfo() << "ApplyRecoveryFile: created " << entries_created << " new entrie(s), applied "
         << keywords_added << " keyword(s), added " << transactions_added << " transaction(s), edited "
-        << transactions_edited << " transaction(s), applied " << merges_applied << " merge(s) - not saved yet";
-    if (entries_created || keywords_added || transactions_added || transactions_edited || merges_applied) {
+        << transactions_edited << " transaction(s), applied " << merges_applied << " merge(s), applied "
+        << renames_applied << " rename(s) - not saved yet";
+    if (entries_created || keywords_added || transactions_added || transactions_edited || merges_applied || renames_applied) {
         Modified();
     }
     PtrVector<const Transaction> touched;
@@ -850,6 +916,10 @@ void AccountManager::ApplyEdit(const TransactionIdentity& identity, WQueryElemen
 	if (changed) {
 		Journal::AppendTransactionEdit(identity.account_id, identity.position, element.GetTopic(), tr);
 	}
+}
+
+Id AccountManager::GetTransactionFieldId(const TransactionIdentity& identity, QueryTopic topic) {
+	return m_accounts.at(identity.account_id)->GetTransactionAt(identity.position).GetId(topic);
 }
 
 bool AccountManager::HasMissingExchangeRates() const {

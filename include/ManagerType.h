@@ -159,6 +159,34 @@ public:
 		return (Id)s;
 	}
 
+	// Renames an existing child's own name - never its group, which stays untouched
+	// (group/category-structure reorganization is a separate, not-yet-built feature).
+	// Guards against creating an ambiguous duplicate the same way Create() does: if
+	// new_name already high-confidence-matches a *different* child, the rename is
+	// refused rather than silently creating two entities with the same effective name
+	// (that's what Merge() is for).
+	bool Rename(const Id id, const String& new_name) {
+		if (strlen(new_name) == 0) {
+			m_logger.LogError() << "Rename() empty name for ID " << (Id::Type)id;
+			return false;
+		}
+		Child* child = m_children.at(id); // throws if out-of-bound
+		if (child->GetName() == new_name) {
+			return false; // no-op
+		}
+		for (const Id& match : SearchIdsHighConfidence(new_name, true)) {
+			if (match != id) {
+				m_logger.LogError() << "Rename() '" << new_name.utf8_str() << "' already matches a different ID: "
+					<< (Id::Type)match << " " << GetName(match).utf8_str() << " - use Merge instead";
+				return false;
+			}
+		}
+		String old_name = child->GetName();
+		child->SetName(new_name);
+		m_logger.LogInfo() << "ID: " << (Id::Type)id << " renamed from '" << old_name.utf8_str() << "' to '" << new_name.utf8_str() << "'";
+		return true;
+	}
+
 	bool AddKeyword(const Id id, const String& keyword, bool definitive = true) {
 		if (m_children.at(id)->AddKeyword(keyword, definitive)) {
 			m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id << " " << GetName(id).utf8_str() << (definitive ? "" : " (suggestion)");

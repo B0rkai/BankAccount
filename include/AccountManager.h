@@ -91,6 +91,12 @@ public:
 
 	Id CreateId(const QueryTopic topic, const String& name);
 	void AddKeyword(const QueryTopic topic, Id id, const String& keyword, bool definitive = true);
+	// Renames a CLIENT/CATEGORY/TYPE/ACCOUNT's own name - never its group/bank, which is
+	// left untouched (a separate, not-yet-built feature). CLIENT/CATEGORY/TYPE go
+	// through the shared ManagerType<Child>::Rename(); ACCOUNT is handled directly here
+	// since Account isn't ManagerType-backed (it lives in m_accounts, not inside one of
+	// the ManagerType<T> collections), even though it inherits NamedType the same way.
+	bool RenameId(const QueryTopic topic, Id id, const String& new_name);
 
 	struct RecoveryResult {
 		bool success = false;
@@ -130,6 +136,11 @@ public:
 	TransactionIdentity Identify(const Transaction* tr) const;
 	std::vector<TransactionIdentity> IdentifyAll(const PtrVector<const Transaction>& list) const;
 	void ApplyEdit(const TransactionIdentity& identity, WQueryElement& element);
+	// Resolves the CLIENT/CATEGORY/TYPE id a transaction's cell actually points to - not its
+	// displayed name, which is ambiguous to look back up for a grouped Category ("Group::Sub"
+	// display text doesn't match ManagedType::CheckName's bare-name-only comparison). Used by
+	// the grid's right-click "Add keyword" context menu to find the real target.
+	Id GetTransactionFieldId(const TransactionIdentity& identity, QueryTopic topic);
 
 	StringTable GetTestData() const;
 

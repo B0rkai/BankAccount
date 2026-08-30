@@ -19,6 +19,7 @@
 #include "ExcelExport.h"
 #include "MnbExchangeRateClient.h"
 #include "Journal.h"
+#include "AddKeywordDialog.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -107,6 +108,7 @@ enum CtrIds {
 #ifdef _DEBUG
 	MENU_REPLAY_JOURNAL,
 #endif
+	MENU_CTX_ADD_KEYWORD
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
@@ -144,6 +146,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 #endif
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
+	EVT_MENU(MENU_CTX_ADD_KEYWORD, OnAddKeywordFromContextMenu)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
@@ -162,6 +165,7 @@ cMain::cMain()
 	m_result_grid->EnableEditing(false);
 	m_result_grid->SetDefaultCellFont(GetMonoSpaceFont());
 	m_result_grid->Bind(wxEVT_GRID_CELL_CHANGED, &cMain::OnGridCellChanged, this);
+	m_result_grid->Bind(wxEVT_GRID_CELL_RIGHT_CLICK, &cMain::OnGridCellRightClick, this);
 
 	m_status_bar = new wxStatusBar(this, wxID_ANY, wxST_SIZEGRIP);
 	SetStatusBar(m_status_bar);
@@ -177,6 +181,13 @@ cMain::~cMain() {
 	if ((m_bank_file->GetState() == BankAccountFile::DIRTY) && (wxMessageBox(wxT("You have unsaved changes! Do you want to save before exit?"), wxT("Confirm Save"), wxICON_QUESTION | wxYES_NO) == wxYES)) {
 		m_bank_file->Save(true);
 	}
+	// A graceful exit never needs crash-recovery on the next launch, whether the changes
+	// above just got saved (Save() already re-baselined the journal) or were explicitly
+	// left unsaved (declined here, same as "Discard changes") - either way there is
+	// nothing left worth recovering, so leave nothing behind to prompt about, and release
+	// the session-long lock on it as the very last step.
+	Journal::Reset();
+	Journal::Close();
 }
 
 void cMain::Init() {
@@ -190,17 +201,19 @@ void cMain::List(wxCommandEvent& evt) {
 		return;
 	}
 	int id = evt.GetId();
+	QueryTopic topic;
 	if (id == MENU_LIST_CLIENTS) {
-		UIOutputTable(m_bank_file->GetSummary(QueryTopic::CLIENT));
+		topic = QueryTopic::CLIENT;
 	} else if (id == MENU_LIST_CATEGORIES) {
-		UIOutputTable(m_bank_file->GetSummary(QueryTopic::CATEGORY));
+		topic = QueryTopic::CATEGORY;
 	} else if (id == MENU_LIST_ACCOUNTS) {
-		UIOutputTable(m_bank_file->GetSummary(QueryTopic::ACCOUNT));
+		topic = QueryTopic::ACCOUNT;
 	} else if (id == MENU_LIST_TYPES) {
-		UIOutputTable(m_bank_file->GetSummary(QueryTopic::TYPE));
+		topic = QueryTopic::TYPE;
 	} else {
 		return;
 	}
+	UIOutputEntityTable(m_bank_file->GetSummary(topic), topic);
 }
 
 struct Previews {
@@ -496,9 +509,11 @@ void cMain::UIOutputTable(const StringTable& table) {
 	UIOutputTable(table, PtrVector<const Transaction>());
 }
 
-void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions) {
+void cMain::PopulateGrid(const StringTable& table) {
 	m_result_grid->EnableEditing(false);
 	m_grid_identities.clear();
+	m_grid_entity_mode = false;
+	m_grid_entity_id_col = -1;
 	if (m_result_grid->GetNumberRows()) {
 		m_result_grid->DeleteRows(0, m_result_grid->GetNumberRows());
 	}
@@ -524,17 +539,23 @@ void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transa
 		}
 	}
 	m_result_grid->AutoSizeColumns();
+}
 
+void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions) {
+	PopulateGrid(table);
 	if (transactions.empty()) {
 		return; // non-editable: List/summaries/periodic reports/exchange-rate table etc.
 	}
+	const int col_count = m_result_grid->GetNumberCols();
+	const int row_count = m_result_grid->GetNumberRows();
 	m_grid_identities = m_bank_file->IdentifyAll(transactions);
 	m_result_grid->EnableEditing(true);
 	int category_col = -1, desc_col = -1;
 	for (int c = 0; c < col_count; ++c) {
-		if (table[0][c] == "Category") {
+		String label = m_result_grid->GetColLabelValue(c);
+		if (label == "Category") {
 			category_col = c;
-		} else if (table[0][c] == "Desc") {
+		} else if (label == "Desc") {
 			desc_col = c;
 		}
 	}
@@ -552,14 +573,74 @@ void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transa
 	}
 }
 
+void cMain::UIOutputEntityTable(const StringTable& table, QueryTopic topic) {
+	PopulateGrid(table);
+	if (table.empty()) {
+		return;
+	}
+	m_grid_entity_mode = true;
+	m_grid_entity_topic = topic;
+	const int col_count = m_result_grid->GetNumberCols();
+	const int row_count = m_result_grid->GetNumberRows();
+	// Every List(Clients|Categories|Types|Accounts) table starts with an "ID" column, but
+	// the editable name column's label differs for accounts (AccountManager::List()'s own
+	// "Account name" vs the generic ManagerType<Child>::GetInfos()'s "Name") - look up both
+	// by label rather than assume a fixed index either way.
+	String name_col_label = (topic == QueryTopic::ACCOUNT) ? "Account name" : "Name";
+	int name_col = -1;
+	for (int c = 0; c < col_count; ++c) {
+		String label = m_result_grid->GetColLabelValue(c);
+		if (label == name_col_label) {
+			name_col = c;
+		} else if (label == "ID") {
+			m_grid_entity_id_col = c;
+		}
+	}
+	if ((name_col < 0) || (m_grid_entity_id_col < 0)) {
+		return; // unexpected shape - leave non-editable rather than guess
+	}
+	m_result_grid->EnableEditing(true);
+	for (int r = 0; r < row_count; ++r) {
+		for (int c = 0; c < col_count; ++c) {
+			m_result_grid->SetReadOnly(r, c, c != name_col);
+		}
+	}
+}
+
 void cMain::OnGridCellChanged(wxGridEvent& evt) {
+	if (m_in_grid_cell_changed) {
+		return; // re-entrant call (repopulating the grid below re-fires this event) - ignore
+	}
+	m_in_grid_cell_changed = true;
+	struct ResetGuard { bool& flag; ~ResetGuard() { flag = false; } } reset_guard{m_in_grid_cell_changed};
 	int row = evt.GetRow();
+	String col_label = m_result_grid->GetColLabelValue(evt.GetCol());
+	String value = m_result_grid->GetCellValue(row, evt.GetCol());
+	if (m_grid_entity_mode) {
+		// The only editable column here is the name column PopulateGrid/UIOutputEntityTable
+		// left unlocked, so col_label doesn't need re-checking - just read the row's own ID
+		// cell (self-describing regardless of row order) and rename.
+		String id_text = m_result_grid->GetCellValue(row, m_grid_entity_id_col);
+		long id_val;
+		if (!id_text.ToLong(&id_val)) {
+			return;
+		}
+		QueryTopic topic = m_grid_entity_topic;
+		if (!m_bank_file->RenameId(topic, Id((Id::Type)id_val), value)) {
+			UIOutputText("Could not rename - see the log for the reason (e.g. that name already belongs to a different entry; use Merge for that instead).");
+		}
+		// Re-list rather than leave the cell showing whatever was typed: on success this is
+		// what List() would already show, and on failure/no-op it reverts the cell to the
+		// real current name instead of silently displaying a rename that never happened.
+		UIOutputEntityTable(m_bank_file->GetSummary(topic), topic);
+		UpdateAccFilter();
+		UpdateStatusBar();
+		return;
+	}
 	if ((size_t)row >= m_grid_identities.size()) {
 		return;
 	}
 	const AccountManager::TransactionIdentity& identity = m_grid_identities[row];
-	String col_label = m_result_grid->GetColLabelValue(evt.GetCol());
-	String value = m_result_grid->GetCellValue(row, evt.GetCol());
 	if (col_label == "Category") {
 		Id id = m_bank_file->GetCategoryIdByFullName(value);
 		if (id == INVALID_ID) { // shouldn't happen from a closed dropdown, but guard anyway
@@ -574,6 +655,92 @@ void cMain::OnGridCellChanged(wxGridEvent& evt) {
 		m_bank_file->ApplyEdit(identity, q);
 	} else {
 		return;
+	}
+	UpdateStatusBar();
+}
+
+void cMain::OnGridCellRightClick(wxGridEvent& evt) {
+	if (!m_bank_file) {
+		return;
+	}
+	int row = evt.GetRow();
+	int col = evt.GetCol();
+	LogDebug() << "OnGridCellRightClick: row=" << row << " col=" << col;
+	if ((row < 0) || (col < 0)) {
+		return;
+	}
+	QueryTopic topic;
+	Id target_id(INVALID_ID);
+	String target_name;
+	if (m_grid_entity_mode) {
+		// Whole row is one entity here, regardless of which cell was clicked.
+		if ((m_grid_entity_id_col < 0) || (row >= m_result_grid->GetNumberRows())) {
+			return;
+		}
+		topic = m_grid_entity_topic;
+		long id_val;
+		if (!m_result_grid->GetCellValue(row, m_grid_entity_id_col).ToLong(&id_val)) {
+			return;
+		}
+		target_id = Id((Id::Type)id_val);
+		String name_col_label = (topic == QueryTopic::ACCOUNT) ? "Account name" : "Name";
+		int col_count = m_result_grid->GetNumberCols();
+		for (int c = 0; c < col_count; ++c) {
+			if (m_result_grid->GetColLabelValue(c) == name_col_label) {
+				target_name = m_result_grid->GetCellValue(row, c);
+				break;
+			}
+		}
+	} else {
+		// Transaction grid: only columns that actually name a CLIENT/CATEGORY/TYPE entity
+		// make sense here - resolve the real id off the underlying Transaction rather than
+		// the displayed name, which is ambiguous for a grouped Category ("Group::Sub"
+		// display text won't match ManagedType::CheckName's bare-name-only comparison the
+		// way a raw lookup-by-name would expect).
+		String col_label = m_result_grid->GetColLabelValue(col);
+		if (col_label == "Client") {
+			topic = QueryTopic::CLIENT;
+		} else if (col_label == "Category") {
+			topic = QueryTopic::CATEGORY;
+		} else if (col_label == "Type") {
+			topic = QueryTopic::TYPE;
+		} else {
+			return;
+		}
+		if ((size_t)row >= m_grid_identities.size()) {
+			return;
+		}
+		target_id = m_bank_file->GetTransactionFieldId(m_grid_identities[row], topic);
+		target_name = m_result_grid->GetCellValue(row, col);
+	}
+	if (target_id == INVALID_ID) {
+		return;
+	}
+	// Member state rather than a lambda capture - see the field comments in cMain.h for why
+	// (a capturing lambda bound here triggered an MSVC internal compiler error in Release).
+	m_context_menu_topic = topic;
+	m_context_menu_target_id = target_id;
+	m_context_menu_target_name = target_name;
+	wxMenu menu;
+	menu.Append(MENU_CTX_ADD_KEYWORD, "Add keyword...");
+	m_result_grid->PopupMenu(&menu, evt.GetPosition());
+}
+
+void cMain::OnAddKeywordFromContextMenu(wxCommandEvent& evt) {
+	evt.Skip();
+	String target_description = "Add keyword to ";
+	target_description.append(Topic2String(m_context_menu_topic)).append(": ").append(m_context_menu_target_name);
+	AddKeywordDialog dlg(this, target_description);
+	if (dlg.ShowModal() != 0) {
+		return;
+	}
+	String keyword = dlg.GetKeyword();
+	if (keyword.empty()) {
+		return;
+	}
+	m_bank_file->AddKeyword(m_context_menu_topic, m_context_menu_target_id, keyword, dlg.IsDefinitive());
+	if (m_grid_entity_mode) {
+		UIOutputEntityTable(m_bank_file->GetSummary(m_context_menu_topic), m_context_menu_topic);
 	}
 	UpdateStatusBar();
 }

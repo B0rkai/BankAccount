@@ -64,6 +64,9 @@
     <ClCompile Include="src\BankAccountFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\AddKeywordDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\Crc32.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -172,6 +175,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\BankAccountFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\AddKeywordDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\Crc32.h">

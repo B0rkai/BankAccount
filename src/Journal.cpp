@@ -1,8 +1,12 @@
 #include <fstream>
+#include <sstream>
+#include <filesystem>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <iomanip>
+#include <io.h>
+#include <windows.h>
 #include "Journal.h"
 #include "Transaction.h"
 #include "Logger.h"
@@ -16,8 +20,63 @@ namespace {
 		case QueryTopic::CATEGORY: return "CATEGORY";
 		case QueryTopic::TYPE: return "TYPE";
 		case QueryTopic::MEMO: return "MEMO";
+		case QueryTopic::ACCOUNT: return "ACCOUNT";
 		default: return "UNKNOWN";
 		}
+	}
+
+	FILE* s_journal_file = nullptr;
+
+	// Opens (creating if necessary) db\journal.txt and keeps it open for the rest of the
+	// process's life, with Windows sharing flags that deny write access to any other
+	// handle on the same file - including one opened by a second instance of this app
+	// pointed at the same database, or a text editor someone opens mid-session. Every
+	// Journal file operation goes through this single FILE*, both because that's what
+	// makes the lock effective (a second CreateFile call from this same process would hit
+	// the same sharing violation as an external one) and because it means the lock is
+	// naturally held for exactly as long as the journal is in use.
+	bool EnsureOpen() {
+		if (s_journal_file) {
+			return true;
+		}
+		std::error_code ec;
+		std::filesystem::create_directories("db", ec);
+		HANDLE handle = CreateFileA(DEFAULT_JOURNAL_FILE_PATH, GENERIC_READ | GENERIC_WRITE,
+			FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (handle == INVALID_HANDLE_VALUE) {
+			LogError() << "Recovery journal: cannot open/lock " << DEFAULT_JOURNAL_FILE_PATH
+				<< " (Win32 error " << GetLastError()
+				<< ") - is another instance of this app already running against this database?";
+			return false;
+		}
+		int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle), 0);
+		if (fd == -1) {
+			CloseHandle(handle);
+			LogError() << "Recovery journal: cannot bind a stream to " << DEFAULT_JOURNAL_FILE_PATH;
+			return false;
+		}
+		s_journal_file = _fdopen(fd, "r+b");
+		if (!s_journal_file) {
+			_close(fd); // also closes the underlying HANDLE
+			LogError() << "Recovery journal: cannot open a stream on " << DEFAULT_JOURNAL_FILE_PATH;
+			return false;
+		}
+		return true;
+	}
+
+	std::string ReadAll() {
+		if (!EnsureOpen()) {
+			return {};
+		}
+		fseek(s_journal_file, 0, SEEK_END);
+		long size = ftell(s_journal_file);
+		std::string content;
+		if (size > 0) {
+			content.resize((size_t)size);
+			fseek(s_journal_file, 0, SEEK_SET);
+			content.resize(fread(content.data(), 1, content.size(), s_journal_file));
+		}
+		return content;
 	}
 }
 
@@ -25,23 +84,44 @@ const char* Journal::FilePath() {
 	return DEFAULT_JOURNAL_FILE_PATH;
 }
 
+void Journal::Close() {
+	if (s_journal_file) {
+		fclose(s_journal_file); // releases the lock
+		s_journal_file = nullptr;
+	}
+}
+
 void Journal::Reset() {
+	// Close first - Windows won't delete a file this process still has open, and closing
+	// also drops the lock, which is fine here: EnsureOpen() will lazily recreate and
+	// re-lock db\journal.txt the next time anything actually needs it (WriteBaseline() at
+	// the next Load(), or the next Append()).
+	Close();
 	if (std::remove(DEFAULT_JOURNAL_FILE_PATH) == 0) {
 		LogInfo() << "Recovery journal reset (Discard changes)";
 	}
 }
 
 void Journal::WriteBaseline(uint32_t crc) {
-	std::ofstream out(DEFAULT_JOURNAL_FILE_PATH, std::ios::trunc);
-	out << "BASELINE\t" << std::hex << std::setw(8) << std::setfill('0') << crc << std::dec << "\n";
+	if (!EnsureOpen()) {
+		return;
+	}
+	std::ostringstream oss;
+	oss << "BASELINE\t" << std::hex << std::setw(8) << std::setfill('0') << crc << std::dec << "\n";
+	const std::string content = oss.str();
+	fseek(s_journal_file, 0, SEEK_SET);
+	fwrite(content.data(), 1, content.size(), s_journal_file);
+	fflush(s_journal_file);
+	_chsize_s(_fileno(s_journal_file), (__int64)content.size());
 }
 
 bool Journal::CheckBaseline(uint32_t crc) {
-	std::ifstream in(DEFAULT_JOURNAL_FILE_PATH);
-	if (!in) {
+	const std::string content = ReadAll();
+	if (content.empty()) {
 		LogDebug() << "No recovery journal present";
 		return false;
 	}
+	std::istringstream in(content);
 	std::string tag, hex;
 	in >> tag >> hex;
 	if (tag != "BASELINE") {
@@ -83,24 +163,27 @@ void Journal::Append(const String& op, const std::vector<String>& fields) {
 	if (s_suppressed) {
 		return;
 	}
-	static uint64_t seq = 0;
-	std::ofstream out(DEFAULT_JOURNAL_FILE_PATH, std::ios::app);
-	if (!out) {
+	if (!EnsureOpen()) {
 		LogError() << "Recovery journal: cannot open " << DEFAULT_JOURNAL_FILE_PATH << " for append - this change will NOT survive a crash before the next Save";
 		return;
 	}
+	static uint64_t seq = 0;
 	// seq/timestamp go on their own '#'-prefixed comment line rather than as leading
 	// fields on the operation line itself - AccountManager::ApplyRecoveryFile (which
 	// replays this same file) already skips '#' lines, and always expects a row's very
 	// first tab-field to be the operation tag, matching a hand-authored recovery file
 	// exactly. Diagnostic info stays human-visible without needing two file formats.
-	out << "# seq=" << ++seq << " ts=" << (uint64_t)std::time(nullptr) << "\n";
-	out << op.utf8_str();
+	std::ostringstream oss;
+	oss << "# seq=" << ++seq << " ts=" << (uint64_t)std::time(nullptr) << "\n";
+	oss << op.utf8_str();
 	for (const String& field : fields) {
-		out << "\t" << field.utf8_str();
+		oss << "\t" << field.utf8_str();
 	}
-	out << "\n";
-	out.flush();
+	oss << "\n";
+	const std::string line = oss.str();
+	fseek(s_journal_file, 0, SEEK_END);
+	fwrite(line.data(), 1, line.size(), s_journal_file);
+	fflush(s_journal_file);
 }
 
 void Journal::AppendTransactionEdit(Id account_id, size_t position, QueryTopic topic, const Transaction& tr) {
@@ -136,6 +219,10 @@ void Journal::AppendAccount(Id account_id, const String& account_number, const S
 
 void Journal::AppendKeyword(QueryTopic topic, Id id, const String& keyword, bool definitive) {
 	Append("KEYWORD", { TopicToTag(topic), String(id), keyword, definitive ? "1" : "0" });
+}
+
+void Journal::AppendRename(QueryTopic topic, Id id, const String& new_name) {
+	Append("RENAME", { TopicToTag(topic), String(id), new_name });
 }
 
 void Journal::AppendMerge(QueryTopic topic, const IdSet& from, Id to) {

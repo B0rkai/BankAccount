@@ -10,11 +10,31 @@ class Transaction;
 // app calls one of the Append*() methods as it happens; each append is flushed to
 // disk immediately, so a crash can only ever tear the single most-recently-written
 // line, never corrupt an earlier one. `BankAccountFile::Save()` calls WriteBaseline()
-// (which truncates everything before it) only after a confirmed successful save;
-// "Discard changes" calls Reset() before reloading, since an explicit discard must
-// throw away any pending journal along with the in-memory edits it protects; Load()
-// calls CheckBaseline() to find out whether a leftover journal still applies to what
-// was just loaded.
+// (which truncates everything before it) after a confirmed successful save; Load()
+// calls CheckBaseline() first (to find out whether a leftover journal still applies
+// to what was just loaded, and if so leaves it alone so its pending entries survive
+// for a possible replay) and then, only when nothing is pending, calls WriteBaseline()
+// itself with the freshly-loaded CRC - this is what guarantees the journal always has
+// a valid baseline to append against from the moment a database is loaded, rather than
+// only from the first Save(). "Discard changes" calls Reset() before reloading, since
+// an explicit discard must throw away any pending journal along with the in-memory
+// edits it protects; Reset() deletes db\journal.txt outright rather than emptying it,
+// so nothing is left on disk claiming a prior session's work exists once it's been
+// explicitly thrown away.
+//
+// All of the above (other than Reset(), which necessarily closes the file first - see
+// below) is funneled through a single db\journal.txt file handle, opened once (lazily,
+// on first use) and held open with Windows sharing flags that deny write access to any
+// other handle - including one from a second instance of this app - for as long as
+// this process is using it. cMain::~cMain() calls Reset() then Close() as the last
+// steps of a graceful shutdown, so a clean exit leaves no journal file behind at all;
+// an ungraceful exit (crash, force-kill, power loss) never runs either, so the file -
+// still holding whatever was last durably appended - is exactly what's there to offer
+// recovery from on the next launch. Reset() itself closes the handle before deleting
+// (Windows won't delete a file this process still has open) and EnsureOpen() happily
+// reopens/recreates it lazily afterwards if the app keeps running (e.g. "Discard
+// changes" reloading), so this is transparent outside of the brief window where the
+// file doesn't exist at all.
 //
 // Extensibility note: AppendTransactionEdit() is deliberately generic rather than
 // dispatching on the concrete WQueryElement subclass - it journals whichever single
@@ -29,6 +49,10 @@ class Transaction;
 class Journal {
 public:
 	static const char* FilePath();
+
+	// Releases the session-long lock on db\journal.txt, if held. Call exactly once, as the
+	// last step of a graceful shutdown - nothing else re-opens the file afterwards.
+	static void Close();
 
 	static void Reset();
 	static void WriteBaseline(uint32_t crc);
@@ -54,6 +78,10 @@ public:
 
 	// A keyword was added to an existing CLIENT/CATEGORY/TYPE entity.
 	static void AppendKeyword(QueryTopic topic, Id id, const String& keyword, bool definitive);
+
+	// A CLIENT/CATEGORY/TYPE/ACCOUNT entity's own name was changed (never its
+	// group/bank - out of scope for this operation).
+	static void AppendRename(QueryTopic topic, Id id, const String& new_name);
 
 	// A set of CLIENT/CATEGORY/TYPE entities were merged into one surviving id. Not
 	// just per-transaction bookkeeping: replaying this is what keeps every id

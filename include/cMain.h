@@ -100,11 +100,34 @@ class cMain :
     wxTextCtrl* m_info_textctrl = nullptr;
     std::unique_ptr<BankAccountFile> m_bank_file;
     std::vector<AccountManager::TransactionIdentity> m_grid_identities;
+    // Set only while the grid shows a CLIENT/CATEGORY/TYPE/ACCOUNT listing (List Clients/
+    // Categories/Types/Accounts) rather than transactions - OnGridCellChanged needs this to
+    // know which manager an edited "Name" cell's row belongs to, and m_grid_entity_id_col
+    // to know which column holds that row's Id (always "ID", but looked up by label like
+    // every other column here rather than assumed to be 0).
+    bool m_grid_entity_mode = false;
+    QueryTopic m_grid_entity_topic = QueryTopic::CLIENT;
+    int m_grid_entity_id_col = -1;
+    // Re-entrancy guard for OnGridCellChanged: repopulating the grid mid-handler (e.g. after
+    // a rename, to revert/refresh the displayed value) turns out to re-fire the cell-changed
+    // event for the row still mid-edit, which would otherwise recurse without end.
+    bool m_in_grid_cell_changed = false;
+    // Target captured by OnGridCellRightClick for the context menu's "Add keyword..." entry,
+    // consumed by OnAddKeywordFromContextMenu - member state rather than a lambda capture,
+    // since a capturing lambda bound as a wx event handler here triggered an MSVC internal
+    // compiler error in Release (/GL) builds.
+    QueryTopic m_context_menu_topic = QueryTopic::CLIENT;
+    Id m_context_menu_target_id = Id(INVALID_ID);
+    String m_context_menu_target_name;
     LogViewerFrame* m_log_viewer_frame = nullptr;
     void UIOutputText(const String& info);
     void UIOutputTable(const StringTable& table);
     void UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions);
+    void UIOutputEntityTable(const StringTable& table, QueryTopic topic);
+    void PopulateGrid(const StringTable& table);
     void OnGridCellChanged(wxGridEvent& evt);
+    void OnGridCellRightClick(wxGridEvent& evt);
+    void OnAddKeywordFromContextMenu(wxCommandEvent& evt);
     void PrepareQuery(Query& query);
     void InitMenu();
     void InitControls();

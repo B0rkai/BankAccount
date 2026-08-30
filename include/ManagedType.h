@@ -18,6 +18,7 @@ class NamedType {
 public:
 	inline NamedType(const String& name) : m_name(name) {}
 	inline const String& GetName() const { return m_name; }
+	inline void SetName(const String& name) { m_name = name; }
 	inline void SetGroupName(const String& group) { m_group_name = group; }
 	inline const String& GetGroupName() const { return m_group_name; }
 	String GetFullName() const;
