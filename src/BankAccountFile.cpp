@@ -3,6 +3,8 @@
 #include "BankAccountFile.h"
 #include "Logger.h"
 #include "ZipFile.h"
+#include "Crc32.h"
+#include "Journal.h"
 
 static const char* DEFAULT_UNCOMPRESSED_FILE_PATH("db\\BankAccount.txt");
 static const char* PASSWORD = "pass";
@@ -78,6 +80,7 @@ bool BankAccountFile::Load() {
 		return false; // do nothing, it is already synced
 	}
 	bool compressed = !std::filesystem::exists(DEFAULT_UNCOMPRESSED_FILE_PATH);
+	uint32_t crc = CRC32_INIT;
 	if (compressed) {
 		if (!std::filesystem::exists((std::string)m_filename)) {
 			return false;
@@ -97,17 +100,28 @@ bool BankAccountFile::Load() {
 		// (or none is provided) the return value will be nullptr
 		std::istream* decompressStream = entry->GetDecompressionStream();
 		{
-			Stream(*decompressStream);
+			Crc32InputStreambuf crc_buf(decompressStream->rdbuf());
+			std::istream crc_in(&crc_buf);
+			Stream(crc_in);
+			crc = crc_buf.Value();
 		}
 		LogInfo() << "Database loaded from saved file";
 	} else {
 		LogDebug() << "Loading from plain csv file: " << DEFAULT_UNCOMPRESSED_FILE_PATH;
-		std::ifstream in(DEFAULT_UNCOMPRESSED_FILE_PATH);
+		// Binary mode: ZipSave() below always reads/writes the plain file as raw bytes
+		// (its own contentStream is opened std::ios::binary), so text-mode's \n<->\r\n
+		// translation here would make the CRC32 computed on this path disagree with the
+		// one computed on the compressed (.baf) load path for byte-identical content.
+		std::ifstream real_in(DEFAULT_UNCOMPRESSED_FILE_PATH, std::ios::binary);
+		Crc32InputStreambuf crc_buf(real_in.rdbuf());
+		std::istream in(&crc_buf);
 		Stream(in);
+		crc = crc_buf.Value();
 		LogWarn() << "Database loaded from open csv file!! Please save it as encrypted BAF database file!";
 
 	}
 	m_state = NO_CHANGE;
+	m_pending_recovery = Journal::CheckBaseline(crc);
 	return true;
 }
 
@@ -121,9 +135,15 @@ bool BankAccountFile::Save(const bool compress) {
 	if (!std::filesystem::exists((std::string)folder)) {
 		std::filesystem::create_directories((std::string)folder);
 	}
+	uint32_t crc = CRC32_INIT;
 	{
-		std::ofstream out(DEFAULT_UNCOMPRESSED_FILE_PATH);
+		// Binary mode - see the matching comment on the Load() plain-file branch.
+		std::ofstream real_out(DEFAULT_UNCOMPRESSED_FILE_PATH, std::ios::binary);
+		Crc32OutputStreambuf crc_buf(real_out.rdbuf());
+		std::ostream out(&crc_buf);
 		Stream(out);
+		out.flush();
+		crc = crc_buf.Value();
 	}
 	if (compress) {
 		try {
@@ -140,6 +160,10 @@ bool BankAccountFile::Save(const bool compress) {
 		LogWarn() << "Database saved into plain csv file!! " << DEFAULT_UNCOMPRESSED_FILE_PATH;
 	}
 	m_state = NO_CHANGE;
+	// Only rebaseline (truncate) the journal after a fully confirmed successful save -
+	// never before/during - so a crash mid-save leaves the OLD journal intact, still
+	// correctly pointing at the OLD (still-valid, since this save never completed) file.
+	Journal::WriteBaseline(crc);
 	return true;
 }
 

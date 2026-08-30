@@ -42,7 +42,11 @@ public:
 	size_t Size() const;
 	void AddTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const char* memo, const Id category_id = 0, const char* desc = cCharArrEmpty);
 	void MakeQuery(Query& query) const;
-	void MakeQuery(WQuery& query);
+	// changed is set to true (never reset to false) as soon as any transaction is actually
+	// mutated - an out-param rather than a return value so partial progress made before a
+	// mid-scan abort (WQueryElement::CheckTransaction throwing, e.g. a manual-resolve Abort)
+	// is still visible to the caller even though the throw unwinds past any return statement.
+	void MakeQuery(WQuery& query, bool& changed);
 	inline virtual const Currency* GetCurrency() const override { return m_curr; }
 
 	const Transaction* GetFirstRecord() const;

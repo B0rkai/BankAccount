@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <fstream>
 #include <set>
+#include <memory>
 #include "AccountManager.h"
 #include "CommonTypes.h"
 #include "Account.h"
@@ -12,6 +13,7 @@
 #include "IManualResolve.h"
 #include "INewAccount.h"
 #include "MnbExchangeRateClient.h"
+#include "Journal.h"
 
 struct data {
 	String name;
@@ -57,6 +59,7 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Stri
 	m_accounts.push_back(new Account(size, account_number, acc_name, curr));
 	m_accounts.back()->SetGroupName(bank_name);
 	m_logger.LogInfo() << "NEW Account '" << m_accounts.back()->GetName() << "' created";
+	Journal::AppendAccount(Id((Id::Type)size), account_number, acc_name, bname, MakeCurrency(curr)->GetShortName());
 	return (uint8_t)size;
 }
 
@@ -284,6 +287,7 @@ void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& key
 	}
 	if (change) {
 		Modified();
+		Journal::AppendKeyword(topic, id, keyword, definitive);
 	}
 }
 
@@ -307,19 +311,36 @@ namespace {
         if (tag == "CLIENT") { out = QueryTopic::CLIENT; return true; }
         if (tag == "CATEGORY") { out = QueryTopic::CATEGORY; return true; }
         if (tag == "TYPE") { out = QueryTopic::TYPE; return true; }
+        // MEMO is never a valid top-level row tag (nothing "creates" a memo), only a topic
+        // value inside an EDIT_TXN row's own fields - safe to accept here too since a
+        // well-formed CLIENT/CATEGORY/TYPE/KEYWORD row's own tag/topic field is never "MEMO".
+        if (tag == "MEMO") { out = QueryTopic::MEMO; return true; }
         return false;
     }
 }
 
-bool AccountManager::ApplyRecoveryFile(const String& path) {
+AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& path, bool suppress_journal) {
+    RecoveryResult result;
+    std::unique_ptr<JournalSuppressGuard> guard;
+    if (suppress_journal) {
+        guard = std::make_unique<JournalSuppressGuard>();
+    }
     std::ifstream in(std::string(path.utf8_str()));
     if (!in) {
         m_logger.LogError() << "ApplyRecoveryFile: could not open " << path.utf8_str();
-        return false;
+        return result;
     }
+    // Positions, not pointers/references: this loop appends to m_transactions (which can
+    // reallocate on any account it touches more than once) and, for the non-journal path
+    // below, Sort() reorders it afterward - either would silently invalidate a raw
+    // Transaction* captured mid-loop. An (account, position) pair stays meaningful across
+    // appends (indices aren't affected by a vector growing) and is resolved to real
+    // pointers only at the very end, after we know whether a reorder happened.
+    std::vector<std::pair<Id, size_t>> touched_positions;
+    std::vector<String> summary_lines;
     std::string raw_line;
     int line_no = 0;
-    int entries_created = 0, keywords_added = 0, transactions_added = 0;
+    int entries_created = 0, keywords_added = 0, transactions_added = 0, transactions_edited = 0, merges_applied = 0;
     while (std::getline(in, raw_line)) {
         ++line_no;
         // Only strip a stray trailing '\r' (in case the file has CRLF endings) and leading
@@ -340,11 +361,13 @@ bool AccountManager::ApplyRecoveryFile(const String& path) {
         const String& tag = f[0];
         QueryTopic topic;
         long v1 = 0, v2 = 0, v3 = 0, v4 = 0, v5 = 0;
-        if (TopicFromTag(tag, topic) && (tag != "KEYWORD")) {
+        if (tag == "BASELINE") {
+            continue; // journal metadata, not an operation to replay
+        } else if (TopicFromTag(tag, topic) && (tag != "KEYWORD") && (tag != "MEMO")) {
             // CLIENT|CATEGORY|TYPE  expected_id  name  groupname(may be empty)  keywords(pipe-separated, may be empty)
             if (!f[1].ToLong(&v1) || f[2].empty()) {
                 m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed " << tag.utf8_str() << " row";
-                return false;
+                return result;
             }
             String fullname = f[3].empty() ? f[2] : (f[3] + "::" + f[2]);
             Id new_id = CreateId(topic, fullname);
@@ -352,7 +375,7 @@ bool AccountManager::ApplyRecoveryFile(const String& path) {
                 m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": expected id " << v1
                     << " but got " << (Id::Type)new_id << " for '" << f[2].utf8_str()
                     << "' - stopping; recovery rows must be applied in the same order the originals were created";
-                return false;
+                return result;
             }
             for (const String& kw : SplitOn(f[4], '|')) {
                 if (!kw.empty()) {
@@ -360,48 +383,149 @@ bool AccountManager::ApplyRecoveryFile(const String& path) {
                     ++keywords_added;
                 }
             }
+            summary_lines.push_back(tag + " created: '" + fullname + "' (id " + String(new_id) + ")");
             ++entries_created;
         } else if (tag == "KEYWORD") {
             // KEYWORD  topic  id  keyword  definitive(1/0, optional - defaults to 1)
             QueryTopic kw_topic;
             if (!TopicFromTag(f[1], kw_topic) || !f[2].ToLong(&v1) || f[3].empty()) {
                 m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed KEYWORD row";
-                return false;
+                return result;
             }
             v2 = 1;
             if (!f[4].empty()) {
                 f[4].ToLong(&v2);
             }
             AddKeyword(kw_topic, Id((Id::Type)v1), f[3], v2 != 0);
+            summary_lines.push_back("Keyword '" + f[3] + "' added to " + f[1] + " #" + String(Id((Id::Type)v1)));
             ++keywords_added;
         } else if (tag == "TRANSACTION") {
             // TRANSACTION  account_id  date_serial  type_id  amount  client_id  category_id(optional)  memo(optional)  desc(optional)
             if (!f[1].ToLong(&v1) || !f[2].ToLong(&v2) || !f[3].ToLong(&v3) || !f[4].ToLong(&v4) || !f[5].ToLong(&v5)) {
                 m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed TRANSACTION row";
-                return false;
+                return result;
             }
             long category_id = 0;
             f[6].ToLong(&category_id); // stays 0 (Uncategorized) if empty/unparseable
             if ((size_t)v1 >= m_accounts.size()) {
                 m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": invalid account id " << v1;
-                return false;
+                return result;
             }
-            m_accounts[(Id::Type)v1]->AddTransaction((uint16_t)v2, Id((Id::Type)v3), (int32_t)v4, Id((Id::Type)v5), f[7].c_str(), Id((Id::Type)category_id), f[8].c_str());
+            Account* acc = m_accounts[(Id::Type)v1];
+            acc->AddTransaction((uint16_t)v2, Id((Id::Type)v3), (int32_t)v4, Id((Id::Type)v5), f[7].c_str(), Id((Id::Type)category_id), f[8].c_str());
+            touched_positions.push_back({Id((Id::Type)v1), acc->Size() - 1});
             ++transactions_added;
+        } else if (tag == "EDIT_TXN") {
+            // EDIT_TXN  account_id  position  topic(CLIENT|CATEGORY|TYPE|MEMO)  value
+            QueryTopic edit_topic;
+            if (!f[1].ToLong(&v1) || !f[2].ToLong(&v2) || !TopicFromTag(f[3], edit_topic)) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed EDIT_TXN row";
+                return result;
+            }
+            if ((size_t)v1 >= m_accounts.size()) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": invalid account id " << v1;
+                return result;
+            }
+            Account* acc = m_accounts[(Id::Type)v1];
+            if ((v2 < 0) || ((size_t)v2 >= acc->Size())) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": invalid transaction position " << v2 << " for account " << v1;
+                return result;
+            }
+            Transaction& tr = acc->GetTransactionAt((size_t)v2);
+            if (edit_topic == QueryTopic::MEMO) {
+                tr.AddDescription(f[4]);
+            } else {
+                if (!f[4].ToLong(&v5)) {
+                    m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed EDIT_TXN value";
+                    return result;
+                }
+                tr.GetId(edit_topic) = Id((Id::Type)v5);
+            }
+            touched_positions.push_back({Id((Id::Type)v1), (size_t)v2});
+            ++transactions_edited;
+        } else if (tag == "ACCOUNT") {
+            // ACCOUNT  expected_id  account_number  name  bank  currency
+            if (!f[1].ToLong(&v1) || f[2].empty()) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed ACCOUNT row";
+                return result;
+            }
+            Id new_id(INVALID_ID);
+            for (size_t i = 0; i < m_accounts.size(); ++i) {
+                if (m_accounts[i]->CheckAccNumber(f[2])) {
+                    new_id = Id((Id::Type)i);
+                    break;
+                }
+            }
+            if (new_id == INVALID_ID) {
+                new_id = Id((Id::Type)m_accounts.size());
+                m_accounts.push_back(new Account((Id::Type)new_id, f[2], f[3], MakeCurrency(f[5].c_str())->Type()));
+                m_accounts.back()->SetGroupName(f[4]);
+            }
+            if (new_id != (Id::Type)v1) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": expected account id " << v1
+                    << " but got " << (Id::Type)new_id << " - stopping; recovery rows must be applied in the same order the originals were created";
+                return result;
+            }
+            summary_lines.push_back("Account created: '" + f[3] + "' (" + f[2] + ", id " + String(new_id) + ")");
+            ++entries_created;
+        } else if (tag == "MERGE") {
+            // MERGE  topic  from_ids(comma-separated)  to_id
+            QueryTopic merge_topic;
+            if (!TopicFromTag(f[1], merge_topic) || !f[3].ToLong(&v1)) {
+                m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": malformed MERGE row";
+                return result;
+            }
+            IdSet from_ids;
+            for (const String& id_str : SplitOn(f[2], ',')) {
+                long id_val;
+                if (id_str.ToLong(&id_val)) {
+                    from_ids.insert(Id((Id::Type)id_val));
+                }
+            }
+            Merge(merge_topic, from_ids, Id((Id::Type)v1));
+            summary_lines.push_back("Merged " + std::to_string(from_ids.size()) + " " + f[1] + "(s) into #" + String(Id((Id::Type)v1)));
+            ++merges_applied;
         } else {
             m_logger.LogError() << "ApplyRecoveryFile line " << line_no << ": unrecognized tag '" << tag.utf8_str() << "'";
-            return false;
+            return result;
         }
     }
-    for (Account* acc : m_accounts) {
-        acc->Sort();
+    // Journal-replay entries are already in correct chronological order per account (every
+    // TRANSACTION line was itself written by a live Account::AddTransaction() call, which
+    // only ever appends - same reason AccountManager::Import() never needs to re-sort
+    // either), so skipping Sort() here is what keeps touched_positions resolvable below.
+    // A hand-authored recovery file has no such guarantee, so the pre-existing Sort() stays
+    // for that path - at the cost of not being able to safely resolve exact positions
+    // afterward (Sort() reorders m_transactions, so an index captured before it no longer
+    // names the same transaction after), so that path reports counts only, no grid.
+    bool positions_still_valid = suppress_journal;
+    if (!suppress_journal) {
+        for (Account* acc : m_accounts) {
+            acc->Sort();
+        }
     }
     m_logger.LogInfo() << "ApplyRecoveryFile: created " << entries_created << " new entrie(s), applied "
-        << keywords_added << " keyword(s), added " << transactions_added << " transaction(s) - not saved yet";
-    if (entries_created || keywords_added || transactions_added) {
+        << keywords_added << " keyword(s), added " << transactions_added << " transaction(s), edited "
+        << transactions_edited << " transaction(s), applied " << merges_applied << " merge(s) - not saved yet";
+    if (entries_created || keywords_added || transactions_added || transactions_edited || merges_applied) {
         Modified();
     }
-    return true;
+    PtrVector<const Transaction> touched;
+    if (positions_still_valid) {
+        for (const auto& [account_id, position] : touched_positions) {
+            touched.push_back(&m_accounts.at(account_id)->GetTransactionAt(position));
+        }
+    } else if (!touched_positions.empty()) {
+        summary_lines.push_back(std::to_string(touched_positions.size()) + " transaction(s) added/edited - re-sorted afterward, so not individually listed here; use a query to review them");
+    }
+    String summary;
+    for (const String& line : summary_lines) {
+        summary.append(line).append(ENDL);
+    }
+    // PtrVector's assignment operator is deleted (const m_owner member - see ImportResult's
+    // own comment above), so the result has to be constructed fresh here rather than
+    // assigned into piecemeal, same as Import() already does for the same reason.
+    return RecoveryResult{ true, FormatResultTable(touched), touched, summary };
 }
 
 void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id to) {
@@ -417,6 +541,7 @@ void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id t
 	}
 	if (change) {
 		Modified();
+		Journal::AppendMerge(topic, from, to);
 	}
 }
 
@@ -463,6 +588,7 @@ Id AccountManager::CreateId(const QueryTopic topic, const String& name) {
 	}
 	if (size_after != size_before) {
 		Modified();
+		Journal::AppendCreate(topic, ret, name);
 	}
 	return ret;
 }
@@ -671,15 +797,19 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 	WQueryElement* wqe = query.WElement();
 	wqe->PreResolve();
 	wqe->Execute(this);
+	bool changed = false;
 	try {
 		for (auto* acc : m_accounts) {
-			acc->MakeQuery(query);
+			acc->MakeQuery(query, changed);
 		}
 	} catch (...) {
 		m_logger.LogWarn() << "User aboted WQuery execution";
 	}
 	QueryElement::SetResolveIf(nullptr);
 	WQueryElement::SetResolveIf(nullptr);
+	if (changed) {
+		Modified();
+	}
 	if (!query.ReturnList()) {
 		m_logger.LogDebug() << "Write Query execution finished";
 		return {};
@@ -713,10 +843,13 @@ void AccountManager::ApplyEdit(const TransactionIdentity& identity, WQueryElemen
 	Transaction& tr = m_accounts.at(identity.account_id)->GetTransactionAt(identity.position);
 	WQueryElement::SetResolveIf(this); // needed for CheckTransaction() to log via tr->PrintDebug()
 	element.PreResolve();
-	element.CheckTransaction(&tr);
+	bool changed = element.CheckTransaction(&tr);
 	element.Execute(this);
 	WQueryElement::SetResolveIf(nullptr);
 	Modified();
+	if (changed) {
+		Journal::AppendTransactionEdit(identity.account_id, identity.position, element.GetTopic(), tr);
+	}
 }
 
 bool AccountManager::HasMissingExchangeRates() const {
@@ -760,6 +893,7 @@ void AccountManager::UpdateExchangeRates(const std::function<void(const std::str
 	// regardless of which account(s) triggered it.
 	if (DownloadAllRates(m_exchange_rates, report_phase, &wanted_dates, cancel_token)) {
 		m_logger.LogInfo() << "Exchange rates: MNB archive downloaded and applied";
+		Modified();
 	}
 }
 

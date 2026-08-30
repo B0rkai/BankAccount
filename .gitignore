@@ -369,3 +369,7 @@ external/**/*.h
 # program files
 log/**
 db/**
+
+# editor/assistant local config, not part of the project
+.claude/
+.vscode/

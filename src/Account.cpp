@@ -3,6 +3,7 @@
 #include "Query.h"
 #include "WQuery.h"
 #include "Transaction.h"
+#include "Journal.h"
 
 #include <algorithm>
 
@@ -52,6 +53,7 @@ void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_
 	if (desc_ptr) {
 		new_tra.SetDiscription(desc_ptr);
 	}
+	Journal::AppendTransaction(GetId(), date, type_id, amount, client_id, category_id, memo, desc);
 }
 
 bool Account::RunQuery(Query& query, const Transaction* tr) const {
@@ -83,11 +85,17 @@ void Account::MakeQuery(Query& query) const {
 	}
 }
 
-void Account::MakeQuery(WQuery& query) {
+void Account::MakeQuery(WQuery& query, bool& changed) {
+	size_t position = 0;
 	for (auto& tr : m_transactions) {
-		if (RunQuery(query, &tr) && query.WElement()->CheckTransaction(&tr) && query.ReturnList()) {
-			query.GetResult().emplace_back(&tr);
+		if (RunQuery(query, &tr) && query.WElement()->CheckTransaction(&tr)) {
+			changed = true;
+			Journal::AppendTransactionEdit(GetId(), position, query.WElement()->GetTopic(), tr);
+			if (query.ReturnList()) {
+				query.GetResult().emplace_back(&tr);
+			}
 		}
+		++position;
 	}
 }
 

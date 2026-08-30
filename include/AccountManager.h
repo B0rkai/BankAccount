@@ -91,12 +91,27 @@ public:
 
 	Id CreateId(const QueryTopic topic, const String& name);
 	void AddKeyword(const QueryTopic topic, Id id, const String& keyword, bool definitive = true);
-	// TEMPORARY post-crash recovery helper: replays CLIENT/CATEGORY/TYPE creations, keyword
-	// additions, and transactions from a tab-separated recovery file (built from a memory dump)
-	// through this app's own normal creation methods - never touches the file format directly.
-	// Applies rows in order and stops at the first failure; nothing is saved to disk by this call
-	// itself (caller must Save() explicitly after reviewing the result). Remove once no longer needed.
-	bool ApplyRecoveryFile(const String& path);
+
+	struct RecoveryResult {
+		bool success = false;
+		StringTable table;
+		PtrVector<const Transaction> transactions; // every transaction added or edited, for grid review
+		String summary; // human-readable notes on everything else: entities created, keywords, merges
+	};
+	// Replays CLIENT/CATEGORY/TYPE/ACCOUNT creations, keyword additions, EDIT_TXN edits to
+	// existing transactions, MERGEs, and new TRANSACTIONs from a tab-separated file through this
+	// app's own normal mutation methods (CreateId/AddKeyword/Merge/Account::AddTransaction/...) -
+	// never touches the file format directly, so it stays correct as those methods evolve.
+	// Applies rows in strict order and stops at the first failure (each CREATE/ACCOUNT row's
+	// recorded id must match what its replay actually produces, or replay stops rather than
+	// silently drift). Nothing is saved to disk by this call itself - caller reviews
+	// RecoveryResult and Saves explicitly. Two callers: the "Apply Recovery File..." menu applies
+	// a hand-authored file with suppress_journal left false (normal journaling - if this session
+	// crashes again before Save, the just-applied recovery is itself recoverable); replaying
+	// db\journal.txt after a crash passes suppress_journal=true, since re-journaling the very
+	// history being replayed would be redundant at best and, worse, would mean writing to the
+	// same file this call is still reading from.
+	RecoveryResult ApplyRecoveryFile(const String& path, bool suppress_journal = false);
 	void ListOfAccNames(StringVector& vec) const;
 	void ListOfCategoryNames(StringVector& vec) const;
 	Id GetCategoryIdByFullName(const String& fullname) const;

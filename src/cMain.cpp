@@ -18,6 +18,7 @@
 #include "RunWithProgress.h"
 #include "ExcelExport.h"
 #include "MnbExchangeRateClient.h"
+#include "Journal.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -102,7 +103,10 @@ enum CtrIds {
 	MENU_TEST_EUR_RATES,
 	MENU_VIEW_LOG,
 	MENU_EXPORT_EXCEL,
-	MENU_APPLY_RECOVERY // TEMPORARY: post-crash dump-recovery helper, remove once no longer needed
+	MENU_APPLY_RECOVERY,
+#ifdef _DEBUG
+	MENU_REPLAY_JOURNAL,
+#endif
 };
 
 wxBEGIN_EVENT_TABLE(cMain, wxFrame)
@@ -135,6 +139,9 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_TEST_PERIODIC_QUERY, Test)
 	EVT_MENU(MENU_TEST_EUR_RATES, Test)
 	EVT_MENU(MENU_APPLY_RECOVERY, Test)
+#ifdef _DEBUG
+	EVT_MENU(MENU_REPLAY_JOURNAL, Test)
+#endif
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
 wxEND_EVENT_TABLE()
@@ -376,6 +383,10 @@ void cMain::LoadFile(wxCommandEvent& evt) {
 		BankAccountFile::ExtractSave(DEFAULT_SAVE_LOCATION);
 		return;
 	}
+	// "Discard changes": the user is explicitly throwing away unsaved work, so the
+	// recovery journal must go with it - reset it before reloading, not after, so a
+	// crash between here and the reload completing doesn't leave a half-updated one.
+	Journal::Reset();
 	DoLoad();
 }
 
@@ -430,10 +441,6 @@ void cMain::DoManualResolve(const String& details, String create, String& desc, 
 	}
 }
 
-void cMain::SetDirty() {
-	m_bank_file->Modified();
-}
-
 bool cMain::NewAccountDetails(const String& acc_number, String& name, String& bank, CurrencyType curr) {
 	NewAccountDetailsDialog dialog(this, acc_number, name, bank, curr);
 	return (dialog.ShowModal() == 0);
@@ -445,6 +452,36 @@ void cMain::DoLoad() {
 		m_status_bar->SetStatusText("ERROR: Missing data file");
 		LogWarn() << "Database missing! Load DAF database file, or import new datasets!";
 		return;
+	}
+	UpdateAccFilter();
+	UpdateStatusBar();
+	OfferJournalRecoveryIfPending();
+}
+
+void cMain::OfferJournalRecoveryIfPending() {
+	if (!m_bank_file->HasPendingRecovery()) {
+		return;
+	}
+	if (wxMessageBox(
+			"It looks like the last session ended without saving - there's a recovery "
+			"journal matching this database. Review and apply the unsaved work now?",
+			"Recover unsaved work?", wxICON_QUESTION | wxYES_NO) != wxYES) {
+		return; // leave the journal alone - only an explicit Discard changes clears it
+	}
+	ReplayJournal();
+}
+
+void cMain::ReplayJournal() {
+	AccountManager::RecoveryResult result = m_bank_file->ApplyRecoveryFile(Journal::FilePath(), true);
+	if (result.success) {
+		String msg = "Journal replayed in memory - review the grid below (and List Clients/Categories for anything not shown there), then Save manually if it looks right. Nothing is written to disk until you Save.";
+		if (!result.summary.empty()) {
+			msg.append("\n\n").append(result.summary);
+		}
+		UIOutputText(msg);
+		UIOutputTable(result.table, result.transactions);
+	} else {
+		UIOutputText("ERROR: journal replay stopped partway - see the log for the exact row/reason.");
 	}
 	UpdateAccFilter();
 	UpdateStatusBar();
@@ -680,6 +717,9 @@ void cMain::InitMenu() {
 	testmenu->Append(MENU_TEST_EUR_RATES, "List EUR Exchange Rates");
 	testmenu->AppendSeparator();
 	testmenu->Append(MENU_APPLY_RECOVERY, "Apply Recovery File... (TEMPORARY)");
+#ifdef _DEBUG
+	testmenu->Append(MENU_REPLAY_JOURNAL, "Replay Recovery Journal (TEST)");
+#endif
 
 	SetMenuBar(m_menu_bar);
 }
@@ -956,13 +996,29 @@ void cMain::Test(wxCommandEvent& evt) {
 		if (openFileDialog.ShowModal() == wxID_CANCEL) {
 			return;
 		}
-		if (m_bank_file->ApplyRecoveryFile(openFileDialog.GetPath())) {
-			UIOutputText("Recovery applied in memory - review it (e.g. List Clients/Categories, run a query), then Save manually if it looks right. Nothing is written to disk until you Save.");
+		AccountManager::RecoveryResult result = m_bank_file->ApplyRecoveryFile(openFileDialog.GetPath());
+		if (result.success) {
+			String msg = "Recovery applied in memory - review the grid below (and List Clients/Categories for anything not shown there), then Save manually if it looks right. Nothing is written to disk until you Save.";
+			if (!result.summary.empty()) {
+				msg.append("\n\n").append(result.summary);
+			}
+			UIOutputText(msg);
+			UIOutputTable(result.table, result.transactions);
 		} else {
 			UIOutputText("ERROR: recovery stopped partway - see the log for the exact row/reason. Nothing is saved automatically; you can fix the recovery file and just reload the database to start over cleanly.");
 		}
 		UpdateAccFilter();
 		UpdateStatusBar();
+#ifdef _DEBUG
+	} else if (id == MENU_REPLAY_JOURNAL) {
+		// Manual trigger for testing the replay engine end-to-end - the same path the
+		// startup "recover unsaved work?" prompt uses (see OfferJournalRecoveryIfPending).
+		if (!m_bank_file) {
+			UIOutputText("First load the database");
+			return;
+		}
+		ReplayJournal();
+#endif
 	}
 }
 

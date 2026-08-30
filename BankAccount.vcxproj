@@ -154,6 +154,8 @@
     <ClCompile Include="src\AccountManager.cpp" />
     <ClCompile Include="src\AccountNumber.cpp" />
     <ClCompile Include="src\BankAccountFile.cpp" />
+    <ClCompile Include="src\Crc32.cpp" />
+    <ClCompile Include="src\Journal.cpp" />
     <ClCompile Include="src\cApp.cpp" />
     <ClCompile Include="src\Category.cpp" />
     <ClCompile Include="src\CategorySystem.cpp" />
@@ -185,6 +187,8 @@
     <ClInclude Include="include\AccountManager.h" />
     <ClInclude Include="include\AccountNumber.h" />
     <ClInclude Include="include\BankAccountFile.h" />
+    <ClInclude Include="include\Crc32.h" />
+    <ClInclude Include="include\Journal.h" />
     <ClInclude Include="include\cApp.h" />
     <ClInclude Include="include\Category.h" />
     <ClInclude Include="include\CategorySystem.h" />

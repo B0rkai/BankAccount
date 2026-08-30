@@ -64,6 +64,12 @@
     <ClCompile Include="src\BankAccountFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\Crc32.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Journal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\ClientManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -166,6 +172,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\BankAccountFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Crc32.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Journal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ClientManager.h">

@@ -21,5 +21,4 @@ public:
 	// transaction-type string) - offered to the user as a one-click "copy this exactly" keyword,
 	// useful for topics like TYPE that require an exact keyword match rather than a substring one.
 	virtual void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional, const String& exact_value = cStringEmpty) = 0;
-	virtual void SetDirty() = 0;
 };

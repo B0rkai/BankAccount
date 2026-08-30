@@ -36,6 +36,7 @@ public:
 	Id& GetId(const QueryTopic topic);
 	CurrencyType GetCurrencyType() const;
 	void AddDescription(const String& desc);
+	inline String GetDescription() const { return m_desc_ptr ? *m_desc_ptr : cStringEmpty; }
 	inline void SetDiscription(String* ptr) { m_desc_ptr = ptr; }
 
 	enum Debug {

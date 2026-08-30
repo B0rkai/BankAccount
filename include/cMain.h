@@ -117,6 +117,12 @@ class cMain :
     void DateFilterToggle(wxCommandEvent& evt);
     void LoadFile(wxCommandEvent& evt);
     void DoLoad();
+    // Applies db\journal.txt (suppressing further journaling while doing so) and shows
+    // the result the same way any other query/import result is shown - the grid for
+    // touched transactions, text for everything else. Shared by the startup
+    // recover-unsaved-work prompt and (Debug builds only) the manual test menu item.
+    void ReplayJournal();
+    void OfferJournalRecoveryIfPending();
     void SaveFile(wxCommandEvent& evt);
     void Categorize(wxCommandEvent& evt);
     void QueryButtonClicked(wxCommandEvent& evt);
@@ -132,7 +138,6 @@ class cMain :
     void UpdateAccFilter();
     virtual ManualResolveResult ManualResolve(const String& tr_details, const QueryTopic topic, const IdSet& matches, Id& select, String& create_name, String& keyword, bool& keyword_definitive, String& desc, bool optional, const String& exact_value) override;
     virtual void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional, const String& exact_value) override;
-    virtual void SetDirty() override;
     virtual bool NewAccountDetails(const String& acc_number, String& name, String& bank, CurrencyType curr) override;
 public:
     cMain();
