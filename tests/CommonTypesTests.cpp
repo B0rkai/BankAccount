@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "CommonTypes.h"
+#include <sstream>
 
 namespace {
 
@@ -124,6 +125,35 @@ TEST(ParseMultiValueStringTest, TrailingSeparatorProducesEmptyLastElement) {
     ASSERT_EQ(result.size(), 2u);
     EXPECT_EQ(result[0], "a");
     EXPECT_EQ(result[1], "");
+}
+
+// SEVERITY NOTE: like AccountNumberTest.DISABLED_CrashesOnMostlyLowercaseGarbageOfSufficientLength
+// (AccountNumberTests.cpp), this is a hang, not a wrong-answer bug - arguably worse in practice
+// since a crash at least terminates and can be reported, while a hang looks like the app froze.
+//
+// StreamString(istream&, String&)'s unquoted-mode read loop only ever checks for the *intended*
+// end delimiter (a comma) or a line ending (via IsEndl(in.peek())) to stop - it never checks the
+// stream's own fail/eof state. istream::peek() on an exhausted/failed stream returns the int
+// constant EOF (-1), which IsEndl() (taking a `const char&`) then implicitly narrows to a char -
+// on this platform that value is never equal to '\n' or '\r', so IsEndl() reports false and the
+// loop's only exit check never fires. Meanwhile `in >> std::noskipws >> c` on an already-failed
+// stream leaves `c` unchanged rather than throwing, so the loop condition `c != end` also never
+// flips true->false on its own. The result is an unconditional infinite loop with no progress
+// and no way out, reading from any istream that runs out of input mid-field instead of a proper
+// terminator - reachable from a truncated or corrupted save file (db\BankAccount.txt), not just
+// a contrived test. This is used throughout serialization (ManagedType, Account, Client, ...),
+// so a single truncated field anywhere in a save file could hang the whole app on load.
+//
+// DISABLED because it hangs the test process indefinitely rather than failing cleanly - do not
+// remove the DISABLED_ prefix without first adding a timeout mechanism around the call, since
+// gtest itself has no per-test timeout. A real fix would have the while loop also break (and
+// signal failure to the caller, e.g. by leaving 'out' empty and setting the stream's failbit)
+// as soon as `in.fail()` or `in.eof()` becomes true.
+TEST(StreamStringTest, DISABLED_HangsForeverOnStreamExhaustedMidField) {
+    std::istringstream in("partial-field-with-no-terminator"); // no trailing comma or newline
+    String out;
+    StreamString(in, out); // never returns
+    FAIL() << "unreachable - StreamString hung or the bug was fixed without updating this test";
 }
 
 }

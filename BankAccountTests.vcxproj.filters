@@ -20,5 +20,6 @@
     <ClCompile Include="tests\CategorySystemTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\ExchangeRateHistoryTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\TransactionTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\AccountTests.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>
