@@ -24,5 +24,6 @@
     <ClCompile Include="tests\QueryTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\WQueryTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\JournalTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\LoggerTests.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>
