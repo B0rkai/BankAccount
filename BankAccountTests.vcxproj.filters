@@ -25,5 +25,7 @@
     <ClCompile Include="tests\WQueryTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\JournalTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\LoggerTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\DataImporterTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\MnbExchangeRateClientTests.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>
