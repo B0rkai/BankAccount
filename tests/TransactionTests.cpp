@@ -106,9 +106,10 @@ TEST(TransactionTest, DescriptionIsEmptyUntilAdded) {
 
 TEST(TransactionTest, PrintDebugIncludesAccountDateTypeAmountClientDescAndCategory) {
     // Order is [account name, date, type, amount, client, memo, desc, category] - 8 fields,
-    // not matching the Transaction::Debug enum's own indices (that enum appears unused/stale;
-    // it omits the leading account-name field entirely, so its numbering doesn't line up with
-    // PrintDebug's actual output).
+    // matching Transaction::Debug's enum values (ACCOUNT_NAME, DATE, TYPE, AMOUNT, CLIENT, MEMO,
+    // DESCRIPTION, CATEGORY) index-for-index. The enum used to omit ACCOUNT_NAME, silently
+    // shifting every other value one index early - see CategorizingQueryTest in WQueryTests.cpp
+    // for the real bug that caused (fixed by adding ACCOUNT_NAME as the enum's first value).
     FakeAccount acc(Id(0), "Test Account");
     FakeIdResolve resolve;
     Transaction tr(&acc, Money(HUF, 15000), 45000, Id(0), Id(0));

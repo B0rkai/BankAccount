@@ -92,24 +92,46 @@ void StreamString(std::ostream& out, const String& str) {
 // eats following comma, but not endl
 void StreamString(std::istream& in, String& out) {
     char dump = NULL;
-    char c;
+    char c = 0;
     out.clear();
     std::string str;
     in >> std::noskipws >> c;
+    if (in.fail()) {
+        // Nothing at all left to read (e.g. a truncated/corrupted save file cut off exactly at
+        // a field boundary) - leave 'out' empty rather than falling into the loop below with an
+        // unread 'c'.
+        return;
+    }
     bool quoted = (c == DQUOTE);
     if (quoted) {
         in >> std::noskipws >> c;
+        if (in.fail()) {
+            throw "missing closing double quotes";
+        }
     }
     const char end = quoted ? DQUOTE : COMMA;
     while (c != end) {
         str.append(1, c);
-        if (IsEndl(in.peek())) {
+        // istream::peek() sets eofbit and returns Traits::eof() (-1) once the stream is
+        // exhausted - checking that as its own int-typed condition, rather than only via
+        // IsEndl(in.peek()), matters because IsEndl takes a `const char&`: implicitly narrowing
+        // -1 into a char never equals '\n'/'\r' on this platform, so without this check the loop
+        // below would try another `>>` extraction on an already-failed stream, which leaves 'c'
+        // unchanged and never satisfies `c != end` either - an unconditional infinite loop on
+        // any stream that runs out of input mid-field instead of at a proper terminator.
+        if (in.eof() || IsEndl(in.peek())) {
             if (quoted) {
                 throw "missing closing double quotes";
             }
             break;
         }
         in >> std::noskipws >> c;
+        if (in.fail()) {
+            if (quoted) {
+                throw "missing closing double quotes";
+            }
+            break;
+        }
     }
     if (quoted && (in.peek() == ',')) {
         in >> dump; // eat comma

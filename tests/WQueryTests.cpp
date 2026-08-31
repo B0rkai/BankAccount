@@ -163,27 +163,19 @@ TEST(CategorizingQueryTest, AutomaticFlagSkipsAlreadyCategorizedUnlessOverride) 
     EXPECT_EQ(already_categorized.GetCategoryId(), Id(5));
 }
 
-// SEVERITY NOTE: a real, currently-shipping correctness bug in the "Automatic categorize"
-// feature (not a latent/unreachable trap like some earlier DISABLED_ findings) - every
-// automatic categorization attempt in the real app is degraded by this today.
+// Was a real, currently-shipping correctness bug in the "Automatic categorize" feature: every
+// automatic categorization attempt fed the keyword matcher the wrong fields.
 //
 // CategorizingQuery::CheckTransaction() (WQuery.cpp) builds the Categorize() call as:
 //   if_categorize->Categorize({vec[Transaction::CLIENT], vec[Transaction::MEMO], vec[Transaction::DESCRIPTION]})
-// where vec == tr->PrintDebug(s_resolve_if). Transaction::Debug's enum values (Transaction.h)
-// are DATE=0, TYPE=1, AMOUNT=2, CLIENT=3, MEMO=4, DESCRIPTION=5, CATEGORY=6 - but
-// Transaction::PrintDebug() (Transaction.cpp) actually returns 8 elements, with an extra
-// leading account-name field the enum was never updated to account for:
-//   [0]=AccName [1]=Date [2]=Type [3]=Amount [4]=Client [5]=Memo [6]=Desc [7]=Category
-// Every enum value above is therefore off by one against the real array: vec[Transaction::CLIENT]
-// (index 3) is actually the pretty-printed AMOUNT string, vec[Transaction::MEMO] (index 4) is
-// actually the CLIENT NAME, and vec[Transaction::DESCRIPTION] (index 5) is actually the MEMO -
-// the real Description field (index 6) is never read by this code path at all.
-// AccountTests.cpp/TransactionTests.cpp already flagged the enum/PrintDebug mismatch as "the
-// enum appears unused/stale" when documenting Transaction::PrintDebug()'s own field order - this
-// test shows the enum is NOT unused, and the mismatch silently feeds the keyword-matching
-// categorizer (amount, client-name, memo) instead of the intended (client-name, memo,
-// description) on every automatic-categorization pass.
-TEST(CategorizingQueryTest, DISABLED_AutomaticCategorizationFeedsTheWrongFieldsToCategorize) {
+// where vec == tr->PrintDebug(s_resolve_if). Transaction::Debug's enum used to omit the leading
+// account-name field that PrintDebug() (Transaction.cpp) actually returns first, so every
+// enum-based index landed one field early: vec[Transaction::CLIENT] was really the amount,
+// vec[Transaction::MEMO] was really the client name, and vec[Transaction::DESCRIPTION] was
+// really the memo - the real description was never read at all. Fixed by adding ACCOUNT_NAME as
+// the enum's first value (Transaction.h) so every subsequent value lines up with PrintDebug()'s
+// real layout - CategorizingQuery itself needed no change.
+TEST(CategorizingQueryTest, AutomaticCategorizationSendsClientMemoAndDescriptionInOrder) {
     FakeAccount acc(Id(0), "Acc");
     FakeIdResolve resolve("ClientX"); // distinct from memo/desc so a positional mixup is visible
     WQueryResolveScope scope(&resolve);
@@ -200,10 +192,9 @@ TEST(CategorizingQueryTest, DISABLED_AutomaticCategorizationFeedsTheWrongFieldsT
 
     const StringVector& sent = account_if.m_categorize.m_last_texts;
     ASSERT_EQ(sent.size(), 3u);
-    // What SHOULD be sent, if the enum lined up with PrintDebug()'s real layout:
-    EXPECT_EQ(sent[0], "ClientX"); // FAILS today: actually receives the pretty-printed amount
-    EXPECT_EQ(sent[1], "MemoY");   // FAILS today: actually receives "ClientX" (the client name)
-    EXPECT_EQ(sent[2], "DescZ");   // FAILS today: actually receives "MemoY" - "DescZ" is never sent
+    EXPECT_EQ(sent[0], "ClientX");
+    EXPECT_EQ(sent[1], "MemoY");
+    EXPECT_EQ(sent[2], "DescZ");
 }
 
 }

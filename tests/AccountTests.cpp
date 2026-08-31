@@ -223,32 +223,27 @@ TEST(AccountTest, MakeQueryWQueryAppliesTheEditAndReportsChanged) {
 }
 
 TEST(AccountTest, StreamRoundTripPreservesTransactionFields) {
-    // Account::Stream(ostream&) writes group/account-number/name/currency followed by
-    // status+transactions, but Stream(istream&) only ever reads back the status+transactions
+    // Account::StreamOut(ostream&) writes group/account-number/name/currency followed by
+    // status+transactions, but StreamIn(istream&) only ever reads back the status+transactions
     // part - the leading fields are meant to be read by the caller first (via plain
     // StreamString() calls) and used to construct the Account, exactly as
     // AccountManager::StreamAccounts(istream&) does. Replicate that sequence here rather than
-    // calling Stream(istream&) directly on the raw output of Stream(ostream&).
+    // calling StreamIn(istream&) directly on the raw output of StreamOut(ostream&).
     //
-    // OVERLOAD HAZARD (found while writing this test): Account has both Stream(ostream&) const
-    // and Stream(istream&). std::stringstream is-a BOTH istream and ostream, so calling
-    // acc.Stream(buffer) on a *non-const* Account with a stringstream is ambiguous by argument
-    // type alone - and C++'s tie-break (prefer the non-const overload when the object itself is
-    // non-const) silently resolves it to Stream(istream&), not the intended Stream(ostream&)
-    // const. The call still compiles and "succeeds" - it just reads from the (empty) stream
-    // instead of writing to it, immediately hits EOF, and every subsequent StreamString() read
-    // from the still-empty buffer then loops forever (StreamString's read loop has no EOF/fail
-    // check - see IsEndl(in.peek()) never seeing an int EOF as either '\n' or '\r'). This
-    // deserves its own fix independent of the Account tests here: either rename one overload,
-    // or make StreamString bail out on a failed stream instead of spinning. The explicit
-    // static_cast below is the workaround for this test; a real ofstream (single-direction) in
-    // production code never hits this ambiguity, which is presumably why it's gone unnoticed.
+    // These used to both be named Stream() (one overload taking ostream&, the other istream&) -
+    // renamed because a std::stringstream argument (like the one below) is-a BOTH istream and
+    // ostream, so calling the overloaded name on a non-const Account was ambiguous by argument
+    // type alone, and C++'s tie-break (prefer the non-const overload when the object itself is
+    // non-const) silently picked Stream(istream&) even when the caller meant to write - the call
+    // would still compile and "succeed", just reading from the (empty) stream instead of writing
+    // to it. Distinct names remove the ambiguity outright instead of requiring a workaround cast
+    // at every call site.
     NullJournal journal;
     Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
     acc.AddTransaction(45000, Id(1), -5000, Id(2), "card payment", Id(3), "groceries run");
 
     std::stringstream buffer;
-    acc.Stream(static_cast<std::ostream&>(buffer)); // see the overload-hazard note above
+    acc.StreamOut(buffer);
 
     String bank_name, acc_numb, acc_name, curr_name;
     StreamString(buffer, bank_name);
@@ -257,7 +252,7 @@ TEST(AccountTest, StreamRoundTripPreservesTransactionFields) {
     StreamString(buffer, curr_name);
 
     Account reloaded(0, acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type(), journal);
-    reloaded.Stream(buffer);
+    reloaded.StreamIn(buffer);
 
     ASSERT_EQ(reloaded.Size(), 1u);
     const Transaction* tr = reloaded.GetLastRecord();

@@ -137,7 +137,7 @@ void Account::Sort() {
 	});
 }
 
-void Account::Stream(std::ostream& out) const {
+void Account::StreamOut(std::ostream& out) const {
 	StreamString(out, GetGroupName());
 	out << COMMA;
 	StreamString(out, m_acc_number->GetString());
@@ -149,7 +149,7 @@ void Account::Stream(std::ostream& out) const {
 	}
 }
 
-void Account::Stream(std::istream& in) {
+void Account::StreamIn(std::istream& in) {
 	in >> m_status;
 	DumpChar(in); // dump comma
 	int size;

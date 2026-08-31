@@ -39,7 +39,15 @@ public:
 	inline String GetDescription() const { return m_desc_ptr ? *m_desc_ptr : cStringEmpty; }
 	inline void SetDiscription(String* ptr) { m_desc_ptr = ptr; }
 
+	// Indices into the StringVector PrintDebug() returns - must stay in exactly this order
+	// (ACCOUNT_NAME first) since PrintDebug()'s own field order is
+	// [AccName, Date, Type, Amount, Client, Memo, Desc, Category]. This enum previously omitted
+	// ACCOUNT_NAME, silently shifting every other value one index early - CategorizingQuery
+	// (WQuery.cpp) was the one real consumer, and it was feeding the categorizer
+	// (amount, client-name, memo) instead of the intended (client-name, memo, description) as a
+	// result.
 	enum Debug {
+		ACCOUNT_NAME,
 		DATE,
 		TYPE,
 		AMOUNT,

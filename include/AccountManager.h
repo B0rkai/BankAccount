@@ -79,8 +79,10 @@ private:
 	void ProcessOneTransaction(Account* acc, const RawTransactionData& data, IManualResolve* resolve_if);
 	//void DoManualResolve(const String& details, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool optional, IManualResolve* resolve_if);
 protected:
-	void Stream(std::ostream& out) const;
-	void Stream(std::istream& in);
+	// See Account::StreamOut/StreamIn's comment (Account.h) for why these aren't a Stream()
+	// overload pair - the same std::stringstream/non-const-preference hazard applies here too.
+	void StreamOut(std::ostream& out) const;
+	void StreamIn(std::istream& in);
 public:
 	// journal defaults to the real, disk-backed Journal - pass a NullJournal (or any other
 	// IJournal) to construct an AccountManager (and the Account(s) it creates) that never

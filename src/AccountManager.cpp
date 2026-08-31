@@ -176,7 +176,7 @@ Id AccountManager::GetCategoryIdByFullName(const String& fullname) const {
 void AccountManager::StreamAccounts(std::ostream& out) const {
 	out << m_accounts.size() << ENDL;
 	for (const Account* acc : m_accounts) {
-		acc->Stream(out);
+		acc->StreamOut(out);
 	}
 }
 
@@ -194,13 +194,13 @@ void AccountManager::StreamAccounts(std::istream& in) {
 		StreamString(in, curr_name);
 		m_accounts.push_back(new Account(i, acc_numb.c_str(), acc_name.c_str(), MakeCurrency(curr_name.c_str())->Type(), m_journal));
 		m_accounts.back()->SetGroupName(bank_name.c_str());
-		m_accounts.back()->Stream(in);
+		m_accounts.back()->StreamIn(in);
 		m_accounts.back()->Sort();
 		m_logger.LogInfo() << curr_name << " account " << m_accounts.back()->GetName().utf8_str() << " (" << m_accounts.back()->GetAccNumber() << ") of " << m_accounts.back()->GetGroupName().utf8_str() << " loaded from file with " << m_accounts.back()->Size() << " transactions";
 	}
 }
 
-void AccountManager::Stream(std::ostream& out) const {
+void AccountManager::StreamOut(std::ostream& out) const {
 	m_logger.LogDebug() << "Streaming out to file starts";
 	m_category_system.StreamOut(out);
 	m_client_man.StreamOut(out);
@@ -210,7 +210,7 @@ void AccountManager::Stream(std::ostream& out) const {
 	m_logger.LogDebug() << "Streaming out to file finished";
 }
 
-void AccountManager::Stream(std::istream& in) {
+void AccountManager::StreamIn(std::istream& in) {
 	m_logger.LogDebug() << "Streaming in from file starts";
 	m_category_system.StreamIn(in);
 	m_client_man.StreamIn(in);

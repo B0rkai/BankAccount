@@ -26,7 +26,11 @@ AccountNumber::AccountNumber(const String& acc_num) {
 		}
 		clean.append(c);
 	}
-	if (IsAlpha(clean[0]) && IsAlpha(clean[1]) && IsDigit(clean[2]) && IsDigit(clean[2])) {
+	// clean can end up shorter than 3 characters (even empty) once non-alphanumeric input -
+	// including plain lowercase letters, since IsAlpha() only matches 'A'-'Z' - has been
+	// filtered out above; clean[0]/[1]/[2] must not be read without checking that first, or
+	// this reads out of bounds on a wxString with no such data (undefined behavior/crash).
+	if ((clean.size() >= 3) && IsAlpha(clean[0]) && IsAlpha(clean[1]) && IsDigit(clean[2]) && IsDigit(clean[2])) {
 		has_iban = true;
 		m_iban_prefix = clean.Mid(0, 4);
 		clean = clean.Mid(4);

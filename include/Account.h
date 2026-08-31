@@ -59,7 +59,16 @@ public:
 
 	void Sort();
 
-	void Stream(std::ostream& out) const;
-	void Stream(std::istream& in);
+	// Named StreamOut/StreamIn rather than two overloaded Stream() methods - a std::stringstream
+	// argument (used throughout this app's own tests) implicitly converts to BOTH std::ostream&
+	// and std::istream&, and calling the overloaded form on a non-const Account with one would
+	// silently resolve to StreamIn (the C++ non-const-preference tie-break wins over the
+	// istream/ostream parameter match, which is otherwise equally good either way) even when the
+	// caller meant to write. Real production callers always pass an already-concretely-typed
+	// istream/ostream (see BankAccountFile::Load()/Save()), so this never bit the shipped app -
+	// but it did bite this project's own test suite once, hence the rename instead of leaving it
+	// as a documented trap.
+	void StreamOut(std::ostream& out) const;
+	void StreamIn(std::istream& in);
 };
 

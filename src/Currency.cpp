@@ -242,6 +242,13 @@ int32_t Money::GetValue(CurrencyType type) const {
 	if (type >= Currency_Count) {
 		throw "Money::GetValue() unexpected currency type";
 	}
+	if (type == m_currency_type) {
+		// EXCHANGE_RATES only ever has HUF-relative rates populated (see its initializer above) -
+		// every non-HUF currency's own diagonal entry, EXCHANGE_RATES[type][type], is left at its
+		// default 0., so without this short-circuit converting any non-HUF Money to its own
+		// currency silently returned 0 instead of the identity.
+		return m_amount;
+	}
 	return m_amount * EXCHANGE_RATES[m_currency_type][type];
 }
 

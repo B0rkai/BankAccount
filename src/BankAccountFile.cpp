@@ -102,7 +102,7 @@ bool BankAccountFile::Load() {
 		{
 			Crc32InputStreambuf crc_buf(decompressStream->rdbuf());
 			std::istream crc_in(&crc_buf);
-			Stream(crc_in);
+			StreamIn(crc_in);
 			crc = crc_buf.Value();
 		}
 		LogInfo() << "Database loaded from saved file";
@@ -115,7 +115,7 @@ bool BankAccountFile::Load() {
 		std::ifstream real_in(DEFAULT_UNCOMPRESSED_FILE_PATH, std::ios::binary);
 		Crc32InputStreambuf crc_buf(real_in.rdbuf());
 		std::istream in(&crc_buf);
-		Stream(in);
+		StreamIn(in);
 		crc = crc_buf.Value();
 		LogWarn() << "Database loaded from open csv file!! Please save it as encrypted BAF database file!";
 
@@ -148,7 +148,7 @@ bool BankAccountFile::Save(const bool compress) {
 		std::ofstream real_out(DEFAULT_UNCOMPRESSED_FILE_PATH, std::ios::binary);
 		Crc32OutputStreambuf crc_buf(real_out.rdbuf());
 		std::ostream out(&crc_buf);
-		Stream(out);
+		StreamOut(out);
 		out.flush();
 		crc = crc_buf.Value();
 	}

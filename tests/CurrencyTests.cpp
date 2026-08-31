@@ -98,21 +98,15 @@ TEST(MoneyStringConstructorTest, CentsCurrencyDropsTheDecimalPointAndKeepsBothHa
     EXPECT_EQ(Money(EUR, String("1234.56")).GetValue(), 123456);
 }
 
-// EXCHANGE_RATES_SAME_CURRENCY_IS_ZERO_FOR_NON_HUF: discovered while writing the tests above.
-// Currency.cpp's EXCHANGE_RATES table only sets a 1.0 self-conversion factor on HUF's own
-// diagonal entry (EXCHANGE_RATES[HUF][HUF]); every other currency's self-entry
-// (EXCHANGE_RATES[EUR][EUR], [USD][USD], [GBP][GBP], [CHF][CHF]) is left at the table's default
-// 0.0. So Money(EUR, x).GetValue(EUR) - or any non-HUF currency converted to itself - silently
-// returns 0 instead of x. This is reachable in production via QueryCurrencySum::GetSumValue()
-// (src/Query.cpp) when the requested display currency matches one of the currencies actually
-// present in the results, and via Money::operator+=/-=/+/- (Currency.cpp) if those are ever
-// exercised with two same-currency non-HUF Money values (currently they don't appear to be
-// called anywhere in the app). Left unfixed here - this test pass is additive test-writing
-// only - but flagged prominently for a follow-up fix.
-TEST(MoneyGetValueTest, DISABLED_SameNonHufCurrencyIdentityIsCurrentlyBroken) {
-    // Intentionally disabled: this documents a known bug rather than asserting it as correct
-    // spec. Run with --gtest_also_run_disabled_tests to see it fail against today's code; once
-    // fixed, remove the DISABLED_ prefix and flip the expectation to EXPECT_EQ(..., 123456).
+// Was EXCHANGE_RATES_SAME_CURRENCY_IS_ZERO_FOR_NON_HUF: Currency.cpp's EXCHANGE_RATES table only
+// ever set a 1.0 self-conversion factor on HUF's own diagonal entry (EXCHANGE_RATES[HUF][HUF]);
+// every other currency's self-entry was left at the table's default 0.0, so
+// Money(EUR, x).GetValue(EUR) - or any non-HUF currency converted to itself - silently returned
+// 0 instead of x. Fixed via an explicit same-currency short-circuit at the top of
+// Money::GetValue(CurrencyType) (Currency.cpp), rather than populating the table's diagonal,
+// since GetValue(type, date)'s date-aware overload already used the identical short-circuit
+// pattern one level up.
+TEST(MoneyGetValueTest, SameNonHufCurrencyIsIdentity) {
     EXPECT_EQ(Money(EUR, 123456).GetValue(EUR), 123456);
 }
 
