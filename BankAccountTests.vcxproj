@@ -126,6 +126,8 @@
     <ClCompile Include="tests\ClientManagerTests.cpp" />
     <ClCompile Include="tests\CategoryTests.cpp" />
     <ClCompile Include="tests\CategorySystemTests.cpp" />
+    <ClCompile Include="tests\ExchangeRateHistoryTests.cpp" />
+    <ClCompile Include="tests\TransactionTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="BankAccountCore.vcxproj">

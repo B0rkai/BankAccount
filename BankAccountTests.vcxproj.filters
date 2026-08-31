@@ -18,5 +18,7 @@
     <ClCompile Include="tests\ClientManagerTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\CategoryTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\CategorySystemTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\ExchangeRateHistoryTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\TransactionTests.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>
