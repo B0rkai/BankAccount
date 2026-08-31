@@ -6,8 +6,15 @@
 #include "wx/checkbox.h"
 #include "wx/stattext.h"
 #include "wx/notebook.h"
+#include "wx/button.h"
+#include "wx/filedlg.h"
+#include "wx/msgdlg.h"
+#include "wx/dcmemory.h"
 #include "wx/charts/wxcharts.h"
 #include "Currency.h"
+// Windows-only, matching this whole app - see OnExportClicked() for why PrintWindow specifically.
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 namespace {
 	CurrencyType PickDefaultCurrency(const ChartDataByCurrency& data) {
@@ -232,6 +239,9 @@ ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, 
 		m_kind_choice->Bind(wxEVT_CHOICE, &ChartTabPanel::OnKindChanged, this);
 		toolbar->Add(m_kind_choice, 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
 	}
+	m_export_button = new wxButton(this, wxID_ANY, "Export PNG...");
+	m_export_button->Bind(wxEVT_BUTTON, &ChartTabPanel::OnExportClicked, this);
+	toolbar->Add(m_export_button, 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
 	top->Add(toolbar, 0, wxEXPAND);
 
 	m_total_label = new wxStaticText(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxALIGN_CENTER_HORIZONTAL);
@@ -294,6 +304,36 @@ void ChartTabPanel::OnCurrencyChanged(wxCommandEvent&) {
 void ChartTabPanel::OnConvertToggled(wxCommandEvent&) {
 	m_convert_to_selected = m_convert_checkbox->GetValue();
 	BuildChart(GetSelectedKind());
+}
+
+void ChartTabPanel::OnExportClicked(wxCommandEvent&) {
+	wxFileDialog save_dialog(this, "Export Chart as PNG", "", "chart.png",
+		"PNG files (*.png)|*.png", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+	if (save_dialog.ShowModal() == wxID_CANCEL) {
+		return;
+	}
+
+	// wxCharts controls draw themselves only in response to a real paint event, with no public
+	// "render into this DC" entry point to call directly - PrintWindow asks the control to paint
+	// itself into an arbitrary DC regardless, the same technique the run-app skill already relies
+	// on to screenshot this app for testing (PrintWindow works regardless of on-screen visibility/
+	// occlusion, unlike a plain screen-region copy). Captures the whole tab - toolbar, total, and
+	// chart+legend - as a faithful "what you see" snapshot, not one re-derived from ChartData.
+	// depth 24 (opaque), not 32 - a 32-bit-deep wxBitmap on MSW allocates a DIB section wx treats
+	// as alpha-aware, but PrintWindow only ever paints RGB and leaves that alpha byte
+	// undefined/zero, which produced an unreadable (all-transparent, or otherwise invalid to the
+	// PNG encoder) image - SaveFile() silently wrote a 0-byte file rather than erroring loudly.
+	const wxSize size = GetSize();
+	wxBitmap bitmap(size.GetWidth(), size.GetHeight(), 24);
+	wxMemoryDC dc(bitmap);
+	PrintWindow((HWND)GetHandle(), (HDC)dc.GetHandle(), 0);
+	dc.SelectObject(wxNullBitmap); // release before ConvertToImage() touches the bitmap
+
+	if (bitmap.ConvertToImage().SaveFile(save_dialog.GetPath(), wxBITMAP_TYPE_PNG)) {
+		wxMessageBox("Exported to " + save_dialog.GetPath(), "Export Chart", wxOK | wxICON_INFORMATION);
+	} else {
+		wxMessageBox("Export failed - see the log for details.", "Export Chart", wxOK | wxICON_ERROR);
+	}
 }
 
 void ChartTabPanel::BuildChart(ChartWidgetKind kind) {

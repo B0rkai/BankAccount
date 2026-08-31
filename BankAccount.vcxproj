@@ -153,7 +153,17 @@
     <ClCompile Include="src\AddKeywordDialog.cpp" />
     <ClCompile Include="src\cApp.cpp" />
     <ClCompile Include="src\ChartDialog.cpp" />
-    <ClCompile Include="src\cMain.cpp" />
+    <ClCompile Include="src\cMain.cpp">
+      <!-- Works around an MSVC /GL (whole-program-optimization) internal compiler error
+           (C1001, in the "Generating code" phase, crashing on cMain::ReplayJournal) that
+           reproducibly appears in Release builds as soon as cApp.cpp's OnInit() calls
+           wxInitAllImageHandlers() (needed so the chart Export PNG button's
+           wxImage::SaveFile(..., wxBITMAP_TYPE_PNG) actually works - see ChartDialog.cpp's
+           OnExportClicked) - bisected by reverting each changed file individually. Disabling
+           /GL for just this one translation unit avoids the bad codegen path without
+           sacrificing whole-program optimization anywhere else. -->
+      <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">false</WholeProgramOptimization>
+    </ClCompile>
     <ClCompile Include="src\ExcelExport.cpp" />
     <ClCompile Include="src\GuiHelpers.cpp" />
     <ClCompile Include="src\LogViewerFrame.cpp" />

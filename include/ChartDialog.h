@@ -8,6 +8,7 @@ class wxBoxSizer;
 class wxChoice;
 class wxCheckBox;
 class wxStaticText;
+class wxButton;
 
 // Which wxCharts widget currently draws a tab's data - distinct from ChartShape (see
 // ChartData.h), which says what the underlying data *is*.
@@ -60,6 +61,7 @@ class ChartTabPanel : public wxPanel {
 	// Bar/Stacked Bar/Line, which show a trend rather than one whole.
 	wxStaticText* m_total_label = nullptr;
 	std::vector<ChartWidgetKind> m_available_kinds;
+	wxButton* m_export_button = nullptr;
 
 	void PopulateKindChoices();
 	// Resolves the wxChoice's current selection back to a ChartWidgetKind - falls back to
@@ -81,6 +83,11 @@ class ChartTabPanel : public wxPanel {
 	void OnKindChanged(wxCommandEvent& evt);
 	void OnCurrencyChanged(wxCommandEvent& evt);
 	void OnConvertToggled(wxCommandEvent& evt);
+	// Captures this tab's current on-screen rendering (toolbar, total, chart, and legend exactly
+	// as displayed - not re-derived from ChartData, so it's a faithful "what you see" snapshot)
+	// via PrintWindow and saves it as a PNG. Windows-only - see the .cpp for why PrintWindow
+	// specifically, matching how the run-app skill already screenshots this app for testing.
+	void OnExportClicked(wxCommandEvent& evt);
 public:
 	ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit);
 };
