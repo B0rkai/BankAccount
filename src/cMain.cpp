@@ -588,14 +588,23 @@ void cMain::FillGridWidget(const StringTable& table) {
 	m_result_grid->AppendRows(row_count);
 	for (int c = 0; c < col_count; ++c) {
 		m_result_grid->SetColLabelValue(c, table[0][c]);
-		int align = (table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
 		for (int r = 0; r < row_count; ++r) {
 			const StringVector& row = table[r + 1];
 			if ((size_t)c < row.size()) {
 				m_result_grid->SetCellValue(r, c, row[c]);
 			}
-			m_result_grid->SetCellAlignment(r, c, align, wxALIGN_CENTRE);
 		}
+	}
+	// Alignment is uniform down a whole column, so set it once per column via a column-level
+	// attribute instead of once per cell - wxGrid stores per-cell attributes in a sorted array,
+	// so row_count*col_count individual SetCellAlignment() calls each cost an O(current size)
+	// insertion, which made large result sets (13000+ rows) take minutes instead of a
+	// fraction of a second to render.
+	for (int c = 0; c < col_count; ++c) {
+		int align = (table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
+		wxGridCellAttr* attr = new wxGridCellAttr();
+		attr->SetAlignment(align, wxALIGN_CENTRE);
+		m_result_grid->SetColAttr(c, attr);
 	}
 	m_result_grid->AutoSizeColumns();
 }
@@ -699,7 +708,6 @@ void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transa
 
 void cMain::ApplyTransactionEditableColumns() {
 	const int col_count = m_result_grid->GetNumberCols();
-	const int row_count = m_result_grid->GetNumberRows();
 	m_result_grid->EnableEditing(true);
 	int category_col = -1, desc_col = -1;
 	for (int c = 0; c < col_count; ++c) {
@@ -710,17 +718,21 @@ void cMain::ApplyTransactionEditableColumns() {
 			desc_col = c;
 		}
 	}
-	for (int r = 0; r < row_count; ++r) {
-		for (int c = 0; c < col_count; ++c) {
-			m_result_grid->SetReadOnly(r, c, (c != category_col) && (c != desc_col));
-		}
-	}
-	if (category_col >= 0) {
-		StringVector categories;
-		m_bank_file->ListOfCategoryNames(categories);
+	StringVector categories;
+	m_bank_file->ListOfCategoryNames(categories);
+	// Read-only-ness is uniform down a whole column here too (every row is read-only except in
+	// the Category/Desc columns), so - same reasoning as FillGridWidget's alignment attrs -
+	// this sets one attribute per column instead of one SetReadOnly() call per cell. This attr
+	// replaces the plain-alignment one FillGridWidget set, so alignment is recomputed here too.
+	for (int c = 0; c < col_count; ++c) {
 		wxGridCellAttr* attr = new wxGridCellAttr();
-		attr->SetEditor(new wxGridCellChoiceEditor(wxArrayString(categories.size(), categories.data()), false));
-		m_result_grid->SetColAttr(category_col, attr);
+		int align = (m_grid_master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
+		attr->SetAlignment(align, wxALIGN_CENTRE);
+		attr->SetReadOnly((c != category_col) && (c != desc_col));
+		if (c == category_col) {
+			attr->SetEditor(new wxGridCellChoiceEditor(wxArrayString(categories.size(), categories.data()), false));
+		}
+		m_result_grid->SetColAttr(c, attr);
 	}
 }
 
@@ -735,7 +747,6 @@ void cMain::UIOutputEntityTable(const StringTable& table, QueryTopic topic) {
 
 void cMain::ApplyEntityEditableColumns() {
 	const int col_count = m_result_grid->GetNumberCols();
-	const int row_count = m_result_grid->GetNumberRows();
 	// Every List(Clients|Categories|Types|Accounts) table starts with an "ID" column, but
 	// the editable name column's label differs for accounts (AccountManager::List()'s own
 	// "Account name" vs the generic ManagerType<Child>::GetInfos()'s "Name") - look up both
@@ -754,10 +765,14 @@ void cMain::ApplyEntityEditableColumns() {
 		return; // unexpected shape - leave non-editable rather than guess
 	}
 	m_result_grid->EnableEditing(true);
-	for (int r = 0; r < row_count; ++r) {
-		for (int c = 0; c < col_count; ++c) {
-			m_result_grid->SetReadOnly(r, c, c != name_col);
-		}
+	// One attribute per column rather than one SetReadOnly() call per cell - see
+	// ApplyTransactionEditableColumns for why that matters once row counts get large.
+	for (int c = 0; c < col_count; ++c) {
+		wxGridCellAttr* attr = new wxGridCellAttr();
+		int align = (m_grid_master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
+		attr->SetAlignment(align, wxALIGN_CENTRE);
+		attr->SetReadOnly(c != name_col);
+		m_result_grid->SetColAttr(c, attr);
 	}
 }
 
