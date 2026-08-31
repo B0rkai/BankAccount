@@ -481,6 +481,7 @@ StringTable PeriodicQuery::GetTableResult() const {
 		return table;
 	}
 	const size_t column_count = end - start + 1;
+	const bool show_aggregates = column_count >= 2; // with 1 period column, TOTAL/AVERAGE would just duplicate that column
 	table.emplace_back().push_back("Topic");
 	table.push_meta_back(StringTable::LEFT_ALIGNED);
 	std::vector<Money> column_totals(column_count);
@@ -520,7 +521,12 @@ StringTable PeriodicQuery::GetTableResult() const {
 			++date_id;
 		}
 		for (auto& r : row_map) {
-			r.second.push_back(row_total_map[r.first].PrettyPrint());
+			const Money& row_total = row_total_map[r.first];
+			if (show_aggregates) {
+				r.second.push_back(row_total.PrettyPrint());
+				Money row_average(r.first, row_total.GetValue() / (int32_t)column_count);
+				r.second.push_back(row_average.PrettyPrint());
+			}
 			table.push_back(r.second);
 		}
 	}
@@ -530,10 +536,15 @@ StringTable PeriodicQuery::GetTableResult() const {
 		table.push_meta_back(StringTable::RIGHT_ALIGNED);
 		table.front().push_back(DateId2String(m_mode, start++));
 	}
-	table.push_meta_back(StringTable::RIGHT_ALIGNED);
-	table.front().push_back("TOTAL");
+	if (show_aggregates) {
+		table.push_meta_back(StringTable::RIGHT_ALIGNED);
+		table.front().push_back("TOTAL");
+		table.push_meta_back(StringTable::RIGHT_ALIGNED);
+		table.front().push_back("AVERAGE");
+	}
+	const size_t target_width = column_count + (show_aggregates ? 3 : 1); // Topic + periods + [TOTAL + AVERAGE]
 	for (auto& vec : table) {
-		size_t s = column_count + 2 - vec.size();
+		size_t s = target_width - vec.size();
 		while (s--) {
 			vec.push_back("-");
 		}
@@ -546,6 +557,10 @@ StringTable PeriodicQuery::GetTableResult() const {
 	for (const Money& m : column_totals) {
 		totals.push_back(m.PrettyPrint());
 	}
-	totals.push_back(grand_total.PrettyPrint());
+	if (show_aggregates) {
+		totals.push_back(grand_total.PrettyPrint());
+		Money grand_average(HUF, grand_total.GetValue() / (int32_t)column_count);
+		totals.push_back(grand_average.PrettyPrint());
+	}
 	return table;
 }
