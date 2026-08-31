@@ -131,6 +131,7 @@
     <ClCompile Include="tests\AccountTests.cpp" />
     <ClCompile Include="tests\QueryTests.cpp" />
     <ClCompile Include="tests\WQueryTests.cpp" />
+    <ClCompile Include="tests\JournalTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="BankAccountCore.vcxproj">
