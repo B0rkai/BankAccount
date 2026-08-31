@@ -38,6 +38,90 @@ index 45e7322..5fb69eb 100644
      static void CalculateGridRange(wxDouble minValue,
          wxDouble maxValue, wxDouble &graphMinValue,
          wxDouble &graphMaxValue, wxDouble &valueRange, 
+diff --git a/include/wx/charts/wxdoughnutandpiechartbase.h b/include/wx/charts/wxdoughnutandpiechartbase.h
+index 5e7920d..91de2e8 100644
+--- a/include/wx/charts/wxdoughnutandpiechartbase.h
++++ b/include/wx/charts/wxdoughnutandpiechartbase.h
+@@ -44,10 +44,15 @@
+ #include "wxchartobservers.h"
+ #include <wx/control.h>
+ #include <wx/sharedptr.h>
+-#include <map>
+ 
++// BankAccount-added: was std::map<wxString, wxChartSliceData> (keyed, and therefore always
++// iterated, by slice label - so both the wedge draw order and any legend built straight from
++// GetSlices() were forced alphabetical by label regardless of what order slices were appended
++// in, with no way for a caller to control it). wxVector<wxChartSliceData> instead preserves
++// append order, matching wxPolarAreaChartData's own (already order-preserving) storage - see
++// ChartDialog.cpp's BuildSliceChart(), which appends slices pre-sorted by descending value.
+ /// Data for the wxPieChartCtrl control.
+-class WXDLLIMPEXP_ISHIKO_CHARTS wxPieChartData : public wxChartObservableValue<std::map<wxString, wxChartSliceData>>
++class WXDLLIMPEXP_ISHIKO_CHARTS wxPieChartData : public wxChartObservableValue<wxVector<wxChartSliceData>>
+ {
+ public:
+     /// Smart pointer typedef.
+@@ -56,7 +61,7 @@ public:
+     wxPieChartData();
+     static ptr make_shared();
+ 
+-    const std::map<wxString, wxChartSliceData>& GetSlices() const;
++    const wxVector<wxChartSliceData>& GetSlices() const;
+     void AppendSlice(const wxChartSliceData &slice);
+     void UpdateSlices(const wxVector<wxChartSliceData> &slices);
+     void AddSlices(const wxVector<wxChartSliceData> &slices);
+@@ -78,7 +83,7 @@ public:
+     /// instance.
+     wxDoughnutAndPieChartBase(wxPieChartData::ptr data);
+     wxDoughnutAndPieChartBase(wxPieChartData::ptr data, const wxSize &size);
+-    void SetData(const std::map<wxString, wxChartSliceData> &data);
++    void SetData(const wxVector<wxChartSliceData> &data);
+ 
+ private:
+     virtual void DoSetSize(const wxSize &size);
+diff --git a/include/wx/charts/wxdoughnutchartctrl.h b/include/wx/charts/wxdoughnutchartctrl.h
+index acdafc1..53fa603 100644
+--- a/include/wx/charts/wxdoughnutchartctrl.h
++++ b/include/wx/charts/wxdoughnutchartctrl.h
+@@ -32,7 +32,7 @@
+ /// A control that displays a doughnut chart.
+ 
+ /// \ingroup chartclasses
+-class WXDLLIMPEXP_ISHIKO_CHARTS wxDoughnutChartCtrl : public wxChartCtrl, public wxChartValueObserver<std::map<wxString, wxChartSliceData>>
++class WXDLLIMPEXP_ISHIKO_CHARTS wxDoughnutChartCtrl : public wxChartCtrl, public wxChartValueObserver<wxVector<wxChartSliceData>>
+ {
+ public:
+     wxDoughnutChartCtrl(wxWindow *parent, wxWindowID id, wxPieChartData::ptr data,
+@@ -44,7 +44,7 @@ public:
+ 
+ private:
+     virtual wxDoughnutChart& GetChart();
+-    void OnUpdate(const std::map<wxString,wxChartSliceData> &data) override;
++    void OnUpdate(const wxVector<wxChartSliceData> &data) override;
+ 
+ private:
+     wxDoughnutChart m_doughnutChart;
+diff --git a/include/wx/charts/wxpiechartctrl.h b/include/wx/charts/wxpiechartctrl.h
+index cc484fd..58b24d5 100644
+--- a/include/wx/charts/wxpiechartctrl.h
++++ b/include/wx/charts/wxpiechartctrl.h
+@@ -31,7 +31,7 @@
+ /// A control that displays a pie chart.
+ 
+ /// \ingroup chartclasses
+-class WXDLLIMPEXP_ISHIKO_CHARTS wxPieChartCtrl : public wxChartCtrl, public wxChartValueObserver<std::map<wxString, wxChartSliceData>>
++class WXDLLIMPEXP_ISHIKO_CHARTS wxPieChartCtrl : public wxChartCtrl, public wxChartValueObserver<wxVector<wxChartSliceData>>
+ {
+ public:
+     /// Constructs a wxPieChartCtrl control.
+@@ -71,7 +71,7 @@ public:
+ 
+ private:
+     virtual wxPieChart& GetChart();
+-    void OnUpdate(const std::map<wxString,wxChartSliceData> &data) override;
++    void OnUpdate(const wxVector<wxChartSliceData> &data) override;
+ 
+ private:
+     wxPieChart m_pieChart;
 diff --git a/src/wxbarchart.cpp b/src/wxbarchart.cpp
 index ea0fd94..18ca2e7 100644
 --- a/src/wxbarchart.cpp
@@ -258,6 +342,77 @@ index 76e14f1..806c856 100644
                  );
  
              newDataset->AppendColumn(Column::ptr(new Column(
+diff --git a/src/wxdoughnutandpiechartbase.cpp b/src/wxdoughnutandpiechartbase.cpp
+index f7f7a72..3907596 100644
+--- a/src/wxdoughnutandpiechartbase.cpp
++++ b/src/wxdoughnutandpiechartbase.cpp
+@@ -42,7 +42,7 @@ wxPieChartData::ptr wxPieChartData::make_shared()
+     return ptr(new wxPieChartData());
+ }
+ 
+-const std::map<wxString, wxChartSliceData>& wxPieChartData::GetSlices() const
++const wxVector<wxChartSliceData>& wxPieChartData::GetSlices() const
+ {
+     return m_value;
+ }
+@@ -69,12 +69,19 @@ void wxPieChartData::AddSlices(const wxVector<wxChartSliceData> &slices)
+ 
+ void wxPieChartData::Add(const wxChartSliceData &slice)
+ {
+-    auto key = slice.GetLabel();
+-    auto it = m_value.find(key);
+-    if (it == m_value.end())
+-        m_value.insert(std::make_pair(key, slice));
+-    else
+-        it->second.SetValue(it->second.GetValue() + slice.GetValue());
++    // BankAccount-added: linear search instead of a map lookup - m_value is now an
++    // (append-order-preserving) wxVector rather than a std::map<wxString, wxChartSliceData>,
++    // see the header. Slice counts here are at most a few dozen/hundred categories, so this
++    // stays cheap.
++    for (size_t i = 0; i < m_value.size(); ++i)
++    {
++        if (m_value[i].GetLabel() == slice.GetLabel())
++        {
++            m_value[i].SetValue(m_value[i].GetValue() + slice.GetValue());
++            return;
++        }
++    }
++    m_value.push_back(slice);
+ }
+ 
+ wxDoughnutAndPieChartBase::SliceArc::SliceArc(const wxChartSliceData &slice,
+@@ -119,15 +126,13 @@ wxDoughnutAndPieChartBase::wxDoughnutAndPieChartBase(const wxPieChartData::ptr d
+ {
+ }
+ 
+-void wxDoughnutAndPieChartBase::SetData(const std::map<wxString, wxChartSliceData> &data)
++void wxDoughnutAndPieChartBase::SetData(const wxVector<wxChartSliceData> &data)
+ {
+     m_slices.resize(data.size());
+     m_total = 0;
+ 	size_t i = 0;
+-    for (const auto &pair : data)
++    for (const auto &slice : data)
+     {
+-        auto slice = pair.second;
+-
+         m_total += slice.GetValue();
+         wxDouble x = (m_size.GetX() / 2) - 2;
+         wxDouble y = (m_size.GetY() / 2) - 2;
+diff --git a/src/wxdoughnutchartctrl.cpp b/src/wxdoughnutchartctrl.cpp
+index 06480c8..5ddec56 100644
+--- a/src/wxdoughnutchartctrl.cpp
++++ b/src/wxdoughnutchartctrl.cpp
+@@ -52,8 +52,7 @@ wxDoughnutChart& wxDoughnutChartCtrl::GetChart()
+     return m_doughnutChart;
+ }
+ 
+-void wxDoughnutChartCtrl::OnUpdate(const std::map<wxString, 
+-	                               wxChartSliceData> &data)
++void wxDoughnutChartCtrl::OnUpdate(const wxVector<wxChartSliceData> &data)
+ {
+     m_doughnutChart.SetData(data);
+     auto parent = this->GetParent();
 diff --git a/src/wxlinechart.cpp b/src/wxlinechart.cpp
 index fdd62a8..bd02577 100644
 --- a/src/wxlinechart.cpp
@@ -282,6 +437,20 @@ index fdd62a8..bd02577 100644
                  );
  
              Point::ptr point(
+diff --git a/src/wxpiechartctrl.cpp b/src/wxpiechartctrl.cpp
+index 20bd3ba..75ce337 100644
+--- a/src/wxpiechartctrl.cpp
++++ b/src/wxpiechartctrl.cpp
+@@ -53,8 +53,7 @@ wxPieChart& wxPieChartCtrl::GetChart()
+     return m_pieChart;
+ }
+ 
+-void wxPieChartCtrl::OnUpdate(const std::map<wxString,
+-	                          wxChartSliceData> &data)
++void wxPieChartCtrl::OnUpdate(const wxVector<wxChartSliceData> &data)
+ {
+     m_pieChart.SetData(data);
+     auto parent = this->GetParent();
 diff --git a/src/wxstackedcolumnchart.cpp b/src/wxstackedcolumnchart.cpp
 index f3b5625..f390440 100644
 --- a/src/wxstackedcolumnchart.cpp

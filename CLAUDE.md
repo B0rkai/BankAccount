@@ -104,7 +104,7 @@ The project expects these to exist as siblings/fixed paths on the dev machine, o
   in this repo (that folder holds only the patch file, not the checkout itself) - after a fresh
   `wxCharts` clone, re-apply with `git apply` from inside the checkout before building, e.g.
   `git -C C:\Users\<user>\source\wxCharts apply C:\Users\<user>\source\repos\BankAccount\external\wxCharts-patches\local-patches.patch`.
-  It covers three things: (1) the library's own tooltip/axis-label code (`wxbarchart.cpp`,
+  It covers four things: (1) the library's own tooltip/axis-label code (`wxbarchart.cpp`,
   `wxcolumnchart.cpp`, `wxstackedcolumnchart.cpp`, `wxlinechart.cpp`, `wxchartslicedata.cpp`,
   `wxchartsutilities.cpp`'s `BuildNumericalLabels`) formatted numbers via a bare
   `std::stringstream <<`, which renders large values in scientific notation (`7.44745e+07`) -
@@ -116,7 +116,19 @@ The project expects these to exist as siblings/fixed paths on the dev machine, o
   compute a percentage from (see `ChartTabPanel::BuildSliceChart()`). (3) `wxChartTooltip::Draw()`
   (`wxcharttooltip.cpp`) only ever measured/drew its text as one line - needed for exactly that
   multi-line override text, so it now splits on `\n`, sizes the tooltip bubble to the widest line
-  and the total line count, and draws each line at its own vertical offset.
+  and the total line count, and draws each line at its own vertical offset. (4) `wxPieChartData`
+  (`wxdoughnutandpiechartbase.h`/`.cpp`, shared by Pie and Doughnut) stored its slices in a
+  `std::map<wxString, wxChartSliceData>` keyed by label - so both the wedge draw order and any
+  legend built from `GetSlices()` were forced alphabetical-by-label, with no way for a caller to
+  make the biggest slice draw (or list) first. Changed to an append-order-preserving
+  `wxVector<wxChartSliceData>` instead (matching `wxPolarAreaChartData`'s own storage), with
+  `wxPieChartData::Add()`'s same-label merge-on-append behaviour reimplemented as a linear search
+  (slice counts here are at most a few dozen/hundred categories, so this stays cheap) - the
+  `wxPieChartCtrl`/`wxDoughnutChartCtrl` observer classes' `OnUpdate()` overrides (and
+  `wxChartValueObserver` base) needed the matching type change too. `ChartTabPanel::BuildSliceChart()`
+  appends slices pre-sorted by descending magnitude, so this makes both the wedges and the legend
+  (built by hand from that same sorted list, rather than via `wxChartsLegendData`'s
+  still-present-but-now-unused `std::map`-keyed constructor overload) come out in that order.
   Separately, application code (`ChartDialog.cpp`'s `EnsureDatasetThemesRegistered`) registers a
   solid, opaque colour into the process-wide `wxChartsDefaultTheme` for every dataset index a
   chart needs (covering the Bar/Stacked Bar/Line dataset-theme slots together, since each chart

@@ -192,6 +192,14 @@ namespace {
 		}
 		return true;
 	}
+
+	double SeriesTotal(const ChartSeries& series) {
+		double total = 0.0;
+		for (double v : series.m_values) {
+			total += v;
+		}
+		return total;
+	}
 }
 
 ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit)
@@ -368,10 +376,7 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 	if (m_shape == ChartShape::PERIODIC) {
 		const double period_count = (double)chart.m_labels.size();
 		for (const ChartSeries& series : chart.m_series) {
-			double total = 0.0;
-			for (double v : series.m_values) {
-				total += v;
-			}
+			double total = SeriesTotal(series);
 			if (total == 0.0) { // topic never had any activity in this direction at all
 				continue;
 			}
@@ -386,6 +391,14 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 			slices.push_back({ chart.m_labels[i], series.m_values[i], 0.0 });
 		}
 	}
+
+	// Largest (by magnitude) slice first - both the wedges/bars themselves and the legend built
+	// from them below end up in this order, rather than whatever order the underlying query
+	// happened to produce (topic insertion order for a periodic chart, ascending value for a
+	// topic-sum chart - see QuerySumByTopic::GetSortedSubQueries()).
+	std::sort(slices.begin(), slices.end(), [](const Slice& a, const Slice& b) {
+		return std::abs(a.total) > std::abs(b.total);
+	});
 
 	double grand_total = 0.0;
 	for (const Slice& s : slices) {
@@ -413,17 +426,23 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 		slice_data.push_back(slice);
 	}
 
+	// Built by hand from slice_data (already sorted by descending magnitude above), one
+	// wxChartsLegendItem per slice, rather than via wxChartsLegendData's map-keyed-by-label
+	// constructor overload - that one (still used by wxCharts' own samples) would silently
+	// re-sort the legend back to alphabetical-by-label, undoing the sort. wxPolarAreaChartData
+	// has no dedicated wxChartsLegendData constructor at all, so this was already how its legend
+	// got built; Pie/Doughnut's wxPieChartData now preserves append order too (see the vendored
+	// wxdoughnutandpiechartbase.h/.cpp patch), so building the legend uniformly here keeps it in
+	// sync with both.
 	wxWindow* ctrl = nullptr;
 	wxChartsLegendData legend_data;
+	for (const wxChartSliceData& slice : slice_data) {
+		legend_data.Append(wxChartsLegendItem(slice));
+	}
 	if (kind == ChartWidgetKind::POLAR_AREA) {
-		// wxPolarAreaChartData is a plain value type (unlike wxPieChartData's shared-pointer
-		// map), and its legend has no dedicated wxChartsLegendData constructor - built by hand,
-		// one wxChartsLegendItem per slice, matching what wxChartsLegendData(slices map) does
-		// internally for Pie/Doughnut.
 		wxPolarAreaChartData polar_data;
 		for (const wxChartSliceData& slice : slice_data) {
 			polar_data.AppendSlice(slice);
-			legend_data.Append(wxChartsLegendItem(slice));
 		}
 		ctrl = new wxPolarAreaChartCtrl(m_chart_area, wxID_ANY, polar_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 	} else {
@@ -433,7 +452,6 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 		for (const wxChartSliceData& slice : slice_data) {
 			pie_data->AppendSlice(slice);
 		}
-		legend_data = wxChartsLegendData(pie_data->GetSlices());
 		ctrl = (kind == ChartWidgetKind::PIE)
 			? static_cast<wxWindow*>(new wxPieChartCtrl(m_chart_area, wxID_ANY, pie_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE))
 			: static_cast<wxWindow*>(new wxDoughnutChartCtrl(m_chart_area, wxID_ANY, pie_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE));
@@ -447,19 +465,27 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKind kind) {
 	GetSizer()->Show(m_total_label, false); // only a slice chart shows a grand total - these show a trend, not one whole
 
-	wxChartsCategoricalData::ptr cat_data = wxChartsCategoricalData::make_shared(ToWxVector(chart.m_labels));
-	size_t dataset_count = 0;
+	std::vector<const ChartSeries*> series_to_draw;
 	for (const ChartSeries& series : chart.m_series) {
-		if (AllZero(series.m_values)) { // topic never had any activity in this direction at all
-			continue;
+		if (!AllZero(series.m_values)) { // topic never had any activity in this direction at all
+			series_to_draw.push_back(&series);
 		}
-		cat_data->AddDataset(wxChartsDoubleDataset::ptr(new wxChartsDoubleDataset(series.m_name, ToWxVector(series.m_values))));
-		++dataset_count;
 	}
-	if (dataset_count == 0) {
+	// Largest (by magnitude, summed across every period) topic first - the x-axis stays
+	// chronological (that's chart.m_labels, untouched), but dataset order otherwise drives both
+	// the legend order below and, for Stacked Bar, the bottom-to-top stacking order.
+	std::sort(series_to_draw.begin(), series_to_draw.end(), [](const ChartSeries* a, const ChartSeries* b) {
+		return std::abs(SeriesTotal(*a)) > std::abs(SeriesTotal(*b));
+	});
+
+	if (series_to_draw.empty()) {
 		return; // every topic was exactly zero in this direction - nothing to draw
 	}
-	EnsureDatasetThemesRegistered(dataset_count);
+	wxChartsCategoricalData::ptr cat_data = wxChartsCategoricalData::make_shared(ToWxVector(chart.m_labels));
+	for (const ChartSeries* series : series_to_draw) {
+		cat_data->AddDataset(wxChartsDoubleDataset::ptr(new wxChartsDoubleDataset(series->m_name, ToWxVector(series->m_values))));
+	}
+	EnsureDatasetThemesRegistered(series_to_draw.size());
 
 	// wxBarChartCtrl draws horizontal bars (a categorical *vertical* axis) - wxColumnChartCtrl is
 	// wxCharts' own name for the conventional look a time series wants instead: periods laid out

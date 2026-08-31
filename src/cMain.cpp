@@ -171,9 +171,11 @@ cMain::cMain()
 	m_grid_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(65, 237), wxSize(300, 24));
 	m_grid_filter_textctrl->Bind(wxEVT_TEXT, &cMain::OnGridFilterTextChanged, this);
 
-	// Right-aligned to the same x=1345 right edge m_info_textctrl/m_result_grid already share
-	// (20 + 1325 wide), pictogram-only with a tooltip instead of a visible label - both start
-	// disabled since the grid starts empty, live-updated by UpdateGridActionButtons().
+	// Right-aligned to the same right edge m_info_textctrl/m_result_grid track (see SizeUpdate,
+	// which repositions these two alongside resizing those) - pictogram-only with a tooltip
+	// instead of a visible label - both start disabled since the grid starts empty, live-updated
+	// by UpdateGridActionButtons(). Positions given here are placeholders, overwritten by the
+	// SendSizeEvent() call at the end of this constructor.
 	m_export_excel_btn = new wxBitmapButton(m_main_panel, wxID_ANY, MakeExportIconBitmap(20), wxPoint(1291, 237), wxSize(24, 24));
 	m_export_excel_btn->SetToolTip("Export results to Excel");
 	m_export_excel_btn->Bind(wxEVT_BUTTON, &cMain::ExportToExcel, this);
@@ -197,6 +199,11 @@ cMain::cMain()
 	m_status_bar->SetStatusWidths(1, NULL);
 	m_status_bar->SetStatusText(" --- Database empty! Please initialize! ---");
 	wxFrame::Bind(wxEVT_MENU_OPEN, &cMain::UpdateMenu, this);
+
+	// Fires an initial wxEVT_SIZE so SizeUpdate() positions the grid action buttons (and sizes
+	// m_info_textctrl/m_result_grid) correctly from the start, rather than only once the user
+	// first resizes the window - a real resize event isn't guaranteed to fire before Show().
+	SendSizeEvent();
 }
 
 
@@ -1212,6 +1219,18 @@ void cMain::SizeUpdate(wxSizeEvent& evt) {
 	}
 	if (m_result_grid) {
 		m_result_grid->SetSize(evt.GetSize() - wxSize(55, 360));
+	}
+	// Right-aligned to the same right edge m_info_textctrl/m_result_grid track above (both are
+	// pinned at x=20 and sized to evt.GetSize().GetWidth() - 55, so their shared right edge is
+	// evt.GetSize().GetWidth() - 35) - previously these two had a hardcoded x position instead,
+	// so they'd only land in the right place at one specific window width and could end up
+	// entirely off the visible window at the default startup size.
+	if (m_show_chart_btn && m_export_excel_btn) {
+		int right_edge = evt.GetSize().GetWidth() - 35;
+		int chart_btn_x = right_edge - m_show_chart_btn->GetSize().GetWidth();
+		int export_btn_x = chart_btn_x - 30;
+		m_show_chart_btn->SetPosition(wxPoint(chart_btn_x, 237));
+		m_export_excel_btn->SetPosition(wxPoint(export_btn_x, 237));
 	}
 }
 
