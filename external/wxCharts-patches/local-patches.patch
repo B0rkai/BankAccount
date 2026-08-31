@@ -282,3 +282,27 @@ index fdd62a8..bd02577 100644
                  );
  
              Point::ptr point(
+diff --git a/src/wxstackedcolumnchart.cpp b/src/wxstackedcolumnchart.cpp
+index f3b5625..f390440 100644
+--- a/src/wxstackedcolumnchart.cpp
++++ b/src/wxstackedcolumnchart.cpp
+@@ -35,6 +35,7 @@
+ #include "wxchartstheme.h"
+ #include "wxchartscategoricalaxis.h"
+ #include "wxchartsnumericalaxis.h"
++#include "wxchartsutilities.h"
+ #include <sstream>
+ 
+ wxStackedColumnChart::Column::Column(wxDouble value,
+@@ -103,10 +104,8 @@ wxStackedColumnChart::wxStackedColumnChart(wxChartsCategoricalData::ptr &data,
+         const wxVector<wxDouble>& datasetData = dataset.GetData();
+         for (size_t j = 0; j < datasetData.size(); ++j)
+         {
+-            std::stringstream tooltip;
+-            tooltip << datasetData[j];
+             wxSharedPtr<wxChartTooltipProvider> tooltipProvider(
+-                new wxChartTooltipProviderStatic(data->GetCategories()[j], tooltip.str(), datasetOptions->GetBrushOptions().GetColor())
++                new wxChartTooltipProviderStatic(data->GetCategories()[j], wxChartsUtilities::FormatNumber(datasetData[j]), datasetOptions->GetBrushOptions().GetColor())
+                 );
+ 
+             newDataset->AppendColumn(Column::ptr(new Column(

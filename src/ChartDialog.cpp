@@ -1,7 +1,9 @@
 #include "ChartDialog.h"
 #include <cmath>
+#include <algorithm>
 #include "wx/sizer.h"
 #include "wx/choice.h"
+#include "wx/checkbox.h"
 #include "wx/stattext.h"
 #include "wx/notebook.h"
 #include "wx/charts/wxcharts.h"
@@ -15,6 +17,18 @@ namespace {
 		return data.begin()->first; // ChartTabPanel is only ever constructed with non-empty data
 	}
 
+	wxString KindLabel(ChartWidgetKind kind) {
+		switch (kind) {
+		case ChartWidgetKind::PIE: return "Pie";
+		case ChartWidgetKind::DOUGHNUT: return "Doughnut";
+		case ChartWidgetKind::POLAR_AREA: return "Polar Area";
+		case ChartWidgetKind::BAR: return "Bar";
+		case ChartWidgetKind::STACKED_BAR: return "Stacked Bar";
+		case ChartWidgetKind::LINE: return "Line";
+		}
+		return wxEmptyString;
+	}
+
 	// value is in the same real-world units as ChartSeries::m_values (see MoneyValueAsDouble() in
 	// Query.cpp, which this reverses) - formats it exactly the way the rest of the app displays a
 	// Money of this currency (thousands separators, currency sign, cents where the currency has
@@ -26,10 +40,91 @@ namespace {
 		return curr->PrettyPrint(raw);
 	}
 
-	// A pie slice (wxChartSliceData) always needs an explicit colour, and bar/line datasets need
-	// one too - see EnsureDatasetThemesRegistered() below for why wxCharts' own default theme
-	// isn't good enough for either. One shared, solid, opaque categorical palette, cycled by
-	// slice/series index.
+	// Exchanges `value` (already in FormatCurrencyValue's real-world units) from one currency to
+	// another at today's static rate - the same simplification QueryCurrencySum::GetSumValue()
+	// already uses elsewhere in this app for ad-hoc cross-currency comparison, not the
+	// per-transaction historical rate the table view's "EXCHANGED TOTAL" row uses (this is
+	// post-aggregation chart data, so a per-transaction date is no longer available to look one
+	// up by).
+	double ConvertValue(double value, CurrencyType from, CurrencyType to) {
+		if (from == to) {
+			return value;
+		}
+		Currency* from_curr = MakeCurrency(from);
+		int32_t raw = from_curr->HasCents() ? (int32_t)std::llround(value * 100.0) : (int32_t)std::llround(value);
+		Money converted(from, raw);
+		int32_t converted_raw = converted.GetValue(to);
+		Currency* to_curr = MakeCurrency(to);
+		return to_curr->HasCents() ? converted_raw / 100.0 : (double)converted_raw;
+	}
+
+	// Exchanges every currency present in `data` into `target` and merges them into one
+	// ChartData - a topic present in more than one currency (e.g. a category with both EUR and
+	// HUF transactions) sums its converted contributions rather than appearing twice.
+	ChartData MergeConvertedToCurrency(const ChartDataByCurrency& data, CurrencyType target, ChartShape shape) {
+		ChartData result;
+		result.m_currency = target;
+		if (data.empty()) {
+			return result;
+		}
+
+		if (shape == ChartShape::PERIODIC) {
+			result.m_labels = data.begin()->second.m_labels; // every currency shares the same period axis
+			std::map<String, size_t> series_index_by_name;
+			for (const auto& currency_pair : data) {
+				for (const ChartSeries& series : currency_pair.second.m_series) {
+					size_t idx;
+					auto it = series_index_by_name.find(series.m_name);
+					if (it == series_index_by_name.end()) {
+						idx = result.m_series.size();
+						series_index_by_name[series.m_name] = idx;
+						result.m_series.push_back(ChartSeries{ series.m_name, std::vector<double>(result.m_labels.size(), 0.0) });
+					} else {
+						idx = it->second;
+					}
+					for (size_t i = 0; i < series.m_values.size(); ++i) {
+						result.m_series[idx].m_values[i] += ConvertValue(series.m_values[i], currency_pair.first, target);
+					}
+				}
+			}
+		} else { // TOPIC_SUM
+			std::map<String, double> value_by_label;
+			StringVector label_order;
+			for (const auto& currency_pair : data) {
+				const ChartSeries& series = currency_pair.second.m_series.front();
+				for (size_t i = 0; i < currency_pair.second.m_labels.size(); ++i) {
+					const String& label = currency_pair.second.m_labels[i];
+					double converted = ConvertValue(series.m_values[i], currency_pair.first, target);
+					auto it = value_by_label.find(label);
+					if (it == value_by_label.end()) {
+						value_by_label[label] = converted;
+						label_order.push_back(label);
+					} else {
+						it->second += converted;
+					}
+				}
+			}
+			// ascending by converted value - matches QuerySumByTopic::GetSortedSubQueries()'s own
+			// convention, which this reduction otherwise loses (each currency's own labels arrive
+			// pre-sorted, but merging across currencies can reorder them).
+			std::sort(label_order.begin(), label_order.end(), [&](const String& a, const String& b) {
+				return value_by_label[a] < value_by_label[b];
+			});
+			ChartSeries merged;
+			merged.m_name = "Sum";
+			for (const String& label : label_order) {
+				result.m_labels.push_back(label);
+				merged.m_values.push_back(value_by_label[label]);
+			}
+			result.m_series.push_back(merged);
+		}
+		return result;
+	}
+
+	// A pie/doughnut/polar-area slice always needs an explicit colour, and bar/stacked-bar/line
+	// datasets need one too - see EnsureDatasetThemesRegistered() below for why wxCharts' own
+	// default theme isn't good enough for either. One shared, solid, opaque categorical palette,
+	// cycled by slice/series index.
 	const wxColour PIE_PALETTE[] = {
 		wxColour(0x4E, 0x79, 0xA7), wxColour(0xF2, 0x8E, 0x2B), wxColour(0xE1, 0x57, 0x59),
 		wxColour(0x76, 0xB7, 0xB2), wxColour(0x59, 0xA1, 0x4F), wxColour(0xED, 0xC9, 0x48),
@@ -44,18 +139,20 @@ namespace {
 	// looked colourless. Worse, wxChartsTheme::GetDatasetTheme() returns a null
 	// wxSharedPtr<wxChartsDatasetTheme> for any id beyond those 3 (std::map::operator[] on a
 	// missing key), and every *Chart::Initialize() (wxbarchart.cpp/wxcolumnchart.cpp/
-	// wxlinechart.cpp) dereferences that unconditionally - so a periodic chart with more than 3
-	// topics/series would crash before this. This registers a solid, opaque, deliberately-chosen
-	// colour for every dataset index a chart might use, unconditionally overwriting the library's
-	// own pre-registered ids 0-2 too. wxChartsDefaultTheme is a process-wide singleton (see
-	// wx/charts/wxchartstheme.h), so this only needs to run once per BuildChart() call for
-	// however many series that particular chart has - cheap, and safe to repeat.
+	// wxlinechart.cpp/wxstackedcolumnchart.cpp) dereferences that unconditionally - so a periodic
+	// chart with more than 3 topics/series would crash before this. This registers a solid,
+	// opaque, deliberately-chosen colour for every dataset index a chart might use,
+	// unconditionally overwriting the library's own pre-registered ids 0-2 too.
+	// wxChartsDefaultTheme is a process-wide singleton (see wx/charts/wxchartstheme.h), so this
+	// only needs to run once per BuildChart() call for however many series that particular chart
+	// has - cheap, and safe to repeat.
 	void EnsureDatasetThemesRegistered(size_t count) {
 		for (size_t i = 0; i < count; ++i) {
 			const wxColour& colour = PIE_PALETTE[i % PIE_PALETTE_SIZE];
 			wxSharedPtr<wxChartsDatasetTheme> theme(new wxChartsDatasetTheme());
 			theme->SetBarChartDatasetOptions(wxBarChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
 			theme->SetColumnChartDatasetOptions(wxColumnChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
+			theme->SetStackedColumnChartDatasetOptions(wxStackedColumnChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
 			// low-alpha fill so overlapping series in a multi-topic line chart stay distinguishable;
 			// the line itself and its dots stay fully opaque for legibility.
 			wxColour fill(colour.Red(), colour.Green(), colour.Blue(), 60);
@@ -92,21 +189,44 @@ namespace {
 
 ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit)
 	: wxPanel(parent), m_data(data), m_shape(shape), m_currency(PickDefaultCurrency(data)), m_period_unit(period_unit) {
+	for (const auto& pair : data) {
+		m_currencies.push_back(pair.first);
+	}
 	PopulateKindChoices();
 
 	wxBoxSizer* top = new wxBoxSizer(wxVERTICAL);
 
 	wxBoxSizer* toolbar = new wxBoxSizer(wxHORIZONTAL);
-	toolbar->Add(new wxStaticText(this, wxID_ANY, wxString::Format("Currency: %s", MakeCurrency(m_currency)->GetName())),
-		0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
+	// Only offered when there's an actual choice to make - a single-currency result just states
+	// its currency as plain text, same as a single-kind tab states its chart type as plain text
+	// below instead of a lone dropdown.
+	if (m_currencies.size() > 1) {
+		toolbar->Add(new wxStaticText(this, wxID_ANY, "Currency:"), 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
+		m_currency_choice = new wxChoice(this, wxID_ANY);
+		int select_index = 0;
+		for (size_t i = 0; i < m_currencies.size(); ++i) {
+			m_currency_choice->Append(MakeCurrency(m_currencies[i])->GetName());
+			if (m_currencies[i] == m_currency) {
+				select_index = (int)i;
+			}
+		}
+		m_currency_choice->SetSelection(select_index);
+		m_currency_choice->Bind(wxEVT_CHOICE, &ChartTabPanel::OnCurrencyChanged, this);
+		toolbar->Add(m_currency_choice, 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
+
+		m_convert_checkbox = new wxCheckBox(this, wxID_ANY, "Convert all to this currency");
+		m_convert_checkbox->Bind(wxEVT_CHECKBOX, &ChartTabPanel::OnConvertToggled, this);
+		toolbar->Add(m_convert_checkbox, 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
+	} else {
+		toolbar->Add(new wxStaticText(this, wxID_ANY, wxString::Format("Currency: %s", MakeCurrency(m_currency)->GetName())),
+			0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
+	}
 	toolbar->AddStretchSpacer();
-	// Only offered when there's an actual choice to make - a lone "Chart type: Pie" dropdown
-	// with nothing else to switch to is clutter, not a control.
 	if (m_available_kinds.size() > 1) {
 		toolbar->Add(new wxStaticText(this, wxID_ANY, "Chart type:"), 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
 		m_kind_choice = new wxChoice(this, wxID_ANY);
 		for (ChartWidgetKind kind : m_available_kinds) {
-			m_kind_choice->Append(kind == ChartWidgetKind::PIE ? "Pie" : (kind == ChartWidgetKind::BAR ? "Bar" : "Line"));
+			m_kind_choice->Append(KindLabel(kind));
 		}
 		m_kind_choice->SetSelection(0);
 		m_kind_choice->Bind(wxEVT_CHOICE, &ChartTabPanel::OnKindChanged, this);
@@ -126,48 +246,76 @@ ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, 
 	top->Add(m_chart_area, 1, wxEXPAND | wxALL, 6);
 
 	SetSizer(top);
-	BuildChart(m_available_kinds.front());
+	BuildChart(GetSelectedKind());
 }
 
 void ChartTabPanel::PopulateKindChoices() {
 	if (m_shape == ChartShape::PERIODIC) {
-		// Each topic is its own series here, and wxCharts colours a bar/line chart per series -
-		// exactly what makes a grouped bar or line chart work well for a periodic breakdown. Pie
-		// is also offered: since every period shares the same set of topics, a topic's share of
-		// the *total* (summed across all periods) is the same proportion its average would show,
-		// so one pie (by total) covers both - see BuildPieChart().
-		m_available_kinds = { ChartWidgetKind::BAR, ChartWidgetKind::LINE, ChartWidgetKind::PIE };
+		m_available_kinds = {
+			ChartWidgetKind::BAR, ChartWidgetKind::STACKED_BAR, ChartWidgetKind::LINE,
+			ChartWidgetKind::PIE, ChartWidgetKind::DOUGHNUT, ChartWidgetKind::POLAR_AREA
+		};
 	} else { // TOPIC_SUM - ChartTabPanel is only ever built for one of these two shapes
-		// Pie only: a topic-sum chart has exactly one series ("Sum", one value per topic), and
-		// wxCharts colours a bar chart per series, not per bar - every bar would be forced to
-		// the same single colour regardless of topic, unlike the pie's per-slice colouring.
-		m_available_kinds = { ChartWidgetKind::PIE };
+		m_available_kinds = { ChartWidgetKind::PIE, ChartWidgetKind::DOUGHNUT, ChartWidgetKind::POLAR_AREA };
 	}
 }
 
-void ChartTabPanel::OnKindChanged(wxCommandEvent&) {
+ChartWidgetKind ChartTabPanel::GetSelectedKind() const {
+	if (!m_kind_choice) {
+		return m_available_kinds.front();
+	}
 	int sel = m_kind_choice->GetSelection();
 	if ((sel < 0) || ((size_t)sel >= m_available_kinds.size())) {
+		return m_available_kinds.front();
+	}
+	return m_available_kinds[sel];
+}
+
+ChartData ChartTabPanel::GetActiveChartData() const {
+	if (m_convert_to_selected && (m_currencies.size() > 1)) {
+		return MergeConvertedToCurrency(m_data, m_currency, m_shape);
+	}
+	return m_data.at(m_currency);
+}
+
+void ChartTabPanel::OnKindChanged(wxCommandEvent&) {
+	BuildChart(GetSelectedKind());
+}
+
+void ChartTabPanel::OnCurrencyChanged(wxCommandEvent&) {
+	int sel = m_currency_choice->GetSelection();
+	if ((sel < 0) || ((size_t)sel >= m_currencies.size())) {
 		return;
 	}
-	BuildChart(m_available_kinds[sel]);
+	m_currency = m_currencies[sel];
+	BuildChart(GetSelectedKind());
+}
+
+void ChartTabPanel::OnConvertToggled(wxCommandEvent&) {
+	m_convert_to_selected = m_convert_checkbox->GetValue();
+	BuildChart(GetSelectedKind());
 }
 
 void ChartTabPanel::BuildChart(ChartWidgetKind kind) {
 	m_chart_area_sizer->Clear(true); // destroys the previous chart+legend controls too
-	const ChartData& chart = m_data.at(m_currency);
+	ChartData chart = GetActiveChartData();
 
-	if (kind == ChartWidgetKind::PIE) {
-		BuildPieChart(chart);
-	} else {
+	switch (kind) {
+	case ChartWidgetKind::PIE:
+	case ChartWidgetKind::DOUGHNUT:
+	case ChartWidgetKind::POLAR_AREA:
+		BuildSliceChart(chart, kind);
+		break;
+	default:
 		BuildCategoricalChart(chart, kind);
+		break;
 	}
 
 	m_chart_area->Layout();
 	Layout();
 }
 
-void ChartTabPanel::BuildPieChart(const ChartData& chart) {
+void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind) {
 	GetSizer()->Show(m_total_label, true);
 
 	struct Slice {
@@ -178,10 +326,6 @@ void ChartTabPanel::BuildPieChart(const ChartData& chart) {
 	std::vector<Slice> slices;
 
 	if (m_shape == ChartShape::PERIODIC) {
-		// Every period shares the same label axis, so a topic's total-across-periods and its
-		// average-per-period are proportional to each other by the same constant (period count)
-		// - one pie by total already shows the right proportions; the tooltip below adds the
-		// average alongside it rather than needing a second "average pie".
 		const double period_count = (double)chart.m_labels.size();
 		for (const ChartSeries& series : chart.m_series) {
 			double total = 0.0;
@@ -213,12 +357,12 @@ void ChartTabPanel::BuildPieChart(const ChartData& chart) {
 		return; // every topic was exactly zero in this direction - nothing to draw
 	}
 
-	wxPieChartData::ptr pie_data = wxPieChartData::make_shared();
+	wxVector<wxChartSliceData> slice_data;
 	for (size_t i = 0; i < slices.size(); ++i) {
 		const Slice& s = slices[i];
 		double percentage = (grand_total != 0.0) ? (s.total / grand_total * 100.0) : 0.0;
-		// Multi-line - see EnsureDatasetThemesRegistered's sibling patch note in CLAUDE.md for
-		// why '\n' needs its own vendored fix to actually lay out (wxChartTooltip::Draw()).
+		// Multi-line - see CLAUDE.md's wxCharts note for why '\n' needs its own vendored fix to
+		// actually lay out (wxChartTooltip::Draw()).
 		wxString tooltip = wxString::Format("%s\n%s (%.1f%%)", s.label, FormatCurrencyValue(s.total, m_currency), percentage);
 		if (m_shape == ChartShape::PERIODIC) {
 			tooltip += wxString::Format("\navg %s/%s", FormatCurrencyValue(s.average, m_currency), m_period_unit);
@@ -226,18 +370,42 @@ void ChartTabPanel::BuildPieChart(const ChartData& chart) {
 
 		wxChartSliceData slice(s.total, PIE_PALETTE[i % PIE_PALETTE_SIZE], s.label);
 		slice.SetTooltipTextOverride(tooltip);
-		pie_data->AppendSlice(slice);
+		slice_data.push_back(slice);
 	}
 
-	wxPieChartCtrl* ctrl = new wxPieChartCtrl(m_chart_area, wxID_ANY, pie_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
-	wxChartsLegendCtrl* legend = new wxChartsLegendCtrl(m_chart_area, wxID_ANY, wxChartsLegendData(pie_data->GetSlices()),
-		wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+	wxWindow* ctrl = nullptr;
+	wxChartsLegendData legend_data;
+	if (kind == ChartWidgetKind::POLAR_AREA) {
+		// wxPolarAreaChartData is a plain value type (unlike wxPieChartData's shared-pointer
+		// map), and its legend has no dedicated wxChartsLegendData constructor - built by hand,
+		// one wxChartsLegendItem per slice, matching what wxChartsLegendData(slices map) does
+		// internally for Pie/Doughnut.
+		wxPolarAreaChartData polar_data;
+		for (const wxChartSliceData& slice : slice_data) {
+			polar_data.AppendSlice(slice);
+			legend_data.Append(wxChartsLegendItem(slice));
+		}
+		ctrl = new wxPolarAreaChartCtrl(m_chart_area, wxID_ANY, polar_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+	} else {
+		// Pie and Doughnut share the exact same data container (wxPieChartData) and differ only
+		// in which control draws it.
+		wxPieChartData::ptr pie_data = wxPieChartData::make_shared();
+		for (const wxChartSliceData& slice : slice_data) {
+			pie_data->AppendSlice(slice);
+		}
+		legend_data = wxChartsLegendData(pie_data->GetSlices());
+		ctrl = (kind == ChartWidgetKind::PIE)
+			? static_cast<wxWindow*>(new wxPieChartCtrl(m_chart_area, wxID_ANY, pie_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE))
+			: static_cast<wxWindow*>(new wxDoughnutChartCtrl(m_chart_area, wxID_ANY, pie_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE));
+	}
+
+	wxChartsLegendCtrl* legend = new wxChartsLegendCtrl(m_chart_area, wxID_ANY, legend_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 	m_chart_area_sizer->Add(ctrl, 3, wxEXPAND);
 	m_chart_area_sizer->Add(legend, 1, wxEXPAND);
 }
 
 void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKind kind) {
-	GetSizer()->Show(m_total_label, false); // only Pie shows a grand total - Bar/Line show a trend, not one whole
+	GetSizer()->Show(m_total_label, false); // only a slice chart shows a grand total - these show a trend, not one whole
 
 	wxChartsCategoricalData::ptr cat_data = wxChartsCategoricalData::make_shared(ToWxVector(chart.m_labels));
 	size_t dataset_count = 0;
@@ -255,10 +423,21 @@ void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKin
 
 	// wxBarChartCtrl draws horizontal bars (a categorical *vertical* axis) - wxColumnChartCtrl is
 	// wxCharts' own name for the conventional look a time series wants instead: periods laid out
-	// left-to-right along the horizontal axis, value going up.
-	wxWindow* ctrl = (kind == ChartWidgetKind::BAR)
-		? static_cast<wxWindow*>(new wxColumnChartCtrl(m_chart_area, wxID_ANY, cat_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE))
-		: static_cast<wxWindow*>(new wxLineChartCtrl(m_chart_area, wxID_ANY, cat_data, wxCHARTSLINETYPE_STRAIGHT, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE));
+	// left-to-right along the horizontal axis, value going up. "Stacked Bar" here is likewise
+	// really wxStackedColumnChartCtrl, for the same orientation reason - each period's topics
+	// stack into one bar instead of standing side by side.
+	wxWindow* ctrl = nullptr;
+	switch (kind) {
+	case ChartWidgetKind::STACKED_BAR:
+		ctrl = new wxStackedColumnChartCtrl(m_chart_area, wxID_ANY, cat_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+		break;
+	case ChartWidgetKind::LINE:
+		ctrl = new wxLineChartCtrl(m_chart_area, wxID_ANY, cat_data, wxCHARTSLINETYPE_STRAIGHT, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+		break;
+	default: // BAR
+		ctrl = new wxColumnChartCtrl(m_chart_area, wxID_ANY, cat_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+		break;
+	}
 	wxChartsLegendCtrl* legend = new wxChartsLegendCtrl(m_chart_area, wxID_ANY, wxChartsLegendData(cat_data->GetDatasets()),
 		wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 	m_chart_area_sizer->Add(ctrl, 3, wxEXPAND);
