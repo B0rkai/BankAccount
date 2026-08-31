@@ -1,0 +1,284 @@
+diff --git a/include/wx/charts/wxchartslicedata.h b/include/wx/charts/wxchartslicedata.h
+index dfd1acf..4d1e205 100644
+--- a/include/wx/charts/wxchartslicedata.h
++++ b/include/wx/charts/wxchartslicedata.h
+@@ -49,11 +49,18 @@ public:
+     const wxString& GetLabel() const;
+ 
+     wxString GetTooltipText() const;
++    /// BankAccount-added: overrides GetTooltipText()'s "label: value" default with an exact
++    /// string - needed for a pie/doughnut slice's tooltip to show a percentage of the whole
++    /// (a slice alone has no access to the other slices' values to compute that) or, for a
++    /// periodic-data pie, both a total and a per-period average. Empty (the default) means no
++    /// override - GetTooltipText() falls back to the plain "label: value" format.
++    void SetTooltipTextOverride(const wxString &text);
+ 
+ private:
+     wxDouble m_value;
+     wxColor m_color;
+     wxString m_label;
++    wxString m_tooltipTextOverride;
+ };
+ 
+ #endif
+diff --git a/include/wx/charts/wxchartsutilities.h b/include/wx/charts/wxchartsutilities.h
+index 45e7322..5fb69eb 100644
+--- a/include/wx/charts/wxchartsutilities.h
++++ b/include/wx/charts/wxchartsutilities.h
+@@ -61,6 +61,12 @@ public:
+     static wxBrush CreateBrush(const wxChartsBrushOptions& options);
+ 
+     static size_t GetDecimalPlaces();
++    /// Formats a value for on-screen display (axis labels, tooltips) as a plain fixed-notation,
++    /// thousands-grouped number - e.g. 74474517 -> "74,474,517" - instead of the default
++    /// std::ostream << formatting other call sites used to rely on, which switches to
++    /// scientific notation ("7.44745e+07") for any magnitude at or above 1e6. BankAccount-added:
++    /// not part of the original wxCharts API.
++    static wxString FormatNumber(wxDouble value);
+     static void CalculateGridRange(wxDouble minValue,
+         wxDouble maxValue, wxDouble &graphMinValue,
+         wxDouble &graphMaxValue, wxDouble &valueRange, 
+diff --git a/src/wxbarchart.cpp b/src/wxbarchart.cpp
+index ea0fd94..18ca2e7 100644
+--- a/src/wxbarchart.cpp
++++ b/src/wxbarchart.cpp
+@@ -37,6 +37,7 @@
+ #include "wxchartstheme.h"
+ #include "wxchartscategoricalaxis.h"
+ #include "wxchartsnumericalaxis.h"
++#include "wxchartsutilities.h"
+ #include <sstream>
+ 
+ wxBarChart::Bar::Bar(wxDouble value,
+@@ -118,10 +119,8 @@ void wxBarChart::Initialize(wxChartsCategoricalData::ptr &data)
+         const wxVector<wxDouble>& datasetData = dataset.GetData();
+         for (size_t j = 0; j < datasetData.size(); ++j)
+         {
+-            std::stringstream tooltip;
+-            tooltip << datasetData[j];
+             wxSharedPtr<wxChartTooltipProvider> tooltipProvider(
+-                new wxChartTooltipProviderStatic(data->GetCategories()[j], tooltip.str(), datasetOptions->GetBrushOptions().GetColor())
++                new wxChartTooltipProviderStatic(data->GetCategories()[j], wxChartsUtilities::FormatNumber(datasetData[j]), datasetOptions->GetBrushOptions().GetColor())
+                 );
+ 
+             newDataset->AppendBar(Bar::ptr(new Bar(
+diff --git a/src/wxchartslicedata.cpp b/src/wxchartslicedata.cpp
+index 6ca8575..f799da6 100644
+--- a/src/wxchartslicedata.cpp
++++ b/src/wxchartslicedata.cpp
+@@ -21,6 +21,7 @@
+ */
+ 
+ #include "wxchartslicedata.h"
++#include "wxchartsutilities.h"
+ #include <sstream>
+ 
+ wxChartSliceData::wxChartSliceData(wxDouble value,
+@@ -53,7 +54,14 @@ const wxString& wxChartSliceData::GetLabel() const
+ 
+ wxString wxChartSliceData::GetTooltipText() const
+ {
+-    std::stringstream result;
+-    result << m_label << ": " << m_value;
+-    return result.str();
++    if (!m_tooltipTextOverride.IsEmpty())
++    {
++        return m_tooltipTextOverride;
++    }
++    return m_label + wxT(": ") + wxChartsUtilities::FormatNumber(m_value);
++}
++
++void wxChartSliceData::SetTooltipTextOverride(const wxString &text)
++{
++    m_tooltipTextOverride = text;
+ }
+diff --git a/src/wxchartsutilities.cpp b/src/wxchartsutilities.cpp
+index e93fc7a..ff90734 100644
+--- a/src/wxchartsutilities.cpp
++++ b/src/wxchartsutilities.cpp
+@@ -33,6 +33,7 @@
+ 
+ #include "wxchartsutilities.h"
+ #include <sstream>
++#include <cmath>
+ 
+ wxPen wxChartsUtilities::CreatePen(const wxChartsPenOptions& options)
+ {
+@@ -49,6 +50,42 @@ size_t wxChartsUtilities::GetDecimalPlaces()
+     return 1;
+ }
+ 
++wxString wxChartsUtilities::FormatNumber(wxDouble value)
++{
++    bool negative = value < 0;
++    wxDouble absValue = negative ? -value : value;
++
++    long long whole = (long long)absValue;
++    // round to 2 decimal places rather than truncate, and carry a round-up-to-.00 into the
++    // whole part (e.g. 1999.999 -> whole=1999 cents=100 -> corrected to whole=2000 cents=0)
++    int cents = (int)std::llround((absValue - (wxDouble)whole) * 100.0);
++    if (cents >= 100)
++    {
++        cents -= 100;
++        ++whole;
++    }
++
++    wxString wholeDigits = wxString::Format("%lld", whole);
++    wxString grouped;
++    int sinceLastComma = 0;
++    for (int i = (int)wholeDigits.length() - 1; i >= 0; --i)
++    {
++        grouped = wholeDigits[i] + grouped;
++        ++sinceLastComma;
++        if ((sinceLastComma % 3 == 0) && (i != 0))
++        {
++            grouped = wxT(",") + grouped;
++        }
++    }
++
++    wxString result = negative ? (wxT("-") + grouped) : grouped;
++    if (cents != 0)
++    {
++        result += wxString::Format(".%02d", cents);
++    }
++    return result;
++}
++
+ void wxChartsUtilities::CalculateGridRange(wxDouble minValue,
+                                            wxDouble maxValue, 
+                                            wxDouble &graphMinValue,
+@@ -97,10 +134,7 @@ void wxChartsUtilities::BuildNumericalLabels(wxDouble minValue,
+     for (size_t i = 0; i <= steps; ++i)
+     {
+         wxDouble value = minValue + (i * stepValue);//.toFixed(stepDecimalPlaces);
+-        std::stringstream valueStr;
+-        valueStr << value;
+-
+-        labels.push_back(wxChartsLabel(valueStr.str(), options));
++        labels.push_back(wxChartsLabel(FormatNumber(value), options));
+     }
+ }
+ 
+diff --git a/src/wxcharttooltip.cpp b/src/wxcharttooltip.cpp
+index 7eb9f21..70bc719 100644
+--- a/src/wxcharttooltip.cpp
++++ b/src/wxcharttooltip.cpp
+@@ -35,6 +35,7 @@
+ #include "wxchartbackground.h"
+ #include "wxchartsutilities.h"
+ #include <wx/brush.h>
++#include <wx/vector.h>
+ 
+ wxChartTooltip::wxChartTooltip(const wxPoint2DDouble &position,
+                                const wxString &text)
+@@ -54,9 +55,46 @@ void wxChartTooltip::Draw(wxGraphicsContext &gc)
+ 
+     wxFont font(wxSize(0, m_options.GetFontSize()),
+         m_options.GetFontFamily(), m_options.GetFontStyle(), wxFONTWEIGHT_NORMAL);
+-    wxDouble tooltipWidth;
+-    wxDouble tooltipHeight;
+-    wxChartsUtilities::GetTextSize(gc, font, text, tooltipWidth, tooltipHeight);
++
++    // BankAccount-added: measure and draw each line separately - the text can contain embedded
++    // '\n' (e.g. a pie slice's category/total/average on separate lines - see
++    // wxChartSliceData::SetTooltipTextOverride()), and wxGraphicsContext's GetTextExtent()/
++    // DrawText() aren't a given to lay out multi-line text correctly across every backend on
++    // their own, so this lays it out itself: width is the widest line, height is the line count
++    // times one line's height, and each line is drawn at its own vertical offset.
++    wxVector<wxString> lines;
++    {
++        wxString remaining = text;
++        for (;;)
++        {
++            int pos = remaining.Find(wxT('\n'));
++            if (pos == wxNOT_FOUND)
++            {
++                lines.push_back(remaining);
++                break;
++            }
++            lines.push_back(remaining.Left(pos));
++            remaining = remaining.Mid(pos + 1);
++        }
++    }
++
++    wxDouble tooltipWidth = 0;
++    wxDouble lineHeight = 0;
++    for (const wxString& line : lines)
++    {
++        wxDouble w, h;
++        wxChartsUtilities::GetTextSize(gc, font, line, w, h);
++        if (w > tooltipWidth)
++        {
++            tooltipWidth = w;
++        }
++        if (h > lineHeight)
++        {
++            lineHeight = h;
++        }
++    }
++    wxDouble tooltipHeight = lineHeight * lines.size();
++
+     tooltipWidth += 2 * m_options.GetHorizontalPadding();
+     tooltipHeight += 2 * m_options.GetVerticalPadding();
+ 
+@@ -69,7 +107,11 @@ void wxChartTooltip::Draw(wxGraphicsContext &gc)
+     background.Draw(tooltipX, tooltipY, tooltipWidth, tooltipHeight, gc);
+ 
+     gc.SetFont(font, m_options.GetFontColor());
+-    gc.DrawText(text, tooltipX + m_options.GetHorizontalPadding(), tooltipY + m_options.GetVerticalPadding());
++    for (size_t i = 0; i < lines.size(); ++i)
++    {
++        gc.DrawText(lines[i], tooltipX + m_options.GetHorizontalPadding(),
++            tooltipY + m_options.GetVerticalPadding() + (lineHeight * i));
++    }
+ }
+ 
+ const wxPoint2DDouble& wxChartTooltip::GetPosition() const
+diff --git a/src/wxcolumnchart.cpp b/src/wxcolumnchart.cpp
+index 76e14f1..806c856 100644
+--- a/src/wxcolumnchart.cpp
++++ b/src/wxcolumnchart.cpp
+@@ -37,6 +37,7 @@
+ #include "wxchartstheme.h"
+ #include "wxchartscategoricalaxis.h"
+ #include "wxchartsnumericalaxis.h"
++#include "wxchartsutilities.h"
+ #include <sstream>
+ 
+ wxColumnChart::Column::Column(wxDouble value,
+@@ -93,10 +94,8 @@ wxColumnChart::wxColumnChart(wxChartsCategoricalData::ptr &data,
+         const wxVector<wxDouble>& datasetData = dataset.GetData();
+         for (size_t j = 0; j < datasetData.size(); ++j)
+         {
+-            std::stringstream tooltip;
+-            tooltip << datasetData[j];
+             wxSharedPtr<wxChartTooltipProvider> tooltipProvider(
+-                new wxChartTooltipProviderStatic(data->GetCategories()[j], tooltip.str(), datasetOptions->GetBrushOptions().GetColor())
++                new wxChartTooltipProviderStatic(data->GetCategories()[j], wxChartsUtilities::FormatNumber(datasetData[j]), datasetOptions->GetBrushOptions().GetColor())
+                 );
+ 
+             newDataset->AppendColumn(Column::ptr(new Column(
+diff --git a/src/wxlinechart.cpp b/src/wxlinechart.cpp
+index fdd62a8..bd02577 100644
+--- a/src/wxlinechart.cpp
++++ b/src/wxlinechart.cpp
+@@ -37,6 +37,7 @@
+ #include "wxchartstheme.h"
+ #include "wxchartscategoricalaxis.h"
+ #include "wxchartsnumericalaxis.h"
++#include "wxchartsutilities.h"
+ #include <wx/brush.h>
+ #include <wx/pen.h>
+ #include <wx/dcmemory.h>
+@@ -195,10 +196,8 @@ void wxLineChart::Initialize(wxChartsCategoricalData::ptr &data)
+         const wxVector<wxDouble>& datasetData = datasets[i]->GetData();
+         for (size_t j = 0; j < datasetData.size(); ++j)
+         {
+-            std::stringstream tooltip;
+-            tooltip << datasetData[j];
+             wxSharedPtr<wxChartTooltipProvider> tooltipProvider(
+-                new wxChartTooltipProviderStatic(data->GetCategories()[j], tooltip.str(), datasetOptions->GetLineColor())
++                new wxChartTooltipProviderStatic(data->GetCategories()[j], wxChartsUtilities::FormatNumber(datasetData[j]), datasetOptions->GetLineColor())
+                 );
+ 
+             Point::ptr point(

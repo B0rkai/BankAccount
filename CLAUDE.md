@@ -97,6 +97,36 @@ The project expects these to exist as siblings/fixed paths on the dev machine, o
   `build\wxcharts_export.h` (a generated header, needed as an extra include dir — config-
   independent since the library is built static, so `WXCHARTS_EXPORT` expands to nothing).
   `BankAccountCore`/`BankAccountTests` don't link it — same GUI-only dependency shape as xlnt.
+  **The checkout carries local patches** (not upstream, and not tracked by this repo's git since
+  the checkout lives outside it — deleting and re-cloning `wxCharts` loses them). The full diff is
+  saved at
+  [external/wxCharts-patches/local-patches.patch](external/wxCharts-patches/local-patches.patch)
+  in this repo (that folder holds only the patch file, not the checkout itself) - after a fresh
+  `wxCharts` clone, re-apply with `git apply` from inside the checkout before building, e.g.
+  `git -C C:\Users\<user>\source\wxCharts apply C:\Users\<user>\source\repos\BankAccount\external\wxCharts-patches\local-patches.patch`.
+  It covers three things: (1) the library's own tooltip/axis-label code (`wxbarchart.cpp`,
+  `wxcolumnchart.cpp`, `wxlinechart.cpp`, `wxchartslicedata.cpp`, `wxchartsutilities.cpp`'s
+  `BuildNumericalLabels`) formatted numbers via a bare `std::stringstream <<`, which renders large
+  values in scientific notation (`7.44745e+07`) - replaced with a new
+  `wxChartsUtilities::FormatNumber()` giving fixed, thousands-grouped formatting instead. (2) a
+  new `wxChartSliceData::SetTooltipTextOverride()` - a pie/doughnut slice alone has no access to
+  the *other* slices' values, so it can't compute its own percentage of the whole; the override
+  lets `ChartDialog.cpp` build the full multi-line "label / total (NN.N%) / avg per period"
+  tooltip itself, once it has all the slices' values to compute a percentage from (see
+  `ChartTabPanel::BuildPieChart()`). (3) `wxChartTooltip::Draw()` (`wxcharttooltip.cpp`) only ever
+  measured/drew its text as one line - needed for exactly that multi-line override text, so it now
+  splits on `\n`, sizes the tooltip bubble to the widest line and the total line count, and draws
+  each line at its own vertical offset.
+  Separately, application code (`ChartDialog.cpp`'s `EnsureDatasetThemesRegistered`) registers a
+  solid, opaque colour into the process-wide `wxChartsDefaultTheme` for every dataset index a
+  chart needs — needed because the library's own default theme (`wxChartsPresentationTheme`)
+  only ever pre-registers implicit dataset ids 0-2, each a semi-transparent washed-out shade by
+  design; any dataset beyond that gets a **null** `wxSharedPtr<wxChartsDatasetTheme>` from
+  `wxChartsTheme::GetDatasetTheme()` (`std::map::operator[]` on a missing key), which every
+  `*Chart::Initialize()` then dereferences unconditionally — so a periodic chart with more than 3
+  topics/series would otherwise crash. This one is *not* in the patch file since it lives
+  entirely in `ChartDialog.cpp` (no vendored source touched) - `wxChartsDefaultTheme` is a public
+  `extern` singleton, reachable from application code.
   Builds every chart type in one static lib (pie/bar/line and more); which types the app actually
   uses is a call site decision, not a build-time one.
 - **GoogleTest** (`BankAccountTests.vcxproj` only) is a source checkout at
