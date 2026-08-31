@@ -58,6 +58,9 @@
     <ClCompile Include="src\GuiHelpers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\ChartDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\cApp.h">
@@ -67,6 +70,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\AddKeywordDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ChartDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ManualResolverDialog.h">

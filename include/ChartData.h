@@ -26,3 +26,29 @@ public:
 // CurrencyType) - callers get one ChartData per currency actually present, rather than values
 // silently merged across currencies.
 using ChartDataByCurrency = std::map<CurrencyType, ChartData>;
+
+// Income and expense are kept as two separate chart datasets rather than merged into one signed
+// net - a topic's net sum is frequently negative for expense-heavy categories, which a pie slice
+// or a bar-chart axis can't represent as a meaningful magnitude, and even where it can (a
+// periodic line chart), a merged net obscures the actual income/expense trend. Both sides are
+// always non-negative magnitudes here (QueryCurrencySum::Result's m_exp is a negative
+// accumulator - see QuerySumByTopic::GetChartResult()/PeriodicQuery::GetChartResult() for where
+// it's turned into a magnitude), so no chart widget needs its own sign-correction logic.
+struct ChartResult {
+	ChartDataByCurrency m_income;
+	ChartDataByCurrency m_expense;
+	// Singular name of one period ("year"/"month"/"day") - only set by PeriodicQuery::
+	// GetChartResult(), from its TopicPeriodicSubQuery::Mode. Lets a periodic pie's tooltip say
+	// "avg 8'254'175 Ft/year" instead of a mode-blind "/period".
+	String m_period_unit = "period";
+	inline bool IsEmpty() const { return m_income.empty() && m_expense.empty(); }
+};
+
+// The aggregation shape behind a query's ChartDataByCurrency - independent of which chart widget
+// (pie/bar/line) ends up drawing it, this says what kind of data it actually is, so a GUI layer
+// can pick a sensible default chart type without knowing about individual QueryElement subclasses.
+enum class ChartShape {
+	NONE,       // no chart data available for this query element
+	TOPIC_SUM,  // one value per topic - natural fit for a pie or bar chart
+	PERIODIC    // one value per topic per period, every series sharing one label axis - bar or line
+};

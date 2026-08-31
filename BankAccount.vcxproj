@@ -152,6 +152,7 @@
   <ItemGroup>
     <ClCompile Include="src\AddKeywordDialog.cpp" />
     <ClCompile Include="src\cApp.cpp" />
+    <ClCompile Include="src\ChartDialog.cpp" />
     <ClCompile Include="src\cMain.cpp" />
     <ClCompile Include="src\ExcelExport.cpp" />
     <ClCompile Include="src\GuiHelpers.cpp" />
@@ -164,6 +165,7 @@
   <ItemGroup>
     <ClInclude Include="include\AddKeywordDialog.h" />
     <ClInclude Include="include\cApp.h" />
+    <ClInclude Include="include\ChartDialog.h" />
     <ClInclude Include="include\cMain.h" />
     <ClInclude Include="include\ExcelExport.h" />
     <ClInclude Include="include\GuiHelpers.h" />

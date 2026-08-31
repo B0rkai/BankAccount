@@ -169,21 +169,33 @@ double MoneyValueAsDouble(const int64_t raw, const CurrencyType type) {
 	return MakeCurrency(type)->HasCents() ? raw / 100.0 : (double)raw;
 }
 
-ChartDataByCurrency QuerySumByTopic::GetChartResult() const {
-	ChartDataByCurrency result;
+// Appends one (label, value) point to the "Sum" series of `target`'s ChartData for `currency`,
+// creating either as needed - shared by QuerySumByTopic::GetChartResult()'s income and expense
+// passes, which are otherwise identical except for which of Result's two fields they read.
+void AppendTopicSumPoint(ChartDataByCurrency& target, const CurrencyType currency, const String& label, const int64_t raw_amount) {
+	ChartData& chart = target[currency];
+	chart.m_currency = currency;
+	if (chart.m_series.empty()) {
+		chart.m_series.emplace_back().m_name = "Sum";
+	}
+	chart.m_labels.push_back(label);
+	chart.m_series.front().m_values.push_back(MoneyValueAsDouble(raw_amount, currency));
+}
+
+ChartResult QuerySumByTopic::GetChartResult() const {
+	ChartResult result;
 	// each topic's currencies are added independently, so a topic that never had e.g. an EUR
 	// transaction simply has no EUR data point - unlike PeriodicQuery::GetChartResult(), there's
-	// no shared axis here that needs every topic represented at every position.
+	// no shared axis here that needs every topic represented at every position. Both income and
+	// expense get a point for every topic+currency pair that appears at all, even when one side
+	// is zero, so the two tabs' labels/legends stay comparable.
 	for (const TopicSubQuery* tsq : GetSortedSubQueries()) {
 		for (auto& pair : tsq->GetResults()) {
 			const CurrencyType currency = pair.first;
-			ChartData& chart = result[currency];
-			chart.m_currency = currency;
-			if (chart.m_series.empty()) {
-				chart.m_series.emplace_back().m_name = "Sum";
-			}
-			chart.m_labels.push_back(tsq->GetName());
-			chart.m_series.front().m_values.push_back(MoneyValueAsDouble(pair.second.m_sum, currency));
+			AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), pair.second.m_inc);
+			// m_exp is a negative accumulator (see QueryCurrencySum::CheckTransaction) - negate
+			// it into a spend magnitude here, once, rather than in every chart widget.
+			AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -pair.second.m_exp);
 		}
 	}
 	return result;
@@ -597,8 +609,8 @@ StringTable PeriodicQuery::GetTableResult() const {
 	return table;
 }
 
-ChartDataByCurrency PeriodicQuery::GetChartResult() const {
-	ChartDataByCurrency result;
+ChartResult PeriodicQuery::GetChartResult() const {
+	ChartResult result;
 	int start = INT_MAX;
 	int end = 0;
 	for (auto& p : m_subqueries) {
@@ -614,6 +626,19 @@ ChartDataByCurrency PeriodicQuery::GetChartResult() const {
 	if (end < start) { // no data
 		return result;
 	}
+	switch (m_mode) {
+	case TopicPeriodicSubQuery::YEARLY:
+		result.m_period_unit = "year";
+		break;
+	case TopicPeriodicSubQuery::MONTHLY:
+		result.m_period_unit = "month";
+		break;
+	case TopicPeriodicSubQuery::DAILY:
+		result.m_period_unit = "day";
+		break;
+	default:
+		break; // leaves ChartResult::m_period_unit at its "period" default
+	}
 	StringVector labels;
 	for (int date_id = start; date_id <= end; ++date_id) {
 		labels.push_back(DateId2String(m_mode, date_id));
@@ -623,22 +648,28 @@ ChartDataByCurrency PeriodicQuery::GetChartResult() const {
 	// being skipped, keeping every series the same length as m_labels.
 	for (auto& p : m_subqueries) {
 		for (CurrencyType currency : p.second.GetCurrencyTypes()) {
-			ChartData& chart = result[currency];
-			chart.m_currency = currency;
-			chart.m_labels = labels;
-			ChartSeries& series = chart.m_series.emplace_back();
-			series.m_name = p.second.GetName();
+			ChartData& income_chart = result.m_income[currency];
+			ChartData& expense_chart = result.m_expense[currency];
+			income_chart.m_currency = expense_chart.m_currency = currency;
+			income_chart.m_labels = expense_chart.m_labels = labels;
+			ChartSeries& income_series = income_chart.m_series.emplace_back();
+			ChartSeries& expense_series = expense_chart.m_series.emplace_back();
+			income_series.m_name = expense_series.m_name = p.second.GetName();
 			for (int date_id = start; date_id <= end; ++date_id) {
 				const TopicSubQuery* sub = p.second.GetSubQuery(date_id);
-				double value = 0.0;
+				double income_value = 0.0;
+				double expense_value = 0.0;
 				if (sub) {
 					auto res_map = sub->GetResults();
 					auto it = res_map.find(currency);
 					if (it != res_map.end()) {
-						value = MoneyValueAsDouble(it->second.m_sum, currency);
+						income_value = MoneyValueAsDouble(it->second.m_inc, currency);
+						// m_exp is a negative accumulator - negate into a spend magnitude
+						expense_value = MoneyValueAsDouble(-it->second.m_exp, currency);
 					}
 				}
-				series.m_values.push_back(value);
+				income_series.m_values.push_back(income_value);
+				expense_series.m_values.push_back(expense_value);
 			}
 		}
 	}

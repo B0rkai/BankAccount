@@ -53,6 +53,10 @@ public:
 	virtual StringTable GetTableResult() const;
 	inline virtual bool ReadOnly() const { return true; }
 	inline virtual bool IsOk() const = 0;
+	// Most QueryElements have no chart data - only QuerySumByTopic and PeriodicQuery override
+	// these (see their own declarations below).
+	inline virtual ChartResult GetChartResult() const { return ChartResult(); }
+	inline virtual ChartShape GetChartShape() const { return ChartShape::NONE; }
 };
 
 // RAII guard around QueryElement::SetResolveIf() - resets to nullptr unconditionally when the
@@ -162,7 +166,8 @@ class QuerySumByTopic : public QueryCurrencySum {
 	// shared by GetTableResult() and GetChartResult() - both need topics sorted ascending by HUF sum
 	std::vector<const TopicSubQuery*> GetSortedSubQueries() const;
 public:
-	ChartDataByCurrency GetChartResult() const;
+	virtual ChartResult GetChartResult() const override;
+	inline virtual ChartShape GetChartShape() const override { return ChartShape::TOPIC_SUM; }
 };
 
 class QueryCategorySum : public QuerySumByTopic {
@@ -209,7 +214,8 @@ class PeriodicQuery : public QueryCurrencySum {
 	virtual bool CheckTransaction(const Transaction* tr) override;
 public:
 	virtual StringTable GetTableResult() const;
-	ChartDataByCurrency GetChartResult() const;
+	virtual ChartResult GetChartResult() const override;
+	inline virtual ChartShape GetChartShape() const override { return ChartShape::PERIODIC; }
 	inline void SetMode(const TopicPeriodicSubQuery::Mode m) { m_mode = m; }
 };
 

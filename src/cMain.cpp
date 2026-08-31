@@ -22,6 +22,7 @@
 #include "Journal.h"
 #include "AddKeywordDialog.h"
 #include "GuiHelpers.h"
+#include "ChartDialog.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -106,6 +107,7 @@ enum CtrIds {
 	MENU_TEST_EUR_RATES,
 	MENU_VIEW_LOG,
 	MENU_EXPORT_EXCEL,
+	MENU_SHOW_CHART,
 	MENU_APPLY_RECOVERY,
 #ifdef _DEBUG
 	MENU_REPLAY_JOURNAL,
@@ -149,6 +151,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 #endif
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
+	EVT_MENU(MENU_SHOW_CHART, ShowChartClicked)
 	EVT_MENU(MENU_CTX_ADD_KEYWORD, OnAddKeywordFromContextMenu)
 	EVT_MENU(MENU_CTX_MERGE_SELECTED, OnMergeSelectedFromContextMenu)
 wxEND_EVENT_TABLE()
@@ -167,6 +170,18 @@ cMain::cMain()
 	new wxStaticText(m_main_panel, wxID_ANY, "Filter:", wxPoint(20, 240));
 	m_grid_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(65, 237), wxSize(300, 24));
 	m_grid_filter_textctrl->Bind(wxEVT_TEXT, &cMain::OnGridFilterTextChanged, this);
+
+	// Right-aligned to the same x=1345 right edge m_info_textctrl/m_result_grid already share
+	// (20 + 1325 wide), pictogram-only with a tooltip instead of a visible label - both start
+	// disabled since the grid starts empty, live-updated by UpdateGridActionButtons().
+	m_export_excel_btn = new wxBitmapButton(m_main_panel, wxID_ANY, MakeExportIconBitmap(20), wxPoint(1291, 237), wxSize(24, 24));
+	m_export_excel_btn->SetToolTip("Export results to Excel");
+	m_export_excel_btn->Bind(wxEVT_BUTTON, &cMain::ExportToExcel, this);
+	m_show_chart_btn = new wxBitmapButton(m_main_panel, wxID_ANY, MakeChartIconBitmap(20), wxPoint(1321, 237), wxSize(24, 24));
+	m_show_chart_btn->SetToolTip("Show results as a chart");
+	m_show_chart_btn->Bind(wxEVT_BUTTON, &cMain::ShowChartClicked, this);
+	m_export_excel_btn->Enable(false);
+	m_show_chart_btn->Enable(false);
 
 	m_result_grid = new wxGrid(m_main_panel, wxID_ANY, wxPoint(20, 270), wxSize(1325, 370));
 	m_result_grid->CreateGrid(0, 0);
@@ -621,6 +636,11 @@ void cMain::SetGridData(const StringTable& table) {
 	if (m_grid_filter_textctrl) {
 		m_grid_filter_textctrl->ChangeValue(wxEmptyString);
 	}
+	// The default for every grid-populating path - QueryButtonClicked is the only one that then
+	// overrides this with real chart data, once it knows which QueryElement (if any) is behind
+	// the table it just handed here.
+	m_current_chart_data = ChartResult();
+	m_current_chart_shape = ChartShape::NONE;
 }
 
 void cMain::RenderGrid() {
@@ -675,6 +695,17 @@ void cMain::RenderGrid() {
 		// encoding instead of being unambiguous.
 		label += m_grid_sort_ascending ? " ^" : " v";
 		m_result_grid->SetColLabelValue(m_grid_sort_col, label);
+	}
+	UpdateGridActionButtons();
+}
+
+void cMain::UpdateGridActionButtons() {
+	const bool has_grid_data = m_result_grid && (m_result_grid->GetNumberRows() > 0);
+	if (m_export_excel_btn) {
+		m_export_excel_btn->Enable(has_grid_data);
+	}
+	if (m_show_chart_btn) {
+		m_show_chart_btn->Enable(has_grid_data && !m_current_chart_data.IsEmpty());
 	}
 }
 
@@ -1107,6 +1138,7 @@ void cMain::InitMenu() {
 	querymenu->Append(MENU_LIST_CATEGORIES, "List Categories");
 	querymenu->AppendSeparator();
 	querymenu->Append(MENU_EXPORT_EXCEL, "Export Results to Excel...");
+	querymenu->Append(MENU_SHOW_CHART, "Show as Chart...");
 	viewmenu->Append(MENU_VIEW_LOG, "Show Log Viewer");
 	testmenu->Append(MENU_TEST_MANUAL_RESOLVER, "ManualResolverDialog");
 	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
@@ -1229,6 +1261,7 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 	auto table = m_bank_file->MakeQuery(q);
 
 	StringTable grid_table;
+	QueryElement* charting_source = nullptr; // the QueryElement (if any) whose table became grid_table
 	for (auto* qe : q) {
 		result.append(qe->GetStringResult());
 		auto qe_table = qe->GetTableResult();
@@ -1237,6 +1270,7 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 		}
 		if (grid_table.empty()) {
 			grid_table = qe_table; // first table found is the default grid content
+			charting_source = qe;
 		} else {
 			result.append(PrettyTable(qe_table)); // further tables stay as plain text
 		}
@@ -1245,6 +1279,7 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 	if (!table.empty()) {
 		grid_table = table; // the transaction list, when present, takes priority for the grid
 		grid_is_transaction_list = true;
+		charting_source = nullptr; // a raw transaction list has no chart data
 	}
 
 	UIOutputText(result);
@@ -1253,6 +1288,14 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 	} else {
 		UIOutputTable(grid_table); // aggregate/sum table - not editable
 	}
+	// UIOutputTable() above already reset chart state to "none" via SetGridData() - this is the
+	// one call site that can supply the real thing, since only here is a QueryElement (still
+	// alive - q hasn't gone out of scope yet) known to be behind what's now in the grid.
+	if (charting_source) {
+		m_current_chart_data = charting_source->GetChartResult();
+		m_current_chart_shape = charting_source->GetChartShape();
+	}
+	UpdateGridActionButtons();
 }
 
 void cMain::MergeButtonClicked(wxCommandEvent& evt) {
@@ -1477,6 +1520,20 @@ void cMain::ExportToExcel(wxCommandEvent& evt) {
 	} else {
 		UIOutputText("ERROR: Export failed, see the log for details.");
 	}
+}
+
+void cMain::ShowChartClicked(wxCommandEvent& evt) {
+	evt.Skip();
+	if (!m_result_grid->GetNumberRows()) {
+		UIOutputText("Nothing to chart - run a query or list first.");
+		return;
+	}
+	if (m_current_chart_data.IsEmpty()) {
+		UIOutputText("This result has no chart data - charts are available for periodic and category/client/type/account sum queries.");
+		return;
+	}
+	ChartDialog dlg(this, m_current_chart_data, m_current_chart_shape);
+	dlg.ShowModal();
 }
 
 void cMain::ShowLogViewer(wxCommandEvent& evt) {

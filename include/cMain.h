@@ -8,6 +8,7 @@
 #include "IManualResolve.h"
 #include "INewAccount.h"
 #include "AccountManager.h" // for AccountManager::TransactionIdentity
+#include "ChartData.h"
 
 // wxButton;
 class BankAccountFile;
@@ -99,6 +100,18 @@ class cMain :
     wxGrid* m_result_grid = nullptr;
     wxTextCtrl* m_grid_filter_textctrl = nullptr;
     wxTextCtrl* m_info_textctrl = nullptr;
+    // Square, pictogram-only buttons right-aligned on the filter row - live-enabled/disabled by
+    // UpdateGridActionButtons() as the grid's content changes, unlike the equivalent "Export
+    // Results to Excel"/"Show as Chart" query-menu items, which stay always-clickable and show a
+    // message instead (see ExportToExcel/ShowChartClicked).
+    wxBitmapButton* m_export_excel_btn = nullptr;
+    wxBitmapButton* m_show_chart_btn = nullptr;
+    // The chart data (if any) behind the query result currently shown in m_result_grid - set by
+    // QueryButtonClicked right after the grid itself is populated, and reset to "none" by
+    // SetGridData so every other grid-populating path (List, Categorize, ...) correctly reports
+    // no chart available. ChartShape::NONE / ChartResult::IsEmpty() both mean "nothing to chart".
+    ChartResult m_current_chart_data;
+    ChartShape m_current_chart_shape = ChartShape::NONE;
     std::unique_ptr<BankAccountFile> m_bank_file;
     std::vector<AccountManager::TransactionIdentity> m_grid_identities;
     // Full, unsorted/unfiltered result behind whatever is currently displayed in
@@ -153,6 +166,10 @@ class cMain :
     // reapplies whichever per-mode editable-column rules apply. Call after SetGridData, after
     // a header click changes sort state, or after the filter text changes.
     void RenderGrid();
+    // Refreshes m_export_excel_btn/m_show_chart_btn's enabled state from the grid's current row
+    // count and m_current_chart_data - called at the end of RenderGrid() (every grid-populating
+    // path funnels through it) and again by QueryButtonClicked once it knows the real chart data.
+    void UpdateGridActionButtons();
     void ApplyTransactionEditableColumns();
     void ApplyEntityEditableColumns();
     void OnGridLabelLeftClick(wxGridEvent& evt);
@@ -187,6 +204,7 @@ class cMain :
     void Import(wxCommandEvent& evt);
     void UpdateExchangeRates(wxCommandEvent& evt);
     void ExportToExcel(wxCommandEvent& evt);
+    void ShowChartClicked(wxCommandEvent& evt);
     void ShowLogViewer(wxCommandEvent& evt);
     void UpdateMenu(wxEvent&);
     void Test(wxCommandEvent& evt);

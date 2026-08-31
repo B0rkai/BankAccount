@@ -207,14 +207,14 @@ TEST(QueryByNameTest, LeadingExclamationMarkInvertsTheMatch) {
     EXPECT_TRUE(Check(&q, &other));
 }
 
-TEST(QuerySumByTopicTest, ChartResultSortsTopicsAscendingByHufSum) {
+TEST(QuerySumByTopicTest, ChartResultSeparatesIncomeAndExpenseAndSortsTopicsAscendingByHufSum) {
     FakeAccount acc(Id(0), "Acc");
-    Transaction groceries1(&acc, Money(HUF, 1000), 45000, Id(0), Id(0));
-    groceries1.GetCategoryId() = Id(5);
-    Transaction groceries2(&acc, Money(HUF, 500), 45000, Id(0), Id(0));
-    groceries2.GetCategoryId() = Id(5);
-    Transaction rent(&acc, Money(HUF, 2000), 45000, Id(0), Id(0));
-    rent.GetCategoryId() = Id(7);
+    Transaction groceries_income(&acc, Money(HUF, 1000), 45000, Id(0), Id(0));
+    groceries_income.GetCategoryId() = Id(5);
+    Transaction groceries_expense(&acc, Money(HUF, -400), 45000, Id(0), Id(0));
+    groceries_expense.GetCategoryId() = Id(5);
+    Transaction rent_expense(&acc, Money(HUF, -2000), 45000, Id(0), Id(0));
+    rent_expense.GetCategoryId() = Id(7);
 
     FakeNameResolve resolve;
     resolve.SetName(Id(5), "Groceries");
@@ -222,24 +222,34 @@ TEST(QuerySumByTopicTest, ChartResultSortsTopicsAscendingByHufSum) {
     QueryResolveScope scope(&resolve);
 
     QueryCategorySum q;
-    Check(&q, &groceries1);
-    Check(&q, &groceries2);
-    Check(&q, &rent);
+    Check(&q, &groceries_income);
+    Check(&q, &groceries_expense);
+    Check(&q, &rent_expense);
 
-    ChartDataByCurrency result = q.GetChartResult();
-    ASSERT_EQ(result.size(), 1u);
-    ASSERT_TRUE(result.count(HUF));
-    const ChartData& chart = result.at(HUF);
+    ChartResult result = q.GetChartResult();
+    ASSERT_EQ(result.m_income.size(), 1u);
+    ASSERT_EQ(result.m_expense.size(), 1u);
+    ASSERT_TRUE(result.m_income.count(HUF));
+    ASSERT_TRUE(result.m_expense.count(HUF));
 
-    ASSERT_EQ(chart.m_labels.size(), 2u);
-    EXPECT_EQ(chart.m_labels[0], "Groceries"); // 1500 sums before Rent's 2000
-    EXPECT_EQ(chart.m_labels[1], "Rent");
+    // net HUF sums: Rent -2000, Groceries 600 (1000 - 400) - Rent sorts first (ascending)
+    const ChartData& income = result.m_income.at(HUF);
+    ASSERT_EQ(income.m_labels.size(), 2u);
+    EXPECT_EQ(income.m_labels[0], "Rent");
+    EXPECT_EQ(income.m_labels[1], "Groceries");
+    ASSERT_EQ(income.m_series.size(), 1u);
+    EXPECT_EQ(income.m_series[0].m_name, "Sum");
+    ASSERT_EQ(income.m_series[0].m_values.size(), 2u);
+    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[0], 0.0);    // Rent had no income leg
+    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[1], 1000.0); // Groceries' income leg
 
-    ASSERT_EQ(chart.m_series.size(), 1u);
-    EXPECT_EQ(chart.m_series[0].m_name, "Sum");
-    ASSERT_EQ(chart.m_series[0].m_values.size(), 2u);
-    EXPECT_DOUBLE_EQ(chart.m_series[0].m_values[0], 1500.0);
-    EXPECT_DOUBLE_EQ(chart.m_series[0].m_values[1], 2000.0);
+    const ChartData& expense = result.m_expense.at(HUF);
+    ASSERT_EQ(expense.m_labels.size(), 2u);
+    EXPECT_EQ(expense.m_labels[0], "Rent");
+    EXPECT_EQ(expense.m_labels[1], "Groceries");
+    ASSERT_EQ(expense.m_series[0].m_values.size(), 2u);
+    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[0], 2000.0); // magnitude, not -2000
+    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[1], 400.0);
 }
 
 TEST(QuerySumByTopicTest, ChartResultKeepsCurrenciesSeparateAndScalesByCents) {
@@ -258,31 +268,34 @@ TEST(QuerySumByTopicTest, ChartResultKeepsCurrenciesSeparateAndScalesByCents) {
     Check(&q, &travel);
     Check(&q, &rent);
 
-    ChartDataByCurrency result = q.GetChartResult();
-    ASSERT_EQ(result.size(), 2u); // one topic never had the other's currency, so no zero-filled entry for it
+    ChartResult result = q.GetChartResult();
+    ASSERT_EQ(result.m_income.size(), 2u); // one topic never had the other's currency, so no zero-filled entry for it
+    ASSERT_EQ(result.m_expense.size(), 2u); // both directions mirror the same currencies, even with these all-income transactions
 
-    const ChartData& eur_chart = result.at(EUR);
-    ASSERT_EQ(eur_chart.m_labels.size(), 1u);
-    EXPECT_EQ(eur_chart.m_labels[0], "Travel");
-    EXPECT_DOUBLE_EQ(eur_chart.m_series[0].m_values[0], 100.0);
+    const ChartData& eur_income = result.m_income.at(EUR);
+    ASSERT_EQ(eur_income.m_labels.size(), 1u);
+    EXPECT_EQ(eur_income.m_labels[0], "Travel");
+    EXPECT_DOUBLE_EQ(eur_income.m_series[0].m_values[0], 100.0);
+    EXPECT_DOUBLE_EQ(result.m_expense.at(EUR).m_series[0].m_values[0], 0.0);
 
-    const ChartData& huf_chart = result.at(HUF);
-    ASSERT_EQ(huf_chart.m_labels.size(), 1u);
-    EXPECT_EQ(huf_chart.m_labels[0], "Rent");
-    EXPECT_DOUBLE_EQ(huf_chart.m_series[0].m_values[0], 5000.0);
+    const ChartData& huf_income = result.m_income.at(HUF);
+    ASSERT_EQ(huf_income.m_labels.size(), 1u);
+    EXPECT_EQ(huf_income.m_labels[0], "Rent");
+    EXPECT_DOUBLE_EQ(huf_income.m_series[0].m_values[0], 5000.0);
+    EXPECT_DOUBLE_EQ(result.m_expense.at(HUF).m_series[0].m_values[0], 0.0);
 }
 
-TEST(PeriodicQueryTest, ChartResultPadsMissingPeriodsWithZeroAcrossASharedLabelAxis) {
+TEST(PeriodicQueryTest, ChartResultSeparatesIncomeAndExpenseAndPadsMissingPeriodsWithZero) {
     FakeAccount acc(Id(0), "Acc");
     uint16_t date_2020 = (uint16_t)DMYToExcelSerialDate(1, 1, 2020);
     uint16_t date_2023 = (uint16_t)DMYToExcelSerialDate(1, 1, 2023);
 
-    Transaction groceries_2020(&acc, Money(HUF, 1000), date_2020, Id(0), Id(0));
-    groceries_2020.GetCategoryId() = Id(5);
-    Transaction groceries_2023(&acc, Money(HUF, 500), date_2023, Id(0), Id(0));
-    groceries_2023.GetCategoryId() = Id(5);
-    Transaction rent_2020(&acc, Money(HUF, 2000), date_2020, Id(0), Id(0));
-    rent_2020.GetCategoryId() = Id(7);
+    Transaction groceries_income_2020(&acc, Money(HUF, 1000), date_2020, Id(0), Id(0));
+    groceries_income_2020.GetCategoryId() = Id(5);
+    Transaction groceries_expense_2023(&acc, Money(HUF, -500), date_2023, Id(0), Id(0));
+    groceries_expense_2023.GetCategoryId() = Id(5);
+    Transaction rent_expense_2020(&acc, Money(HUF, -2000), date_2020, Id(0), Id(0));
+    rent_expense_2020.GetCategoryId() = Id(7);
 
     FakeNameResolve resolve;
     resolve.SetName(Id(5), "Groceries");
@@ -291,40 +304,56 @@ TEST(PeriodicQueryTest, ChartResultPadsMissingPeriodsWithZeroAcrossASharedLabelA
 
     PeriodicCategoryQuery q;
     q.SetMode(TopicPeriodicSubQuery::YEARLY);
-    Check(&q, &groceries_2020);
-    Check(&q, &groceries_2023);
-    Check(&q, &rent_2020);
+    Check(&q, &groceries_income_2020);
+    Check(&q, &groceries_expense_2023);
+    Check(&q, &rent_expense_2020);
 
-    ChartDataByCurrency result = q.GetChartResult();
-    ASSERT_EQ(result.size(), 1u);
-    const ChartData& chart = result.at(HUF);
-    ASSERT_EQ(chart.m_labels.size(), 4u);
-    EXPECT_EQ(chart.m_labels[0], "2020");
-    EXPECT_EQ(chart.m_labels[1], "2021");
-    EXPECT_EQ(chart.m_labels[2], "2022");
-    EXPECT_EQ(chart.m_labels[3], "2023");
+    ChartResult result = q.GetChartResult();
+    ASSERT_EQ(result.m_income.size(), 1u);
+    ASSERT_EQ(result.m_expense.size(), 1u);
 
-    ASSERT_EQ(chart.m_series.size(), 2u);
-    const ChartSeries* groceries = nullptr;
-    const ChartSeries* rent = nullptr;
-    for (const ChartSeries& s : chart.m_series) {
-        if (s.m_name == "Groceries") groceries = &s;
-        if (s.m_name == "Rent") rent = &s;
-    }
-    ASSERT_NE(groceries, nullptr);
-    ASSERT_NE(rent, nullptr);
+    auto find_series = [](const ChartData& chart, const String& name) -> const ChartSeries* {
+        for (const ChartSeries& s : chart.m_series) {
+            if (s.m_name == name) {
+                return &s;
+            }
+        }
+        return nullptr;
+    };
 
-    ASSERT_EQ(groceries->m_values.size(), 4u);
-    EXPECT_DOUBLE_EQ(groceries->m_values[0], 1000.0);
-    EXPECT_DOUBLE_EQ(groceries->m_values[1], 0.0);
-    EXPECT_DOUBLE_EQ(groceries->m_values[2], 0.0);
-    EXPECT_DOUBLE_EQ(groceries->m_values[3], 500.0);
+    const ChartData& income = result.m_income.at(HUF);
+    ASSERT_EQ(income.m_labels.size(), 4u);
+    EXPECT_EQ(income.m_labels[0], "2020");
+    EXPECT_EQ(income.m_labels[1], "2021");
+    EXPECT_EQ(income.m_labels[2], "2022");
+    EXPECT_EQ(income.m_labels[3], "2023");
 
-    ASSERT_EQ(rent->m_values.size(), 4u);
-    EXPECT_DOUBLE_EQ(rent->m_values[0], 2000.0);
-    EXPECT_DOUBLE_EQ(rent->m_values[1], 0.0);
-    EXPECT_DOUBLE_EQ(rent->m_values[2], 0.0);
-    EXPECT_DOUBLE_EQ(rent->m_values[3], 0.0);
+    const ChartSeries* groceries_income = find_series(income, "Groceries");
+    ASSERT_NE(groceries_income, nullptr);
+    ASSERT_EQ(groceries_income->m_values.size(), 4u);
+    EXPECT_DOUBLE_EQ(groceries_income->m_values[0], 1000.0);
+    EXPECT_DOUBLE_EQ(groceries_income->m_values[1], 0.0);
+    EXPECT_DOUBLE_EQ(groceries_income->m_values[2], 0.0);
+    EXPECT_DOUBLE_EQ(groceries_income->m_values[3], 0.0); // the 2023 leg was an expense, not income
+
+    const ChartSeries* rent_income = find_series(income, "Rent");
+    ASSERT_NE(rent_income, nullptr);
+    EXPECT_DOUBLE_EQ(rent_income->m_values[0], 0.0); // Rent's only transaction was an expense
+
+    const ChartData& expense = result.m_expense.at(HUF);
+    const ChartSeries* groceries_expense = find_series(expense, "Groceries");
+    ASSERT_NE(groceries_expense, nullptr);
+    ASSERT_EQ(groceries_expense->m_values.size(), 4u);
+    EXPECT_DOUBLE_EQ(groceries_expense->m_values[0], 0.0);
+    EXPECT_DOUBLE_EQ(groceries_expense->m_values[3], 500.0); // magnitude, not -500
+
+    const ChartSeries* rent_expense = find_series(expense, "Rent");
+    ASSERT_NE(rent_expense, nullptr);
+    ASSERT_EQ(rent_expense->m_values.size(), 4u);
+    EXPECT_DOUBLE_EQ(rent_expense->m_values[0], 2000.0); // magnitude, not -2000
+    EXPECT_DOUBLE_EQ(rent_expense->m_values[1], 0.0);
+    EXPECT_DOUBLE_EQ(rent_expense->m_values[2], 0.0);
+    EXPECT_DOUBLE_EQ(rent_expense->m_values[3], 0.0);
 }
 
 }
