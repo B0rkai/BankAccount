@@ -13,5 +13,10 @@
     <ClCompile Include="tests\CurrencyTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\ManagedTypeTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\ManagerTypeTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\AccountNumberTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\ClientTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\ClientManagerTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\CategoryTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\CategorySystemTests.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>
