@@ -1,9 +1,11 @@
 #include "gtest/gtest.h"
 #include "Query.h"
+#include "ChartData.h"
 #include "Transaction.h"
 #include "IAccount.h"
 #include "INameResolve.h"
 #include "Currency.h"
+#include "CommonTypes.h"
 #include <list>
 #include <map>
 
@@ -32,14 +34,19 @@ public:
 // in production (see QueryByName::PreResolve() in Query.cpp).
 class FakeNameResolve : public INameResolve {
     std::map<String, IdSet> m_ids_by_name;
+    std::map<Id::Type, String> m_name_by_id;
 public:
     void SetIds(const String& name, IdSet ids) { m_ids_by_name[name] = ids; }
+    void SetName(const Id id, const String& name) { m_name_by_id[id] = name; }
     virtual IdSet GetIds(const QueryTopic, const String& name) const override {
         auto it = m_ids_by_name.find(name);
         return (it == m_ids_by_name.end()) ? IdSet{} : it->second;
     }
     virtual String GetInfo(const QueryTopic, const Id) const override { return ""; }
-    virtual String GetName(const QueryTopic, const Id) const override { return ""; }
+    virtual String GetName(const QueryTopic, const Id id) const override {
+        auto it = m_name_by_id.find(id);
+        return (it == m_name_by_id.end()) ? String() : it->second;
+    }
 };
 
 // CheckTransaction() is re-declared private/protected on every concrete QueryElement subclass
@@ -198,6 +205,126 @@ TEST(QueryByNameTest, LeadingExclamationMarkInvertsTheMatch) {
 
     EXPECT_FALSE(Check(&q, &matching));
     EXPECT_TRUE(Check(&q, &other));
+}
+
+TEST(QuerySumByTopicTest, ChartResultSortsTopicsAscendingByHufSum) {
+    FakeAccount acc(Id(0), "Acc");
+    Transaction groceries1(&acc, Money(HUF, 1000), 45000, Id(0), Id(0));
+    groceries1.GetCategoryId() = Id(5);
+    Transaction groceries2(&acc, Money(HUF, 500), 45000, Id(0), Id(0));
+    groceries2.GetCategoryId() = Id(5);
+    Transaction rent(&acc, Money(HUF, 2000), 45000, Id(0), Id(0));
+    rent.GetCategoryId() = Id(7);
+
+    FakeNameResolve resolve;
+    resolve.SetName(Id(5), "Groceries");
+    resolve.SetName(Id(7), "Rent");
+    QueryResolveScope scope(&resolve);
+
+    QueryCategorySum q;
+    Check(&q, &groceries1);
+    Check(&q, &groceries2);
+    Check(&q, &rent);
+
+    ChartDataByCurrency result = q.GetChartResult();
+    ASSERT_EQ(result.size(), 1u);
+    ASSERT_TRUE(result.count(HUF));
+    const ChartData& chart = result.at(HUF);
+
+    ASSERT_EQ(chart.m_labels.size(), 2u);
+    EXPECT_EQ(chart.m_labels[0], "Groceries"); // 1500 sums before Rent's 2000
+    EXPECT_EQ(chart.m_labels[1], "Rent");
+
+    ASSERT_EQ(chart.m_series.size(), 1u);
+    EXPECT_EQ(chart.m_series[0].m_name, "Sum");
+    ASSERT_EQ(chart.m_series[0].m_values.size(), 2u);
+    EXPECT_DOUBLE_EQ(chart.m_series[0].m_values[0], 1500.0);
+    EXPECT_DOUBLE_EQ(chart.m_series[0].m_values[1], 2000.0);
+}
+
+TEST(QuerySumByTopicTest, ChartResultKeepsCurrenciesSeparateAndScalesByCents) {
+    FakeAccount acc(Id(0), "Acc");
+    Transaction travel(&acc, Money(EUR, 10000), 45000, Id(0), Id(0)); // EUR has cents: 100.00
+    travel.GetCategoryId() = Id(3);
+    Transaction rent(&acc, Money(HUF, 5000), 45000, Id(0), Id(0)); // HUF has no cents: already whole units
+    rent.GetCategoryId() = Id(4);
+
+    FakeNameResolve resolve;
+    resolve.SetName(Id(3), "Travel");
+    resolve.SetName(Id(4), "Rent");
+    QueryResolveScope scope(&resolve);
+
+    QueryCategorySum q;
+    Check(&q, &travel);
+    Check(&q, &rent);
+
+    ChartDataByCurrency result = q.GetChartResult();
+    ASSERT_EQ(result.size(), 2u); // one topic never had the other's currency, so no zero-filled entry for it
+
+    const ChartData& eur_chart = result.at(EUR);
+    ASSERT_EQ(eur_chart.m_labels.size(), 1u);
+    EXPECT_EQ(eur_chart.m_labels[0], "Travel");
+    EXPECT_DOUBLE_EQ(eur_chart.m_series[0].m_values[0], 100.0);
+
+    const ChartData& huf_chart = result.at(HUF);
+    ASSERT_EQ(huf_chart.m_labels.size(), 1u);
+    EXPECT_EQ(huf_chart.m_labels[0], "Rent");
+    EXPECT_DOUBLE_EQ(huf_chart.m_series[0].m_values[0], 5000.0);
+}
+
+TEST(PeriodicQueryTest, ChartResultPadsMissingPeriodsWithZeroAcrossASharedLabelAxis) {
+    FakeAccount acc(Id(0), "Acc");
+    uint16_t date_2020 = (uint16_t)DMYToExcelSerialDate(1, 1, 2020);
+    uint16_t date_2023 = (uint16_t)DMYToExcelSerialDate(1, 1, 2023);
+
+    Transaction groceries_2020(&acc, Money(HUF, 1000), date_2020, Id(0), Id(0));
+    groceries_2020.GetCategoryId() = Id(5);
+    Transaction groceries_2023(&acc, Money(HUF, 500), date_2023, Id(0), Id(0));
+    groceries_2023.GetCategoryId() = Id(5);
+    Transaction rent_2020(&acc, Money(HUF, 2000), date_2020, Id(0), Id(0));
+    rent_2020.GetCategoryId() = Id(7);
+
+    FakeNameResolve resolve;
+    resolve.SetName(Id(5), "Groceries");
+    resolve.SetName(Id(7), "Rent");
+    QueryResolveScope scope(&resolve);
+
+    PeriodicCategoryQuery q;
+    q.SetMode(TopicPeriodicSubQuery::YEARLY);
+    Check(&q, &groceries_2020);
+    Check(&q, &groceries_2023);
+    Check(&q, &rent_2020);
+
+    ChartDataByCurrency result = q.GetChartResult();
+    ASSERT_EQ(result.size(), 1u);
+    const ChartData& chart = result.at(HUF);
+    ASSERT_EQ(chart.m_labels.size(), 4u);
+    EXPECT_EQ(chart.m_labels[0], "2020");
+    EXPECT_EQ(chart.m_labels[1], "2021");
+    EXPECT_EQ(chart.m_labels[2], "2022");
+    EXPECT_EQ(chart.m_labels[3], "2023");
+
+    ASSERT_EQ(chart.m_series.size(), 2u);
+    const ChartSeries* groceries = nullptr;
+    const ChartSeries* rent = nullptr;
+    for (const ChartSeries& s : chart.m_series) {
+        if (s.m_name == "Groceries") groceries = &s;
+        if (s.m_name == "Rent") rent = &s;
+    }
+    ASSERT_NE(groceries, nullptr);
+    ASSERT_NE(rent, nullptr);
+
+    ASSERT_EQ(groceries->m_values.size(), 4u);
+    EXPECT_DOUBLE_EQ(groceries->m_values[0], 1000.0);
+    EXPECT_DOUBLE_EQ(groceries->m_values[1], 0.0);
+    EXPECT_DOUBLE_EQ(groceries->m_values[2], 0.0);
+    EXPECT_DOUBLE_EQ(groceries->m_values[3], 500.0);
+
+    ASSERT_EQ(rent->m_values.size(), 4u);
+    EXPECT_DOUBLE_EQ(rent->m_values[0], 2000.0);
+    EXPECT_DOUBLE_EQ(rent->m_values[1], 0.0);
+    EXPECT_DOUBLE_EQ(rent->m_values[2], 0.0);
+    EXPECT_DOUBLE_EQ(rent->m_values[3], 0.0);
 }
 
 }

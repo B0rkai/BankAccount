@@ -42,6 +42,7 @@
     <ClInclude Include="include\BankAccountFile.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Category.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\CategorySystem.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\ChartData.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Client.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\ClientManager.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\CommonTypes.h"><Filter>Header Files</Filter></ClInclude>

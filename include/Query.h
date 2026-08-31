@@ -2,6 +2,7 @@
 #include <map>
 #include <unordered_map>
 #include "CommonTypes.h"
+#include "ChartData.h"
 
 #define GETQUERYTOPIC(topic) inline virtual QueryTopic GetTopic() const override { return QueryTopic::topic; }
 
@@ -158,6 +159,10 @@ class QuerySumByTopic : public QueryCurrencySum {
 	virtual String GetStringResult();
 	StringTable GetTableResult() const;
 	virtual std::map<CurrencyType, Result> GetResults() const;
+	// shared by GetTableResult() and GetChartResult() - both need topics sorted ascending by HUF sum
+	std::vector<const TopicSubQuery*> GetSortedSubQueries() const;
+public:
+	ChartDataByCurrency GetChartResult() const;
 };
 
 class QueryCategorySum : public QuerySumByTopic {
@@ -204,6 +209,7 @@ class PeriodicQuery : public QueryCurrencySum {
 	virtual bool CheckTransaction(const Transaction* tr) override;
 public:
 	virtual StringTable GetTableResult() const;
+	ChartDataByCurrency GetChartResult() const;
 	inline void SetMode(const TopicPeriodicSubQuery::Mode m) { m_mode = m; }
 };
 

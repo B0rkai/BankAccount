@@ -79,6 +79,26 @@ The project expects these to exist as siblings/fixed paths on the dev machine, o
   Debug and Release.
 - Prebuilt wxWidgets/ZipLib/zlib/bzip2/lzma `.lib`/`.pdb` files are checked into `external/`
   and used for Release|x64 and general linking (`AdditionalLibraryDirectories`).
+- **wxCharts** (MIT-licensed, [wxIshiko/wxCharts](https://github.com/wxIshiko/wxCharts)) is a
+  source checkout at `C:\Users\<user>\source\wxCharts`, built locally via CMake the same way as
+  xlnt/googletest: `cmake -G "Visual Studio 17 2022" -A x64 -DwxWidgets_ROOT_DIR=C:\Users\<user>\source\wxWidgets`
+  from a `build` subfolder, then `cmake --build . --config Debug` and `--config Release`. Its
+  `find_package(wxWidgets)` call needs the classic `lib\vc_x64_lib\*.lib` layout next to the
+  `mswu`/`mswud`/`wx\setup.h` folders that are already present under the `wxWidgets` checkout —
+  since this project's actual `.lib` files live flattened in this repo's `external\` instead
+  (not in that checkout), hardlink them in once per machine:
+  ```powershell
+  Get-ChildItem "C:\Users\<user>\source\repos\BankAccount\external\*.lib" | ForEach-Object {
+    New-Item -ItemType HardLink -Path "C:\Users\<user>\source\wxWidgets\lib\vc_x64_lib\$($_.Name)" -Target $_.FullName -ErrorAction SilentlyContinue
+  }
+  ```
+  Produces `build\bin\Debug\wxchartsd.lib` and `build\bin\Release\wxcharts.lib` (same
+  Debug/Release naming split as xlnt), referenced directly from `BankAccount.vcxproj` along with
+  `build\wxcharts_export.h` (a generated header, needed as an extra include dir — config-
+  independent since the library is built static, so `WXCHARTS_EXPORT` expands to nothing).
+  `BankAccountCore`/`BankAccountTests` don't link it — same GUI-only dependency shape as xlnt.
+  Builds every chart type in one static lib (pie/bar/line and more); which types the app actually
+  uses is a call site decision, not a build-time one.
 - **GoogleTest** (`BankAccountTests.vcxproj` only) is a source checkout at
   `C:\Users\<user>\source\googletest`, built locally via CMake the same way as xlnt:
   `cmake -G "Visual Studio 17 2022" -A x64 -Dgtest_force_shared_crt=ON -DBUILD_GMOCK=ON` from a

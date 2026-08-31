@@ -59,8 +59,7 @@ String QuerySumByTopic::GetStringResult() {
 	return res;
 }
 
-StringTable QuerySumByTopic::GetTableResult() const {
-	// default sorting
+std::vector<const TopicSubQuery*> QuerySumByTopic::GetSortedSubQueries() const {
 	std::vector<const TopicSubQuery*> sum_list_sorting;
 	for (auto& pair : m_subqueries) {
 		sum_list_sorting.push_back(&pair.second);
@@ -70,6 +69,11 @@ StringTable QuerySumByTopic::GetTableResult() const {
 			return (lhs->GetSumValue(HUF) < rhs->GetSumValue(HUF));
 		});
 	}
+	return sum_list_sorting;
+}
+
+StringTable QuerySumByTopic::GetTableResult() const {
+	std::vector<const TopicSubQuery*> sum_list_sorting = GetSortedSubQueries();
 	StringTable table;
 	if (GetTopic() == QueryTopic::CURRENCY) {
 		if (sum_list_sorting.size() == 1) {
@@ -155,6 +159,34 @@ StringTable QuerySumByTopic::GetTableResult() const {
 		row.push_back(curr->PrettyPrint(exchanged_total.m_sum));
 	}
 	return table;
+}
+
+// One value per currency actually present, in the same "real-world units" a currency's
+// PrettyPrint() would show - Money's own raw amount is in minor units (cents) only for
+// currencies that have them (see Currency::m_cents), HUF's raw amount already is the whole
+// value, so this can't just divide by 100 unconditionally.
+double MoneyValueAsDouble(const int64_t raw, const CurrencyType type) {
+	return MakeCurrency(type)->HasCents() ? raw / 100.0 : (double)raw;
+}
+
+ChartDataByCurrency QuerySumByTopic::GetChartResult() const {
+	ChartDataByCurrency result;
+	// each topic's currencies are added independently, so a topic that never had e.g. an EUR
+	// transaction simply has no EUR data point - unlike PeriodicQuery::GetChartResult(), there's
+	// no shared axis here that needs every topic represented at every position.
+	for (const TopicSubQuery* tsq : GetSortedSubQueries()) {
+		for (auto& pair : tsq->GetResults()) {
+			const CurrencyType currency = pair.first;
+			ChartData& chart = result[currency];
+			chart.m_currency = currency;
+			if (chart.m_series.empty()) {
+				chart.m_series.emplace_back().m_name = "Sum";
+			}
+			chart.m_labels.push_back(tsq->GetName());
+			chart.m_series.front().m_values.push_back(MoneyValueAsDouble(pair.second.m_sum, currency));
+		}
+	}
+	return result;
 }
 
 std::map<CurrencyType, QuerySum::Result> QuerySumByTopic::GetResults() const {
@@ -563,4 +595,52 @@ StringTable PeriodicQuery::GetTableResult() const {
 		totals.push_back(grand_average.PrettyPrint());
 	}
 	return table;
+}
+
+ChartDataByCurrency PeriodicQuery::GetChartResult() const {
+	ChartDataByCurrency result;
+	int start = INT_MAX;
+	int end = 0;
+	for (auto& p : m_subqueries) {
+		const int st = p.second.GetStartDateId();
+		const int en = p.second.GetEndDateId();
+		if (st < start) {
+			start = st;
+		}
+		if (en > end) {
+			end = en;
+		}
+	}
+	if (end < start) { // no data
+		return result;
+	}
+	StringVector labels;
+	for (int date_id = start; date_id <= end; ++date_id) {
+		labels.push_back(DateId2String(m_mode, date_id));
+	}
+	// unlike QuerySumByTopic::GetChartResult(), every topic shares the same period axis, so a
+	// topic with no transactions in a given period still gets an explicit 0 there rather than
+	// being skipped, keeping every series the same length as m_labels.
+	for (auto& p : m_subqueries) {
+		for (CurrencyType currency : p.second.GetCurrencyTypes()) {
+			ChartData& chart = result[currency];
+			chart.m_currency = currency;
+			chart.m_labels = labels;
+			ChartSeries& series = chart.m_series.emplace_back();
+			series.m_name = p.second.GetName();
+			for (int date_id = start; date_id <= end; ++date_id) {
+				const TopicSubQuery* sub = p.second.GetSubQuery(date_id);
+				double value = 0.0;
+				if (sub) {
+					auto res_map = sub->GetResults();
+					auto it = res_map.find(currency);
+					if (it != res_map.end()) {
+						value = MoneyValueAsDouble(it->second.m_sum, currency);
+					}
+				}
+				series.m_values.push_back(value);
+			}
+		}
+	}
+	return result;
 }

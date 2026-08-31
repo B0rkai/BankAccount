@@ -110,14 +110,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include;C:\Users\borka\source\wxCharts\include;C:\Users\borka\source\wxCharts\build</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Users\borka\source\xlnt\build\source\Debug</AdditionalLibraryDirectories>
-      <AdditionalDependencies>xlntd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Users\borka\source\xlnt\build\source\Debug;C:\Users\borka\source\wxCharts\build\bin\Debug</AdditionalLibraryDirectories>
+      <AdditionalDependencies>xlntd.lib;wxchartsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -128,7 +128,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include;C:\Users\borka\source\wxCharts\include;C:\Users\borka\source\wxCharts\build</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <Optimization>Full</Optimization>
@@ -138,8 +138,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Users\borka\source\xlnt\build\source\Release</AdditionalLibraryDirectories>
-      <AdditionalDependencies>xlnt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\borka\source\repos\BankAccount\external;C:\Users\borka\source\xlnt\build\source\Release;C:\Users\borka\source\wxCharts\build\bin\Release</AdditionalLibraryDirectories>
+      <AdditionalDependencies>xlnt.lib;wxcharts.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

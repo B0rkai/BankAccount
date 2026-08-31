@@ -132,6 +132,7 @@
     <ClInclude Include="include\BankAccountFile.h" />
     <ClInclude Include="include\Category.h" />
     <ClInclude Include="include\CategorySystem.h" />
+    <ClInclude Include="include\ChartData.h" />
     <ClInclude Include="include\Client.h" />
     <ClInclude Include="include\ClientManager.h" />
     <ClInclude Include="include\CommonTypes.h" />
