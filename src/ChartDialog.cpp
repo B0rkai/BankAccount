@@ -140,6 +140,18 @@ namespace {
 	};
 	constexpr size_t PIE_PALETTE_SIZE = sizeof(PIE_PALETTE) / sizeof(PIE_PALETTE[0]);
 
+	// A neutral grey, deliberately outside PIE_PALETTE - a folded "Others" bucket should always
+	// read as "everything else", never be mistaken for one more real category sharing the same
+	// palette.
+	const wxColour OTHERS_COLOUR(0x9E, 0x9E, 0x9E);
+
+	// Starting from the smallest slice/series and working upward, everything that fits within this
+	// share of the chart's grand total gets folded into one trailing "Others" entry instead of
+	// being drawn on its own - i.e. Others absorbs (at most) the bottom 10% of the total, so it
+	// can never end up bigger than the real slices it absorbed the way a fixed-rank "top N" cutoff
+	// could.
+	constexpr double OTHERS_FOLD_TAIL_SHARE = 0.10;
+
 	// wxCharts' own default theme (wxChartsPresentationTheme) only ever pre-registers dataset
 	// colours for implicit ids 0-2, and each of those 3 is a semi-transparent, washed-out shade
 	// by the theme's own design (not a fallback) - which is exactly why an all-defaults bar chart
@@ -153,18 +165,21 @@ namespace {
 	// wxChartsDefaultTheme is a process-wide singleton (see wx/charts/wxchartstheme.h), so this
 	// only needs to run once per BuildChart() call for however many series that particular chart
 	// has - cheap, and safe to repeat.
+	void RegisterDatasetTheme(size_t index, const wxColour& colour) {
+		wxSharedPtr<wxChartsDatasetTheme> theme(new wxChartsDatasetTheme());
+		theme->SetBarChartDatasetOptions(wxBarChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
+		theme->SetColumnChartDatasetOptions(wxColumnChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
+		theme->SetStackedColumnChartDatasetOptions(wxStackedColumnChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
+		// low-alpha fill so overlapping series in a multi-topic line chart stay distinguishable;
+		// the line itself and its dots stay fully opaque for legibility.
+		wxColour fill(colour.Red(), colour.Green(), colour.Blue(), 60);
+		theme->SetLineChartDatasetOptions(wxLineChartDatasetOptions(colour, colour, fill));
+		wxChartsDefaultTheme->SetDatasetTheme(wxChartsDatasetId::CreateImplicitId((int)index), theme);
+	}
+
 	void EnsureDatasetThemesRegistered(size_t count) {
 		for (size_t i = 0; i < count; ++i) {
-			const wxColour& colour = PIE_PALETTE[i % PIE_PALETTE_SIZE];
-			wxSharedPtr<wxChartsDatasetTheme> theme(new wxChartsDatasetTheme());
-			theme->SetBarChartDatasetOptions(wxBarChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
-			theme->SetColumnChartDatasetOptions(wxColumnChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
-			theme->SetStackedColumnChartDatasetOptions(wxStackedColumnChartDatasetOptions(wxChartsPenOptions(colour, 1), wxChartsBrushOptions(colour)));
-			// low-alpha fill so overlapping series in a multi-topic line chart stay distinguishable;
-			// the line itself and its dots stay fully opaque for legibility.
-			wxColour fill(colour.Red(), colour.Green(), colour.Blue(), 60);
-			theme->SetLineChartDatasetOptions(wxLineChartDatasetOptions(colour, colour, fill));
-			wxChartsDefaultTheme->SetDatasetTheme(wxChartsDatasetId::CreateImplicitId((int)i), theme);
+			RegisterDatasetTheme(i, PIE_PALETTE[i % PIE_PALETTE_SIZE]);
 		}
 	}
 
@@ -199,6 +214,89 @@ namespace {
 			total += v;
 		}
 		return total;
+	}
+
+	struct TopicSlice {
+		String label;
+		double total;
+		double average; // only meaningful (and only shown) for ChartShape::PERIODIC
+	};
+
+	struct FoldedTopicSlices {
+		std::vector<TopicSlice> slices;
+		bool has_others = false; // true when the last entry of slices is a folded "Others" bucket
+	};
+
+	// Builds one TopicSlice per topic - its total-across-periods plus average-per-period for
+	// PERIODIC, or its direct topic-sum value for TOPIC_SUM - sorted by descending magnitude, then
+	// folds the smallest trailing slices into one trailing "Others" slice: working backward from
+	// the smallest, as many as fit within OTHERS_FOLD_TAIL_SHARE of the grand total get folded, so
+	// Others absorbs (at most) that bottom tail share of the whole rather than ever being drawn as
+	// the single biggest wedge/bar. Shared by BuildSliceChart() (one slice per TopicSlice) and
+	// BuildCategoricalChart()'s TOPIC_SUM path (one bar per TopicSlice) - both need exactly the
+	// same "which topics matter enough to show individually" decision.
+	FoldedTopicSlices BuildFoldedTopicSlices(const ChartData& chart, ChartShape shape) {
+		std::vector<TopicSlice> slices;
+		const double period_count = (double)chart.m_labels.size(); // only meaningful for PERIODIC
+
+		if (shape == ChartShape::PERIODIC) {
+			for (const ChartSeries& series : chart.m_series) {
+				double total = SeriesTotal(series);
+				if (total == 0.0) { // topic never had any activity in this direction at all
+					continue;
+				}
+				slices.push_back({ series.m_name, total, (period_count > 0.0) ? (total / period_count) : 0.0 });
+			}
+		} else {
+			const ChartSeries& series = chart.m_series.front();
+			for (size_t i = 0; i < chart.m_labels.size(); ++i) {
+				if (series.m_values[i] == 0.0) {
+					continue;
+				}
+				slices.push_back({ chart.m_labels[i], series.m_values[i], 0.0 });
+			}
+		}
+
+		// Largest (by magnitude) first - both the wedges/bars themselves and the legend built from
+		// them afterward end up in this order, rather than whatever order the underlying query
+		// happened to produce (topic insertion order for a periodic chart, ascending value for a
+		// topic-sum chart - see QuerySumByTopic::GetSortedSubQueries()).
+		std::sort(slices.begin(), slices.end(), [](const TopicSlice& a, const TopicSlice& b) {
+			return std::abs(a.total) > std::abs(b.total);
+		});
+
+		double grand_total = 0.0;
+		for (const TopicSlice& s : slices) {
+			grand_total += s.total;
+		}
+		if (grand_total == 0.0) {
+			return { slices, false };
+		}
+
+		size_t cutoff = slices.size();
+		double tail_budget = std::abs(grand_total) * OTHERS_FOLD_TAIL_SHARE;
+		double others_running = 0.0;
+		while (cutoff > 0) {
+			double candidate = others_running + std::abs(slices[cutoff - 1].total);
+			if (candidate > tail_budget) {
+				break;
+			}
+			others_running = candidate;
+			--cutoff;
+		}
+		if (cutoff == slices.size()) {
+			return { slices, false };
+		}
+
+		double others_total = 0.0;
+		double others_average = 0.0;
+		for (size_t i = cutoff; i < slices.size(); ++i) {
+			others_total += slices[i].total;
+			others_average += slices[i].average;
+		}
+		slices.resize(cutoff);
+		slices.push_back({ "Others", others_total, others_average });
+		return { slices, true };
 	}
 }
 
@@ -274,7 +372,12 @@ void ChartTabPanel::PopulateKindChoices() {
 			ChartWidgetKind::PIE, ChartWidgetKind::DOUGHNUT, ChartWidgetKind::POLAR_AREA
 		};
 	} else { // TOPIC_SUM - ChartTabPanel is only ever built for one of these two shapes
-		m_available_kinds = { ChartWidgetKind::PIE, ChartWidgetKind::DOUGHNUT, ChartWidgetKind::POLAR_AREA };
+		// No Stacked Bar/Line here - both need more than one series to mean anything, and a
+		// TOPIC_SUM chart only ever has the one ("Sum") series (see BuildCategoricalChart()'s
+		// TOPIC_SUM branch), unlike a PERIODIC chart's one series per topic.
+		m_available_kinds = {
+			ChartWidgetKind::PIE, ChartWidgetKind::DOUGHNUT, ChartWidgetKind::POLAR_AREA, ChartWidgetKind::BAR
+		};
 	}
 }
 
@@ -366,42 +469,11 @@ void ChartTabPanel::BuildChart(ChartWidgetKind kind) {
 void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind) {
 	GetSizer()->Show(m_total_label, true);
 
-	struct Slice {
-		String label;
-		double total;
-		double average; // only meaningful (and only shown) for ChartShape::PERIODIC
-	};
-	std::vector<Slice> slices;
-
-	if (m_shape == ChartShape::PERIODIC) {
-		const double period_count = (double)chart.m_labels.size();
-		for (const ChartSeries& series : chart.m_series) {
-			double total = SeriesTotal(series);
-			if (total == 0.0) { // topic never had any activity in this direction at all
-				continue;
-			}
-			slices.push_back({ series.m_name, total, (period_count > 0.0) ? (total / period_count) : 0.0 });
-		}
-	} else {
-		const ChartSeries& series = chart.m_series.front();
-		for (size_t i = 0; i < chart.m_labels.size(); ++i) {
-			if (series.m_values[i] == 0.0) {
-				continue;
-			}
-			slices.push_back({ chart.m_labels[i], series.m_values[i], 0.0 });
-		}
-	}
-
-	// Largest (by magnitude) slice first - both the wedges/bars themselves and the legend built
-	// from them below end up in this order, rather than whatever order the underlying query
-	// happened to produce (topic insertion order for a periodic chart, ascending value for a
-	// topic-sum chart - see QuerySumByTopic::GetSortedSubQueries()).
-	std::sort(slices.begin(), slices.end(), [](const Slice& a, const Slice& b) {
-		return std::abs(a.total) > std::abs(b.total);
-	});
+	FoldedTopicSlices folded = BuildFoldedTopicSlices(chart, m_shape);
+	const std::vector<TopicSlice>& slices = folded.slices;
 
 	double grand_total = 0.0;
-	for (const Slice& s : slices) {
+	for (const TopicSlice& s : slices) {
 		grand_total += s.total;
 	}
 	m_total_label->SetLabel(wxString::Format("Total: %s", FormatCurrencyValue(grand_total, m_currency)));
@@ -412,7 +484,7 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 
 	wxVector<wxChartSliceData> slice_data;
 	for (size_t i = 0; i < slices.size(); ++i) {
-		const Slice& s = slices[i];
+		const TopicSlice& s = slices[i];
 		double percentage = (grand_total != 0.0) ? (s.total / grand_total * 100.0) : 0.0;
 		// Multi-line - see CLAUDE.md's wxCharts note for why '\n' needs its own vendored fix to
 		// actually lay out (wxChartTooltip::Draw()).
@@ -421,7 +493,8 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 			tooltip += wxString::Format("\navg %s/%s", FormatCurrencyValue(s.average, m_currency), m_period_unit);
 		}
 
-		wxChartSliceData slice(s.total, PIE_PALETTE[i % PIE_PALETTE_SIZE], s.label);
+		bool is_others = folded.has_others && (i == slices.size() - 1);
+		wxChartSliceData slice(s.total, is_others ? OTHERS_COLOUR : PIE_PALETTE[i % PIE_PALETTE_SIZE], s.label);
 		slice.SetTooltipTextOverride(tooltip);
 		slice_data.push_back(slice);
 	}
@@ -444,7 +517,14 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 		for (const wxChartSliceData& slice : slice_data) {
 			polar_data.AppendSlice(slice);
 		}
-		ctrl = new wxPolarAreaChartCtrl(m_chart_area, wxID_ANY, polar_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+		// First slice at 12 o'clock rather than wxPolarAreaChartOptions' own default of 3 o'clock
+		// (angle 0, the positive x-axis) - matches the vendored -M_PI/2 start angle Pie/Doughnut
+		// now use (see CLAUDE.md's wxCharts note), which needed a source patch since
+		// wxDoughnutAndPieChartBase never exposed a start-angle option at all; Polar Area already
+		// had SetStartAngle(), so no patch was needed here.
+		wxSharedPtr<wxPolarAreaChartOptions> options(new wxPolarAreaChartOptions());
+		options->SetStartAngle(-M_PI / 2);
+		ctrl = new wxPolarAreaChartCtrl(m_chart_area, wxID_ANY, polar_data, options, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
 	} else {
 		// Pie and Doughnut share the exact same data container (wxPieChartData) and differ only
 		// in which control draws it.
@@ -465,6 +545,33 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKind kind) {
 	GetSizer()->Show(m_total_label, false); // only a slice chart shows a grand total - these show a trend, not one whole
 
+	if (m_shape == ChartShape::TOPIC_SUM) {
+		// A TOPIC_SUM chart has no periods to spread topics across, so - mirroring a PERIODIC bar
+		// chart's one-series-per-topic layout rather than putting topics along the x-axis - this
+		// draws a single x-axis group with one coloured bar per topic side by side, using the same
+		// "which topics matter enough to show individually" fold BuildSliceChart() applies to pie
+		// slices (see PopulateKindChoices(), which only offers Bar - not Stacked Bar/Line - here,
+		// since both need more than one x-axis group to mean anything).
+		FoldedTopicSlices folded = BuildFoldedTopicSlices(chart, m_shape);
+		if (folded.slices.empty()) {
+			return; // every topic was exactly zero in this direction - nothing to draw
+		}
+		wxChartsCategoricalData::ptr cat_data = wxChartsCategoricalData::make_shared(ToWxVector(StringVector{ "Total" }));
+		for (const TopicSlice& s : folded.slices) {
+			cat_data->AddDataset(wxChartsDoubleDataset::ptr(new wxChartsDoubleDataset(s.label, ToWxVector(std::vector<double>{ s.total }))));
+		}
+		EnsureDatasetThemesRegistered(cat_data->GetDatasets().size());
+		if (folded.has_others) {
+			RegisterDatasetTheme(cat_data->GetDatasets().size() - 1, OTHERS_COLOUR);
+		}
+		wxWindow* ctrl = new wxColumnChartCtrl(m_chart_area, wxID_ANY, cat_data, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+		wxChartsLegendCtrl* legend = new wxChartsLegendCtrl(m_chart_area, wxID_ANY, wxChartsLegendData(cat_data->GetDatasets()),
+			wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+		m_chart_area_sizer->Add(ctrl, 3, wxEXPAND);
+		m_chart_area_sizer->Add(legend, 1, wxEXPAND);
+		return;
+	}
+
 	std::vector<const ChartSeries*> series_to_draw;
 	for (const ChartSeries& series : chart.m_series) {
 		if (!AllZero(series.m_values)) { // topic never had any activity in this direction at all
@@ -481,11 +588,56 @@ void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKin
 	if (series_to_draw.empty()) {
 		return; // every topic was exactly zero in this direction - nothing to draw
 	}
+
+	// Same rationale as BuildSliceChart()'s Others fold - a bar/stacked-bar/line chart with dozens
+	// of topic series is as unreadable as a pie with that many wedges. series_to_draw is already
+	// sorted by descending magnitude - working backward from the smallest, fold series into the
+	// running Others total for as long as doing so keeps Others within OTHERS_FOLD_TAIL_SHARE of
+	// the total-across-every-series-and-period magnitude, then fold that whole tail,
+	// period-by-period, into one trailing "Others" series instead of drawing each one on its own.
+	ChartSeries others_series;
+	bool has_others_series = false;
+	double categorical_grand_total = 0.0;
+	for (const ChartSeries* series : series_to_draw) {
+		categorical_grand_total += std::abs(SeriesTotal(*series));
+	}
+	if (categorical_grand_total != 0.0) {
+		size_t cutoff = series_to_draw.size();
+		double tail_budget = categorical_grand_total * OTHERS_FOLD_TAIL_SHARE;
+		double others_running = 0.0;
+		while (cutoff > 0) {
+			double candidate = others_running + std::abs(SeriesTotal(*series_to_draw[cutoff - 1]));
+			if (candidate > tail_budget) {
+				break;
+			}
+			others_running = candidate;
+			--cutoff;
+		}
+		if (cutoff < series_to_draw.size()) {
+			others_series.m_name = "Others";
+			others_series.m_values.assign(chart.m_labels.size(), 0.0);
+			for (size_t i = cutoff; i < series_to_draw.size(); ++i) {
+				const ChartSeries* series = series_to_draw[i];
+				for (size_t j = 0; j < series->m_values.size(); ++j) {
+					others_series.m_values[j] += series->m_values[j];
+				}
+			}
+			series_to_draw.resize(cutoff);
+			has_others_series = true;
+		}
+	}
+
 	wxChartsCategoricalData::ptr cat_data = wxChartsCategoricalData::make_shared(ToWxVector(chart.m_labels));
 	for (const ChartSeries* series : series_to_draw) {
 		cat_data->AddDataset(wxChartsDoubleDataset::ptr(new wxChartsDoubleDataset(series->m_name, ToWxVector(series->m_values))));
 	}
-	EnsureDatasetThemesRegistered(series_to_draw.size());
+	if (has_others_series) {
+		cat_data->AddDataset(wxChartsDoubleDataset::ptr(new wxChartsDoubleDataset(others_series.m_name, ToWxVector(others_series.m_values))));
+	}
+	EnsureDatasetThemesRegistered(cat_data->GetDatasets().size());
+	if (has_others_series) {
+		RegisterDatasetTheme(cat_data->GetDatasets().size() - 1, OTHERS_COLOUR);
+	}
 
 	// wxBarChartCtrl draws horizontal bars (a categorical *vertical* axis) - wxColumnChartCtrl is
 	// wxCharts' own name for the conventional look a time series wants instead: periods laid out

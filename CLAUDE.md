@@ -104,7 +104,7 @@ The project expects these to exist as siblings/fixed paths on the dev machine, o
   in this repo (that folder holds only the patch file, not the checkout itself) - after a fresh
   `wxCharts` clone, re-apply with `git apply` from inside the checkout before building, e.g.
   `git -C C:\Users\<user>\source\wxCharts apply C:\Users\<user>\source\repos\BankAccount\external\wxCharts-patches\local-patches.patch`.
-  It covers four things: (1) the library's own tooltip/axis-label code (`wxbarchart.cpp`,
+  It covers six things: (1) the library's own tooltip/axis-label code (`wxbarchart.cpp`,
   `wxcolumnchart.cpp`, `wxstackedcolumnchart.cpp`, `wxlinechart.cpp`, `wxchartslicedata.cpp`,
   `wxchartsutilities.cpp`'s `BuildNumericalLabels`) formatted numbers via a bare
   `std::stringstream <<`, which renders large values in scientific notation (`7.44745e+07`) -
@@ -129,6 +129,29 @@ The project expects these to exist as siblings/fixed paths on the dev machine, o
   appends slices pre-sorted by descending magnitude, so this makes both the wedges and the legend
   (built by hand from that same sorted list, rather than via `wxChartsLegendData`'s
   still-present-but-now-unused `std::map`-keyed constructor overload) come out in that order.
+  (5) `wxDoughnutAndPieChartBase::DoFit()` (`wxdoughnutandpiechartbase.cpp`) hardcoded its first
+  slice's start angle to `0.0` (the positive x-axis, i.e. 3 o'clock - angles here are screen-space
+  with y increasing downward) with no way for a caller to change it, unlike `wxPolarAreaChartData`
+  which already exposed `wxPolarAreaChartOptions::SetStartAngle()` for the same purpose - changed
+  to `-M_PI / 2` so Pie/Doughnut start at 12 o'clock too, matching the conventional pie-chart
+  layout; `ChartDialog.cpp`'s `BuildSliceChart()` sets the same `-M_PI / 2` on a
+  `wxPolarAreaChartOptions` instance for Polar Area (no patch needed there, since the option
+  already existed). (6) `wxChartsArc` (`wxchartsarc.cpp`) - the class every pie/doughnut/polar-area
+  slice is drawn and hit-tested as - normalized an angle `> 2*M_PI` (in its constructor and
+  `SetAngles()`) but never one `< 0`, and `GetTooltipPosition()`'s midpoint math
+  (`m_startAngle + (m_endAngle - m_startAngle) / 2`) never accounted for `m_endAngle` wrapping
+  past `0` either. Both were harmless for the original always-starts-at-`0.0` pie (slice angles
+  only ever ran monotonically upward from `0` to `2*M_PI`, never negative, never wrapping) but
+  broke as soon as (5) introduced a nonzero, negative start angle: `DoFit()`'s running `startAngle`
+  local begins at `-M_PI / 2` and only turns positive once enough slices have been placed to reach
+  angle `0`, so however many leading slices are still negative when handed to `SetAngles()` kept
+  their un-normalized negative angle - `HitTest()` normalizes the *mouse* angle into `[0, 2*M_PI)`
+  before comparing, so comparing it against a still-negative `m_startAngle`/`m_endAngle` silently
+  failed for the portion of those slices between 12 o'clock and the old 3 o'clock start (no
+  tooltip on hover there), and the same wrap broke `GetTooltipPosition()`'s naive midpoint too.
+  Fixed by mirroring the existing `> 2*M_PI` clamps with matching `< 0` ones (`+= 2*M_PI`), and by
+  having `GetTooltipPosition()` add `2*M_PI` to `m_endAngle` before averaging whenever it's less
+  than `m_startAngle`.
   Separately, application code (`ChartDialog.cpp`'s `EnsureDatasetThemesRegistered`) registers a
   solid, opaque colour into the process-wide `wxChartsDefaultTheme` for every dataset index a
   chart needs (covering the Bar/Stacked Bar/Line dataset-theme slots together, since each chart

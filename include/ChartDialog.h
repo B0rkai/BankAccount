@@ -21,9 +21,14 @@ class wxButton;
 // the average alongside it).
 //
 // BAR/STACKED_BAR/LINE all draw from the same per-series categorical data (see
-// BuildCategoricalChart()) and are PERIODIC-only: a TOPIC_SUM chart has exactly one series
-// ("Sum"), and wxCharts colours these per series, not per bar/point - every bar would be one
-// flat colour, unlike a slice chart's per-slice colouring.
+// BuildCategoricalChart()), one series per topic - wxCharts colours these per series, not per
+// bar/point, so each topic reads as one consistent colour across its bar(s)/line, the same way a
+// slice chart colours a topic's whole wedge. STACKED_BAR/LINE are PERIODIC-only - both need more
+// than one x-axis group (period) to mean anything, which a TOPIC_SUM chart doesn't have. BAR is
+// available for both shapes: for PERIODIC it's the usual one x-axis group per period; for
+// TOPIC_SUM (no periods to group by) it's a single x-axis group with one coloured bar per topic
+// side by side instead of one pie slice - see PopulateKindChoices() and
+// BuildCategoricalChart()'s TOPIC_SUM branch.
 enum class ChartWidgetKind {
 	PIE,
 	DOUGHNUT,
