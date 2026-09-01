@@ -16,7 +16,11 @@ double EXCHANGE_RATES[Currency_Count][Currency_Count] = {
 	{0.,0.,0.,0.,USDHUF/100.},
 	{0.,0.,0.,0.,GBPHUF/100.},
 	{0.,0.,0.,0.,CHFHUF/100.},
-	{1. / EURHUF / 100., 1. / USDHUF / 100., 1. / GBPHUF / 100., 1. / CHFHUF/100., 1.}
+	// HUF has no cents (raw amount = whole units) while every other currency here does (raw
+	// amount = value*100), so converting a raw HUF amount into a raw foreign-currency amount
+	// needs a *100 to land in the target's cents scale, not a /100 - e.g. 1 EUR = 406.47 HUF, so
+	// 1 HUF should become ~0.246 EUR-cents (100/EURHUF), not ~0.0000246 (1/EURHUF/100).
+	{100. / EURHUF, 100. / USDHUF, 100. / GBPHUF, 100. / CHFHUF, 1.}
 };
 
 void Currency::RecursiveDigits(std::stringstream& str, uint32_t num) const {
@@ -72,7 +76,7 @@ String Currency::PrettyPrint(const int32_t val) const {
 
 void Currency::SetExchangeRate(CurrencyType type, double newVal) {
 	EXCHANGE_RATES[type][HUF] = newVal / 100.;
-	EXCHANGE_RATES[HUF][type] = 1. / newVal / 100.;
+	EXCHANGE_RATES[HUF][type] = 100. / newVal; // see the HUF row comment on EXCHANGE_RATES above
 }
 
 double Currency::GetExcahngeRate(CurrencyType type) {
@@ -249,7 +253,13 @@ int32_t Money::GetValue(CurrencyType type) const {
 		// currency silently returned 0 instead of the identity.
 		return m_amount;
 	}
-	return m_amount * EXCHANGE_RATES[m_currency_type][type];
+	if ((type == HUF) || (m_currency_type == HUF)) {
+		return (int32_t)(m_amount * EXCHANGE_RATES[m_currency_type][type]);
+	}
+	// EXCHANGE_RATES only has rates against HUF (see its initializer above) - a direct non-HUF
+	// pair like EUR->USD reads an always-0 entry, so route it through HUF instead.
+	double huf_value = m_amount * EXCHANGE_RATES[m_currency_type][HUF];
+	return (int32_t)(huf_value * EXCHANGE_RATES[HUF][type]);
 }
 
 int32_t Money::GetValue(CurrencyType type, uint16_t date) const {
@@ -266,7 +276,7 @@ int32_t Money::GetValue(CurrencyType type, uint16_t date) const {
 		double rate = g_exchange_rate_history->GetRate(type, date);
 		return (rate != 0.) ? (int32_t)(m_amount / rate) : 0;
 	}
-	return GetValue(type); // non-HUF-to-non-HUF isn't supported by the static rate either; same limitation applies here
+	return GetValue(type); // non-HUF-to-non-HUF: fall back to the (now HUF-routed) static rate, not date-specific
 }
 
 Money& Money::operator+=(const Money& other) {
