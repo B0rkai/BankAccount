@@ -556,6 +556,11 @@ StringTable PeriodicQuery::GetTableResult() const {
 		std::set<CurrencyType> currencytypes = p.second.GetCurrencyTypes();
 		for (CurrencyType ct : currencytypes) {
 			row_map[ct].push_back(p.second.GetName());
+			// pre-seed with the row's own currency - Money's default ctor defaults to HUF, and
+			// operator+= keeps the accumulator's own currency tag while converting the other side
+			// into it, so leaving this to be default-constructed on first use would silently
+			// convert the row's native-currency total into HUF instead of keeping it as-is.
+			row_total_map[ct] = Money(ct, 0);
 		}
 		while (date_id <= end) {
 			const TopicSubQuery* ptr = p.second.GetSubQuery(date_id);
