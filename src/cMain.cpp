@@ -32,6 +32,14 @@
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
+// The window title's constant "BankAccount vX.Y.Z" prefix, shared by the constructor (so the
+// version shows even in the rare case DoLoad() bails out before setting a mode-specific
+// title - see the Unreachable branch) and DoLoad()'s three mode-specific SetTitle() calls,
+// which each just append their own suffix to this rather than repeating the version string.
+String AppTitle() {
+	return String("BankAccount v") + APP_VERSION;
+}
+
 String PrettyTable(const StringTable& table) {
 	if (table.empty()) {
 		return "";
@@ -112,6 +120,7 @@ enum CtrIds {
 	MENU_TEST_PERIODIC_QUERY,
 	MENU_TEST_EUR_RATES,
 	MENU_VIEW_LOG,
+	MENU_ABOUT,
 	MENU_EXPORT_EXCEL,
 	MENU_SHOW_CHART,
 	MENU_PERIOD_THIS_MONTH,
@@ -126,7 +135,6 @@ enum CtrIds {
 	MENU_PERIOD_EARLIER_YEAR_2,
 	MENU_PERIOD_EARLIER_YEAR_3,
 	MENU_PERIOD_EARLIER_YEAR_4,
-	MENU_APPLY_RECOVERY,
 #ifdef _DEBUG
 	MENU_REPLAY_JOURNAL,
 #endif
@@ -163,11 +171,11 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_TEST_NEW_ACCOUNT, Test)
 	EVT_MENU(MENU_TEST_PERIODIC_QUERY, Test)
 	EVT_MENU(MENU_TEST_EUR_RATES, Test)
-	EVT_MENU(MENU_APPLY_RECOVERY, Test)
 #ifdef _DEBUG
 	EVT_MENU(MENU_REPLAY_JOURNAL, Test)
 #endif
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
+	EVT_MENU(MENU_ABOUT, ShowAbout)
 	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
 	EVT_MENU(MENU_SHOW_CHART, ShowChartClicked)
 	EVT_MENU(MENU_PERIOD_THIS_MONTH, PeriodShortcutSelected)
@@ -187,7 +195,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 wxEND_EVENT_TABLE()
 
 cMain::cMain()
-: wxFrame(nullptr, wxID_ANY, "Bank Account", wxPoint(100, 100), wxSize(1126, 730)) {
+: wxFrame(nullptr, wxID_ANY, AppTitle(), wxPoint(100, 100), wxSize(1126, 730)) {
 	SetMinSize(wxSize(1126, 430));
 	InitMenu();
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -703,10 +711,10 @@ void cMain::DoLoad() {
 			return;
 		}
 		m_read_only = (lock_result == NetworkLockResult::HeldElsewhere);
-		SetTitle(m_read_only ? "Bank Account [READ-ONLY - network db]" : "Bank Account [network db]");
+		SetTitle(m_read_only ? (AppTitle() + " [READ-ONLY - network db]") : (AppTitle() + " [network db]"));
 	} else {
 		m_network_lock.Release();
-		SetTitle("Bank Account");
+		SetTitle(AppTitle());
 	}
 
 	m_bank_file.reset(new BankAccountFile(save_location));
@@ -1370,11 +1378,13 @@ void cMain::InitMenu() {
 	wxMenu* periodsmenu = new wxMenu();
 	wxMenu* viewmenu = new wxMenu();
 	wxMenu* testmenu = new wxMenu();
+	wxMenu* helpmenu = new wxMenu();
 	m_menu_bar->Append(dbmenu, "Database");
 	m_menu_bar->Append(querymenu, "Query");
 	m_menu_bar->Append(periodsmenu, "Periods");
 	m_menu_bar->Append(viewmenu, "View");
 	m_menu_bar->Append(testmenu, "Test");
+	m_menu_bar->Append(helpmenu, "Help");
 	m_discard_changes_menu_item = dbmenu->Append(MENU_LOAD, "Discard changes");
 	dbmenu->Append(MENU_IMPORT, "Import from file");
 	dbmenu->Append(MENU_SAVE, "Save file");
@@ -1410,11 +1420,12 @@ void cMain::InitMenu() {
 	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
 	testmenu->Append(MENU_TEST_PERIODIC_QUERY, "Periodic Query");
 	testmenu->Append(MENU_TEST_EUR_RATES, "List EUR Exchange Rates");
-	testmenu->AppendSeparator();
-	testmenu->Append(MENU_APPLY_RECOVERY, "Apply Recovery File... (TEMPORARY)");
 #ifdef _DEBUG
+	testmenu->AppendSeparator();
 	testmenu->Append(MENU_REPLAY_JOURNAL, "Replay Recovery Journal (TEST)");
 #endif
+
+	helpmenu->Append(MENU_ABOUT, "About BankAccount...");
 
 	SetMenuBar(m_menu_bar);
 }
@@ -1718,28 +1729,6 @@ void cMain::Test(wxCommandEvent& evt) {
 			return;
 		}
 		UIOutputTable(m_bank_file->GetExchangeRateTable(EUR));
-	} else if (id == MENU_APPLY_RECOVERY) {
-		if (!RequireWritable()) {
-			return;
-		}
-		wxFileDialog openFileDialog(this, "Select recovery data file", "", "recovery.txt",
-			"Text files (*.txt)|*.txt|All files (*.*)|*.*", wxFD_OPEN | wxFD_FILE_MUST_EXIST);
-		if (openFileDialog.ShowModal() == wxID_CANCEL) {
-			return;
-		}
-		AccountManager::RecoveryResult result = m_bank_file->ApplyRecoveryFile(openFileDialog.GetPath());
-		if (result.success) {
-			String msg = "Recovery applied in memory - review the grid below (and List Clients/Categories for anything not shown there), then Save manually if it looks right. Nothing is written to disk until you Save.";
-			if (!result.summary.empty()) {
-				msg.append("\n\n").append(result.summary);
-			}
-			UIOutputText(msg);
-			UIOutputTable(result.table, result.transactions);
-		} else {
-			UIOutputText("ERROR: recovery stopped partway - see the log for the exact row/reason. Nothing is saved automatically; you can fix the recovery file and just reload the database to start over cleanly.");
-		}
-		UpdateAccFilter();
-		UpdateStatusBar();
 #ifdef _DEBUG
 	} else if (id == MENU_REPLAY_JOURNAL) {
 		// Manual trigger for testing the replay engine end-to-end - the same path the
@@ -1841,6 +1830,14 @@ void cMain::ShowLogViewer(wxCommandEvent& evt) {
 		e.Skip();
 	});
 	m_log_viewer_frame->Show();
+}
+
+void cMain::ShowAbout(wxCommandEvent& evt) {
+	evt.Skip();
+	wxMessageBox(
+		"BankAccount v" + String(APP_VERSION) +
+		"\n\nA home-finance tool for importing, categorizing, and querying bank transactions.",
+		"About BankAccount", wxICON_INFORMATION | wxOK);
 }
 
 void cMain::UpdateMenu(wxEvent&) {

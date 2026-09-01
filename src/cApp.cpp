@@ -1,5 +1,6 @@
 #include "cApp.h"
 #include "cMain.h"
+#include "Version.h"
 
 wxIMPLEMENT_APP(cApp);
 
@@ -24,6 +25,7 @@ bool cApp::OnInit() {
 	// initialized" line reaches the file too, instead of only LogHistory's in-memory buffer.
 	LogHistory::AddSink(&m_file_log_sink);
 	Log::InitLoggingSystem();
+	LogInfo() << "BankAccount v" << APP_VERSION << " starting";
 	m_frame = new cMain();
 	m_frame->Show();
 	m_frame->Init();

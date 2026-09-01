@@ -230,6 +230,7 @@ class cMain :
     void ExportToExcel(wxCommandEvent& evt);
     void ShowChartClicked(wxCommandEvent& evt);
     void ShowLogViewer(wxCommandEvent& evt);
+    void ShowAbout(wxCommandEvent& evt);
     void UpdateMenu(wxEvent&);
     void Test(wxCommandEvent& evt);
     void UpdateStatusBar();
