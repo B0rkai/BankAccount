@@ -5,7 +5,7 @@
 // This build's version - bump by hand as part of cutting a release (see the release
 // packaging tooling). Compared against a network release manifest's version= field to
 // decide whether to offer an update - see ReleaseManifest.h.
-constexpr const char* APP_VERSION = "0.9.9";
+constexpr const char* APP_VERSION = "1.0.0";
 
 struct SemVer {
 	int major = 0;
