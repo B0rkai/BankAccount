@@ -3,6 +3,8 @@
 #include <iomanip>
 #include <cwctype>
 #include <algorithm>
+#include <tuple>
+#include <utility>
 
 #include "wx/wx.h"
 #include "wx/windowid.h"
@@ -108,6 +110,18 @@ enum CtrIds {
 	MENU_VIEW_LOG,
 	MENU_EXPORT_EXCEL,
 	MENU_SHOW_CHART,
+	MENU_PERIOD_THIS_MONTH,
+	MENU_PERIOD_LAST_MONTH,
+	MENU_PERIOD_THIS_QUARTER,
+	MENU_PERIOD_LAST_QUARTER,
+	MENU_PERIOD_THIS_HALF,
+	MENU_PERIOD_LAST_HALF,
+	MENU_PERIOD_THIS_YEAR,
+	MENU_PERIOD_LAST_YEAR,
+	MENU_PERIOD_EARLIER_YEAR_1,
+	MENU_PERIOD_EARLIER_YEAR_2,
+	MENU_PERIOD_EARLIER_YEAR_3,
+	MENU_PERIOD_EARLIER_YEAR_4,
 	MENU_APPLY_RECOVERY,
 #ifdef _DEBUG
 	MENU_REPLAY_JOURNAL,
@@ -152,6 +166,18 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
 	EVT_MENU(MENU_SHOW_CHART, ShowChartClicked)
+	EVT_MENU(MENU_PERIOD_THIS_MONTH, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_LAST_MONTH, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_THIS_QUARTER, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_LAST_QUARTER, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_THIS_HALF, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_LAST_HALF, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_THIS_YEAR, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_LAST_YEAR, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_EARLIER_YEAR_1, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_EARLIER_YEAR_2, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_EARLIER_YEAR_3, PeriodShortcutSelected)
+	EVT_MENU(MENU_PERIOD_EARLIER_YEAR_4, PeriodShortcutSelected)
 	EVT_MENU(MENU_CTX_ADD_KEYWORD, OnAddKeywordFromContextMenu)
 	EVT_MENU(MENU_CTX_MERGE_SELECTED, OnMergeSelectedFromContextMenu)
 wxEND_EVENT_TABLE()
@@ -331,7 +357,7 @@ void cMain::Preview(CtrIds ctrl_id) {
 	INameResolve* resolve = m_bank_file.get();
 	IdSet ids;
 	for (String& val : vec) {
-		if (val.IsNumber()) {
+		if (val[0] == '#') {
 			unsigned long tmp;
 			value.ToULong(&tmp);
 			ids.emplace((Id::Type)tmp);
@@ -376,6 +402,92 @@ void cMain::DateFilterToggle(wxCommandEvent& evt) {
 	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Show(m_ctrl_grp_basic_filter.m_use_date_filter_chkb->GetValue());
 	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Show(m_ctrl_grp_basic_filter.m_use_date_filter_chkb->GetValue());
 	evt.Skip();
+}
+
+// First day of the given (0-based, wxDateTime::Month-style) month/year.
+static wxDateTime FirstDayOfMonth(int month0, int year) {
+	return wxDateTime(1, (wxDateTime::Month)month0, year);
+}
+
+// Last day of the given (0-based) month/year - wxDateTime::SetToLastMonthDay() looks at the
+// object's own already-set month/year, so construct on the 1st first and mutate from there.
+static wxDateTime LastDayOfMonth(int month0, int year) {
+	wxDateTime dt(1, (wxDateTime::Month)month0, year);
+	dt.SetToLastMonthDay();
+	return dt;
+}
+
+// Shared by the Quarter/Half shortcuts below: given the 0-based month the range should start
+// on and how many months it spans, returns the {from, to} pair for the year containing that
+// start month - the caller has already walked start_month0 (and, on wraparound, year) back by
+// one period for the "Last ..." variants, so this only ever needs to reason about a single year.
+static std::pair<wxDateTime, wxDateTime> MonthSpanRange(int start_month0, int span_months, int year) {
+	return { FirstDayOfMonth(start_month0, year), LastDayOfMonth(start_month0 + span_months - 1, year) };
+}
+
+void cMain::PeriodShortcutSelected(wxCommandEvent& evt) {
+	evt.Skip();
+	const wxDateTime today = wxDateTime::Today();
+	const int year = today.GetYear();
+	const int month0 = today.GetMonth(); // wxDateTime::Month is 0-based (Jan == 0)
+	wxDateTime from, to;
+	switch (evt.GetId()) {
+	case MENU_PERIOD_THIS_MONTH:
+		std::tie(from, to) = MonthSpanRange(month0, 1, year);
+		break;
+	case MENU_PERIOD_LAST_MONTH:
+		if (month0 == 0) {
+			std::tie(from, to) = MonthSpanRange(11, 1, year - 1);
+		} else {
+			std::tie(from, to) = MonthSpanRange(month0 - 1, 1, year);
+		}
+		break;
+	case MENU_PERIOD_THIS_QUARTER:
+		std::tie(from, to) = MonthSpanRange((month0 / 3) * 3, 3, year);
+		break;
+	case MENU_PERIOD_LAST_QUARTER:
+		if (month0 < 3) {
+			std::tie(from, to) = MonthSpanRange(9, 3, year - 1);
+		} else {
+			std::tie(from, to) = MonthSpanRange((month0 / 3) * 3 - 3, 3, year);
+		}
+		break;
+	case MENU_PERIOD_THIS_HALF:
+		std::tie(from, to) = MonthSpanRange((month0 / 6) * 6, 6, year);
+		break;
+	case MENU_PERIOD_LAST_HALF:
+		if (month0 < 6) {
+			std::tie(from, to) = MonthSpanRange(6, 6, year - 1);
+		} else {
+			std::tie(from, to) = MonthSpanRange(0, 6, year);
+		}
+		break;
+	case MENU_PERIOD_THIS_YEAR:
+		std::tie(from, to) = MonthSpanRange(0, 12, year);
+		break;
+	case MENU_PERIOD_LAST_YEAR:
+		std::tie(from, to) = MonthSpanRange(0, 12, year - 1);
+		break;
+	case MENU_PERIOD_EARLIER_YEAR_1:
+		std::tie(from, to) = MonthSpanRange(0, 12, year - 2);
+		break;
+	case MENU_PERIOD_EARLIER_YEAR_2:
+		std::tie(from, to) = MonthSpanRange(0, 12, year - 3);
+		break;
+	case MENU_PERIOD_EARLIER_YEAR_3:
+		std::tie(from, to) = MonthSpanRange(0, 12, year - 4);
+		break;
+	case MENU_PERIOD_EARLIER_YEAR_4:
+		std::tie(from, to) = MonthSpanRange(0, 12, year - 5);
+		break;
+	default:
+		return;
+	}
+	m_ctrl_grp_basic_filter.m_use_date_filter_chkb->SetValue(true);
+	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->SetDate(from);
+	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->SetDate(to);
+	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Show(true);
+	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Show(true);
 }
 
 void cMain::SaveFile(wxCommandEvent& evt) {
@@ -1086,6 +1198,10 @@ void cMain::PrepareQuery(Query& q) {
 		TopicPeriodicSubQuery::Mode mode = TopicPeriodicSubQuery::INVALID;
 		if (period.IsSameAs("Yearly")) {
 			mode = TopicPeriodicSubQuery::YEARLY;
+		} else if (period.IsSameAs("Half Year")) {
+			mode = TopicPeriodicSubQuery::HALFYEARLY;
+		} else if (period.IsSameAs("Quarter")) {
+			mode = TopicPeriodicSubQuery::QUARTERLY;
 		} else if (period.IsSameAs("Monthly")) {
 			mode = TopicPeriodicSubQuery::MONTHLY;
 		} else if (period.IsSameAs("Daily")) {
@@ -1127,10 +1243,12 @@ void cMain::InitMenu() {
 	m_menu_bar = new wxMenuBar();
 	wxMenu* dbmenu = new wxMenu();
 	wxMenu* querymenu = new wxMenu();
+	wxMenu* periodsmenu = new wxMenu();
 	wxMenu* viewmenu = new wxMenu();
 	wxMenu* testmenu = new wxMenu();
 	m_menu_bar->Append(dbmenu, "Database");
 	m_menu_bar->Append(querymenu, "Query");
+	m_menu_bar->Append(periodsmenu, "Periods");
 	m_menu_bar->Append(viewmenu, "View");
 	m_menu_bar->Append(testmenu, "Test");
 	m_discard_changes_menu_item = dbmenu->Append(MENU_LOAD, "Discard changes");
@@ -1146,6 +1264,23 @@ void cMain::InitMenu() {
 	querymenu->AppendSeparator();
 	querymenu->Append(MENU_EXPORT_EXCEL, "Export Results to Excel...");
 	querymenu->Append(MENU_SHOW_CHART, "Show as Chart...");
+	periodsmenu->Append(MENU_PERIOD_THIS_MONTH, "This Month");
+	periodsmenu->Append(MENU_PERIOD_LAST_MONTH, "Last Month");
+	periodsmenu->AppendSeparator();
+	periodsmenu->Append(MENU_PERIOD_THIS_QUARTER, "This Quarter");
+	periodsmenu->Append(MENU_PERIOD_LAST_QUARTER, "Last Quarter");
+	periodsmenu->AppendSeparator();
+	periodsmenu->Append(MENU_PERIOD_THIS_HALF, "This Half");
+	periodsmenu->Append(MENU_PERIOD_LAST_HALF, "Last Half");
+	periodsmenu->AppendSeparator();
+	periodsmenu->Append(MENU_PERIOD_THIS_YEAR, "This Year");
+	periodsmenu->Append(MENU_PERIOD_LAST_YEAR, "Last Year");
+	const int year = wxDateTime::Today().GetYear();
+	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_1, std::to_string(year - 2));
+	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_2, std::to_string(year - 3));
+	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_3, std::to_string(year - 4));
+	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_4, std::to_string(year - 5));
+
 	viewmenu->Append(MENU_VIEW_LOG, "Show Log Viewer");
 	testmenu->Append(MENU_TEST_MANUAL_RESOLVER, "ManualResolverDialog");
 	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
@@ -1638,8 +1773,8 @@ void ControlGroupQuery::DoInitialize(wxWindow* parent) {
 	m_controls.push_back(m_query_but = new wxButton(parent, QUERY_BUTT, "Query", wxPoint(HORIZONTAL_ALIGN_3, MAJOR_VERTICAL_ALIGN_3), cDefaultCtrlSize));
 
 	m_controls.push_back(new wxStaticText(parent, wxID_ANY, "Periodic Summary", wxPoint(HORIZONTAL_ALIGN_4, MAJOR_VERTICAL_ALIGN_1 - 18)));
-	String period_choices[4] = {"None", "Yearly", "Monthly", "Daily"};
-	m_controls.push_back(m_period_combo = new wxComboBox(parent, wxID_ANY, "None", wxPoint(HORIZONTAL_ALIGN_4, MAJOR_VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(4, period_choices)));
+	String period_choices[6] = {"None", "Yearly", "Half Year", "Quarter", "Monthly", "Daily"};
+	m_controls.push_back(m_period_combo = new wxComboBox(parent, wxID_ANY, "None", wxPoint(HORIZONTAL_ALIGN_4, MAJOR_VERTICAL_ALIGN_1), cDefaultCtrlSize, wxArrayString(6, period_choices)));
 }
 
 void ControlGroupBasicFilter::DoInitialize(wxWindow* parent) {

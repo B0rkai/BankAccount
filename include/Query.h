@@ -188,6 +188,8 @@ public:
 	enum Mode {
 		INVALID,
 		YEARLY,
+		HALFYEARLY,
+		QUARTERLY,
 		MONTHLY,
 		DAILY
 	};

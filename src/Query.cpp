@@ -400,11 +400,23 @@ void QueryByName::PreResolve() {
 			name = name.SubString(1, String::npos);
 			SetExcludeMode();
 		}
-		IdSet ids = s_resolve_if->GetIds(GetTopic(), name.c_str());
-		for (auto id : ids) {
-			AddId(id);
+		if (name.StartsWith('#')) {
+			name = name.SubString(1, String::npos);
+			if (!name.IsNumber()) {
+				continue;
+			}
+			unsigned long tmp;
+			name.ToULong(&tmp);
+			AddId(tmp);
 			m_result.Append(ENDL);
-			m_result.Append(s_resolve_if->GetInfo(GetTopic(), id));
+			m_result.Append(s_resolve_if->GetInfo(GetTopic(), tmp));
+		} else {
+			IdSet ids = s_resolve_if->GetIds(GetTopic(), name.c_str());
+			for (auto id : ids) {
+				AddId(id);
+				m_result.Append(ENDL);
+				m_result.Append(s_resolve_if->GetInfo(GetTopic(), id));
+			}
 		}
 	}
 	m_names.clear();
@@ -430,6 +442,10 @@ String DateId2String(const TopicPeriodicSubQuery::Mode mode, int id) {
 	case TopicPeriodicSubQuery::MONTHLY:
 		return String::Format("%d-%02d", id / 12, id % 12 + 1);
 		break;
+	case TopicPeriodicSubQuery::QUARTERLY:
+		return String::Format("%d-Q%d", id / 4, id % 4 + 1);
+	case TopicPeriodicSubQuery::HALFYEARLY:
+		return String::Format("%d-H%d", id / 2, id % 2 + 1);
 	case TopicPeriodicSubQuery::YEARLY:
 		return String::Format("%d", id);
 	}
@@ -448,6 +464,18 @@ bool TopicPeriodicSubQuery::CheckTransaction(const Transaction* tr) {
 			date_id = year * 12 + month - 1;
 			break;
 		}
+	case QUARTERLY: {
+			int day, month, year;
+			ExcelSerialDateToDMY(tr->GetDate(), day, month, year);
+			date_id = year * 4 + (month - 1) / 3;
+			break;
+		}
+	case HALFYEARLY: {
+			int day, month, year;
+			ExcelSerialDateToDMY(tr->GetDate(), day, month, year);
+			date_id = year * 2 + (month - 1) / 6;
+			break;
+		}
 	case YEARLY: {
 			int day, month, year;
 			ExcelSerialDateToDMY(tr->GetDate(), day, month, year);
@@ -457,16 +485,7 @@ bool TopicPeriodicSubQuery::CheckTransaction(const Transaction* tr) {
 	}
 	TopicSubQuery& sub = m_subsubqueries[date_id];
 	if (sub.GetName().empty()) {
-		switch (m_mode) {
-		case DAILY:
-			sub.SetName(GetDateFormat(date_id));
-			break;
-		case MONTHLY:
-			sub.SetName(String::Format("%d-%d", date_id / 12, date_id % 12 + 1));
-			break;
-		case YEARLY:
-			sub.SetName(String::Format("%d", date_id));
-		}
+		sub.SetName(DateId2String(m_mode, date_id));
 	}
 	if (m_min_date_id > date_id) {
 		m_min_date_id = date_id;
@@ -629,6 +648,12 @@ ChartResult PeriodicQuery::GetChartResult() const {
 	switch (m_mode) {
 	case TopicPeriodicSubQuery::YEARLY:
 		result.m_period_unit = "year";
+		break;
+	case TopicPeriodicSubQuery::HALFYEARLY:
+		result.m_period_unit = "half-year";
+		break;
+	case TopicPeriodicSubQuery::QUARTERLY:
+		result.m_period_unit = "quarter";
 		break;
 	case TopicPeriodicSubQuery::MONTHLY:
 		result.m_period_unit = "month";

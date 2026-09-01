@@ -188,6 +188,9 @@ class cMain :
     void IdChanged(wxCommandEvent& evt);
     void TopicChanged(wxCommandEvent& evt);
     void DateFilterToggle(wxCommandEvent& evt);
+    // Applies a "Periods" menu shortcut (This/Last Month/Quarter/Half/Year): turns on the date
+    // filter and sets the from/to calendar controls to the shortcut's computed range.
+    void PeriodShortcutSelected(wxCommandEvent& evt);
     void LoadFile(wxCommandEvent& evt);
     void DoLoad();
     // Applies db\journal.txt (suppressing further journaling while doing so) and shows

@@ -356,4 +356,46 @@ TEST(PeriodicQueryTest, ChartResultSeparatesIncomeAndExpenseAndPadsMissingPeriod
     EXPECT_DOUBLE_EQ(rent_expense->m_values[3], 0.0);
 }
 
+TEST(PeriodicQueryTest, QuarterlyAndHalfYearlyLabelUsingBusinessAbbreviations) {
+    FakeAccount acc(Id(0), "Acc");
+    // Feb (Q1/H1), Apr (Q2/H1), Aug (Q3/H2) of 2024 - three different quarters, two different halves.
+    uint16_t date_q1 = (uint16_t)DMYToExcelSerialDate(15, 2, 2024);
+    uint16_t date_q2 = (uint16_t)DMYToExcelSerialDate(15, 4, 2024);
+    uint16_t date_q3 = (uint16_t)DMYToExcelSerialDate(15, 8, 2024);
+
+    Transaction tr_q1(&acc, Money(HUF, 1000), date_q1, Id(0), Id(0));
+    tr_q1.GetCategoryId() = Id(5);
+    Transaction tr_q2(&acc, Money(HUF, 2000), date_q2, Id(0), Id(0));
+    tr_q2.GetCategoryId() = Id(5);
+    Transaction tr_q3(&acc, Money(HUF, 4000), date_q3, Id(0), Id(0));
+    tr_q3.GetCategoryId() = Id(5);
+
+    FakeNameResolve resolve;
+    resolve.SetName(Id(5), "Groceries");
+    QueryResolveScope scope(&resolve);
+
+    PeriodicCategoryQuery quarterly;
+    quarterly.SetMode(TopicPeriodicSubQuery::QUARTERLY);
+    Check(&quarterly, &tr_q1);
+    Check(&quarterly, &tr_q2);
+    Check(&quarterly, &tr_q3);
+
+    StringTable qtable = quarterly.GetTableResult();
+    ASSERT_EQ(qtable.front().size(), 3u + 3u); // Topic + Q1,Q2,Q3 + TOTAL + AVERAGE
+    EXPECT_EQ(qtable.front()[1], "2024-Q1");
+    EXPECT_EQ(qtable.front()[2], "2024-Q2");
+    EXPECT_EQ(qtable.front()[3], "2024-Q3");
+
+    PeriodicCategoryQuery halfyearly;
+    halfyearly.SetMode(TopicPeriodicSubQuery::HALFYEARLY);
+    Check(&halfyearly, &tr_q1);
+    Check(&halfyearly, &tr_q2);
+    Check(&halfyearly, &tr_q3);
+
+    StringTable htable = halfyearly.GetTableResult();
+    ASSERT_EQ(htable.front().size(), 2u + 3u); // Topic + H1,H2 + TOTAL + AVERAGE
+    EXPECT_EQ(htable.front()[1], "2024-H1");
+    EXPECT_EQ(htable.front()[2], "2024-H2");
+}
+
 }
