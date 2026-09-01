@@ -152,6 +152,11 @@ String ContainerAsString(const Container& container, int max = -1) {
 
 bool caseInsensitiveStringContains(const String& string, const String& sub);
 
+// Joins folder + filename with exactly one backslash between them, regardless of whether
+// folder already ends in one (or in a forward slash) - shared by every place that appends a
+// specific file to a configured folder (network db path, network release path, ...).
+String JoinPath(const String& folder, const String& filename);
+
 void DumpChar(std::istream& in);
 void StreamString(std::ostream& out, const String& str);
 void StreamString(std::istream& in, String& str);

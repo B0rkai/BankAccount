@@ -135,6 +135,11 @@
     <ClCompile Include="tests\LoggerTests.cpp" />
     <ClCompile Include="tests\DataImporterTests.cpp" />
     <ClCompile Include="tests\MnbExchangeRateClientTests.cpp" />
+    <ClCompile Include="tests\DbLocationSettingsTests.cpp" />
+    <ClCompile Include="tests\NetworkLockTests.cpp" />
+    <ClCompile Include="tests\VersionTests.cpp" />
+    <ClCompile Include="tests\ReleaseManifestTests.cpp" />
+    <ClCompile Include="tests\SelfUpdaterTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="BankAccountCore.vcxproj">

@@ -23,6 +23,7 @@
     <ClCompile Include="src\Crc32.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Currency.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\DataImporter.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\DbLocationSettings.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\ExchangeRateHistory.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Journal.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Logger.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -30,9 +31,13 @@
     <ClCompile Include="src\ManagedType.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\ManagerType.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\MnbExchangeRateClient.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\NetworkLock.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Query.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\ReleaseManifest.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\SelfUpdater.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Transaction.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\TransactionType.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\Version.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\WQuery.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -49,6 +54,7 @@
     <ClInclude Include="include\Crc32.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Currency.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\DataImporter.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\DbLocationSettings.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\ExchangeRateHistory.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\IAccount.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\IDataBase.h"><Filter>Header Files</Filter></ClInclude>
@@ -63,10 +69,14 @@
     <ClInclude Include="include\ManagedType.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\ManagerType.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\MnbExchangeRateClient.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\NetworkLock.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Query.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\RefCounted.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\ReleaseManifest.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\SelfUpdater.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Transaction.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\TransactionType.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\Version.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\WQuery.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
 </Project>

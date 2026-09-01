@@ -197,6 +197,61 @@ methods on each domain class (see `ManagerType<T>::StreamOut/StreamIn` in
 - `db/BankAccount.txt` in this repo is the current sample dataset used during development —
   its first line is the category/keyword table, followed by streamed accounts/clients/etc.
 
+### Optional network db location
+
+The `.baf` (and its `.backup` sibling) can live on a shared network folder (a Samba/SMB share)
+instead of the local `db\` folder, so multiple machines can see the same database — with only
+one session allowed to write at a time; every other session opens read-only.
+
+- **Where it's configured**: `db\location.cfg`, a small local (per-machine, hand-edited) file —
+  `DbLocationSettings` ([include/DbLocationSettings.h](include/DbLocationSettings.h)/
+  [src/DbLocationSettings.cpp](src/DbLocationSettings.cpp)). Two recognized `key=value` lines,
+  `#` for comments: `mode=standalone|network` and `path=<folder>` (only read when
+  `mode=network`). Missing file, or any unrecognized/incomplete value, resolves to
+  `Standalone` — so every existing install keeps working unchanged with no file needed at all.
+  There is no in-app editor for it (deliberately, for v1).
+- **The write lock**: `NetworkLock` ([include/NetworkLock.h](include/NetworkLock.h)/
+  [src/NetworkLock.cpp](src/NetworkLock.cpp)) extracts the exact technique `Journal.cpp`
+  already used locally (see below) into a reusable, folder-parameterized class: a
+  `<folder>\write.lock` file opened via `CreateFileA` with `FILE_SHARE_READ` (no write
+  sharing), held open for the session's lifetime. Windows releases the handle itself on
+  process exit — clean or crashed — so there's no stale-lock file to detect or clean up, unlike
+  a lock file that merely records a PID/timestamp. `TryAcquire()` distinguishes
+  `HeldElsewhere` (a real sharing violation — another session already holds it) from
+  `Unreachable` (the folder/share itself couldn't be opened, e.g. down/misconfigured), since
+  those need different handling.
+- **Startup resolution**: `cMain::DoLoad()` ([src/cMain.cpp](src/cMain.cpp)) reads
+  `DbLocationSettings`, and in network mode calls `NetworkLock::TryAcquire()` before opening
+  anything. `Unreachable` → a hard error dialog and refuses to open at all (`m_bank_file`
+  stays null) rather than silently falling back to a local copy, which would risk two
+  divergent "the database" existing without the user realizing it. `HeldElsewhere` → loads
+  normally (reads need no lock) but sets `m_read_only = true`. `Acquired` → behaves exactly
+  like standalone mode, writable. The write-lock decision is made once at startup only — a
+  read-only session does not retry live; the user closes and relaunches once the writer is
+  done (re-acquiring the *same* already-held folder, e.g. on "Discard changes", is a no-op in
+  `NetworkLock` rather than a release-then-reopen, so there's never even a momentary gap
+  where another machine could steal the lock out from under an already-writable session).
+- **Read-only enforcement**: `cMain::RequireWritable()` is the single chokepoint every
+  mutating action (Save, Import, Categorize, Merge, Add keyword, the recovery-file/journal
+  replay test actions) calls first — false means don't touch `m_bank_file`, having already
+  told the user why (no database loaded at all, vs. loaded but this session lost the
+  write-lock race). Grid cell editing is blocked at its own chokepoint instead —
+  `ApplyTransactionEditableColumns`/`ApplyEntityEditableColumns` force every column read-only
+  and disable grid editing outright when `m_read_only`, so wxGrid itself refuses to enter edit
+  mode rather than relying on catching an edit after the fact. The right-click context menu
+  (Add keyword.../Merge...) isn't offered at all when read-only, since both its actions
+  mutate. The window title reflects the mode (`"Bank Account"` / `"Bank Account [network
+  db]"` / `"Bank Account [READ-ONLY - network db]"`) as the persistent visual indicator.
+- **What stays local regardless of mode**: `db\journal.txt` (the crash-recovery journal, see
+  [include/Journal.h](include/Journal.h)) keeps its fixed local path and its own,
+  unrelated, single-instance lock — it's recovery for *this machine's* in-flight unsaved
+  edits, not the shared resource. `DEFAULT_UNCOMPRESSED_FILE_PATH` (the transient plain-text
+  intermediate `Save()`/`Load()` stream through) is also a separate hardcoded local constant
+  in `BankAccountFile.cpp`, untouched by network mode — so the unencrypted intermediate never
+  touches the network, only the final zipped `.baf` does. `MakeBackup`/`LoadBackup` already
+  derive the `.backup` path from `BankAccountFile`'s own `m_filename`, so once that's the
+  network path, the backup automatically lands next to it with no extra code.
+
 ## Bank import formats
 
 [src/DataImporter.cpp](src/DataImporter.cpp) auto-detects the source format by file extension and content, then

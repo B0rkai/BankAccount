@@ -16,6 +16,7 @@ public:
 	static void ExtractSave(const String& filename);
 	bool Save(const bool compress);
 	inline State GetState() const { return m_state; }
+	inline const String& GetFilename() const { return m_filename; }
 	// True after a successful Load() iff a recovery journal exists whose baseline
 	// matches what was just loaded and has at least one pending entry - i.e. iff the
 	// caller should offer to replay it. Never true after Save() or a discard, since

@@ -103,6 +103,22 @@ TEST(ExcelDateTest, IsWeekendMatchesKnownCalendarDates) {
     EXPECT_FALSE(IsWeekend((uint16_t)DMYToExcelSerialDate(8, 1, 2024)));
 }
 
+TEST(JoinPathTest, AddsABackslashWhenTheFolderHasNone) {
+    EXPECT_EQ(JoinPath("\\\\server\\share\\db", "BData.baf"), "\\\\server\\share\\db\\BData.baf");
+}
+
+TEST(JoinPathTest, DoesNotDoubleUpAnExistingTrailingBackslash) {
+    EXPECT_EQ(JoinPath("\\\\server\\share\\db\\", "BData.baf"), "\\\\server\\share\\db\\BData.baf");
+}
+
+TEST(JoinPathTest, AcceptsATrailingForwardSlashToo) {
+    EXPECT_EQ(JoinPath("C:/some/dir/", "file.txt"), "C:/some/dir/file.txt");
+}
+
+TEST(JoinPathTest, EmptyFolderYieldsJustTheFilename) {
+    EXPECT_EQ(JoinPath("", "file.txt"), "file.txt");
+}
+
 TEST(ParseMultiValueStringTest, SingleValueWithNoSeparator) {
     StringVector result = ParseMultiValueString("solo");
 
@@ -119,12 +135,11 @@ TEST(ParseMultiValueStringTest, MultipleValuesSplitOnSemicolon) {
     EXPECT_EQ(result[2], "c");
 }
 
-TEST(ParseMultiValueStringTest, TrailingSeparatorProducesEmptyLastElement) {
+TEST(ParseMultiValueStringTest, TrailingSeparatorIsDroppedRatherThanProducingAnEmptyElement) {
     StringVector result = ParseMultiValueString("a;");
 
-    ASSERT_EQ(result.size(), 2u);
+    ASSERT_EQ(result.size(), 1u);
     EXPECT_EQ(result[0], "a");
-    EXPECT_EQ(result[1], "");
 }
 
 // Was an unconditional infinite loop: StreamString(istream&, String&)'s unquoted-mode read loop

@@ -27,5 +27,10 @@
     <ClCompile Include="tests\LoggerTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\DataImporterTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\MnbExchangeRateClientTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\DbLocationSettingsTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\NetworkLockTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\VersionTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\ReleaseManifestTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\SelfUpdaterTests.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>

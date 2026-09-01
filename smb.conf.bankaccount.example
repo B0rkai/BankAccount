@@ -1,0 +1,35 @@
+# Append this section to /etc/samba/smb.conf on the Ubuntu server (do not replace the
+# existing [global] section - just add [bankaccount] at the end of the file).
+#
+# This is a reference file only, kept outside the repo's own build - copy the [bankaccount]
+# section into /etc/samba/smb.conf by hand and adjust the placeholders marked <...>.
+
+[bankaccount]
+    path = /srv/bankaccount
+    comment = BankAccount shared network database
+
+    # Real user auth, not guest - see the "Create a Samba user" step. Restrict to the users
+    # who should be able to touch this database at all (both readers and the writer - the
+    # app's own NetworkLock/read-only logic decides who may WRITE, not the share ACL).
+    valid users = @bankaccount
+    guest ok = no
+
+    browseable = yes
+    writable = yes
+    create mask = 0660
+    directory mask = 2770
+    force group = bankaccount
+
+    # --- Do not change these three: the app's write-lock (NetworkLock, see NetworkLock.h)
+    # --- depends on Samba actually enforcing Windows share-mode "deny write" semantics
+    # --- (CreateFileA with FILE_SHARE_READ) between two different client machines. These
+    # --- are Samba's defaults, spelled out here so a later "helpful" tweak doesn't quietly
+    # --- disable the one thing this whole feature relies on.
+    locking = yes
+    share modes = yes
+    oplocks = yes
+
+    # Windows' offline-files client-side caching would let a client keep serving a stale
+    # cached copy of BData.baf/write.lock instead of hitting the share live - disable it for
+    # a share that's meant to always reflect the current on-disk state.
+    csc policy = disable

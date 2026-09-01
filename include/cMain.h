@@ -9,6 +9,7 @@
 #include "INewAccount.h"
 #include "AccountManager.h" // for AccountManager::TransactionIdentity
 #include "ChartData.h"
+#include "NetworkLock.h"
 
 // wxButton;
 class BankAccountFile;
@@ -113,6 +114,15 @@ class cMain :
     ChartResult m_current_chart_data;
     ChartShape m_current_chart_shape = ChartShape::NONE;
     std::unique_ptr<BankAccountFile> m_bank_file;
+    // Held for the whole session whenever DoLoad() resolves to network mode and this session
+    // won the write lock - released automatically (by Windows, on process exit) if the process
+    // crashes, and explicitly whenever DoLoad() re-resolves to standalone or a different
+    // session already holds it. See NetworkLock.h.
+    NetworkLock m_network_lock;
+    // True iff this session is looking at a network-mode database but lost the write-lock race
+    // to another session (DoLoad() sets this) - Save and every other mutating action must stay
+    // disabled for as long as this is true. Always false in standalone mode.
+    bool m_read_only = false;
     std::vector<AccountManager::TransactionIdentity> m_grid_identities;
     // Full, unsorted/unfiltered result behind whatever is currently displayed in
     // m_result_grid, plus its parallel identities (transaction mode only) - kept around so
@@ -193,6 +203,17 @@ class cMain :
     void PeriodShortcutSelected(wxCommandEvent& evt);
     void LoadFile(wxCommandEvent& evt);
     void DoLoad();
+    // Best-effort, silent-on-failure check against the network release location (see
+    // DbLocationSettings::release_folder) - called once from Init(), never blocks/errors like
+    // DoLoad() does, since an update is optional and the db itself is not. Prompts if a newer
+    // version is published; on confirmation, hands off to SelfUpdater::ApplyUpdate() and
+    // closes the app for the detached helper script to complete the swap.
+    void CheckForUpdate();
+    // Single chokepoint for every mutating action (Save, Import, Categorize, Merge, Add
+    // keyword, ...): false means the caller must bail out without touching m_bank_file, and
+    // this has already shown the user why (no database loaded at all, vs. loaded but this
+    // session lost the network write-lock race).
+    bool RequireWritable();
     // Applies db\journal.txt (suppressing further journaling while doing so) and shows
     // the result the same way any other query/import result is shown - the grid for
     // touched transactions, text for everything else. Shared by the startup

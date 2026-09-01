@@ -25,6 +25,10 @@
 #include "AddKeywordDialog.h"
 #include "GuiHelpers.h"
 #include "ChartDialog.h"
+#include "DbLocationSettings.h"
+#include "ReleaseManifest.h"
+#include "Version.h"
+#include "SelfUpdater.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -235,7 +239,12 @@ cMain::cMain()
 
 cMain::~cMain() {
 	UIOutputText("");
-	if ((m_bank_file->GetState() == BankAccountFile::DIRTY) && (wxMessageBox(wxT("You have unsaved changes! Do you want to save before exit?"), wxT("Confirm Save"), wxICON_QUESTION | wxYES_NO) == wxYES)) {
+	// m_bank_file is null when DoLoad() refused to open (network location unreachable at
+	// startup) - nothing was ever loaded, so nothing to prompt about. A read-only session
+	// never legitimately reaches DIRTY (once #4's UI gating is in place), but the guard costs
+	// nothing and avoids ever calling Save() against a network db this session doesn't hold
+	// the write lock for.
+	if (m_bank_file && !m_read_only && (m_bank_file->GetState() == BankAccountFile::DIRTY) && (wxMessageBox(wxT("You have unsaved changes! Do you want to save before exit?"), wxT("Confirm Save"), wxICON_QUESTION | wxYES_NO) == wxYES)) {
 		m_bank_file->Save(true);
 	}
 	// A graceful exit never needs crash-recovery on the next launch, whether the changes
@@ -249,6 +258,57 @@ cMain::~cMain() {
 
 void cMain::Init() {
 	DoLoad();
+	CheckForUpdate();
+}
+
+void cMain::CheckForUpdate() {
+	// Best-effort and silent on any failure - unlike DoLoad()'s network-db path, an
+	// unreachable/missing/corrupt release location must never block or interrupt normal use,
+	// since checking for updates is purely optional. Only runs once at startup (not on every
+	// "Discard changes" reload, which only calls DoLoad()), and only when in network mode -
+	// standalone installs have no shared release location to check against at all.
+	DbLocationSettings settings = DbLocationSettings::Load();
+	if (settings.mode != DbLocationMode::Network) {
+		return;
+	}
+	ReleaseManifest manifest = ReleaseManifest::Load(settings.release_folder);
+	if (!manifest.valid) {
+		return;
+	}
+	std::optional<SemVer> remote = ParseVersion(manifest.version);
+	std::optional<SemVer> local = ParseVersion(APP_VERSION);
+	if (!remote || !local || !(*local < *remote)) {
+		return;
+	}
+	int choice = wxMessageBox(
+		"Version " + manifest.version + " is available (you have " + String(APP_VERSION) + ").\n\n"
+		"Update now? The app will close and relaunch automatically once the update is applied.",
+		"Update available", wxICON_QUESTION | wxYES_NO);
+	if (choice != wxYES) {
+		return;
+	}
+	// ApplyUpdate() only copies/verifies/hands off to the detached helper script - it never
+	// touches m_bank_file, so this is safe regardless of load state or read-only mode.
+	switch (ApplyUpdate(settings.release_folder, manifest.crc32)) {
+	case UpdateApplyResult::Started:
+		// The helper is now waiting for this process to exit - Close() runs the normal
+		// shutdown path (including the usual unsaved-changes prompt in ~cMain(), unaffected
+		// by any of this), after which the helper swaps the exe and relaunches it.
+		Close(true);
+		return;
+	case UpdateApplyResult::CopyFailed:
+		wxMessageBox("Could not copy the update from the network location. See the log for details.",
+			"Update failed", wxICON_ERROR | wxOK);
+		break;
+	case UpdateApplyResult::CrcMismatch:
+		wxMessageBox("The downloaded update failed a corruption check and was not applied. See the log for details.",
+			"Update failed", wxICON_ERROR | wxOK);
+		break;
+	case UpdateApplyResult::SpawnFailed:
+		wxMessageBox("Could not start the update helper. See the log for details.",
+			"Update failed", wxICON_ERROR | wxOK);
+		break;
+	}
 }
 
 void cMain::List(wxCommandEvent& evt) {
@@ -490,10 +550,21 @@ void cMain::PeriodShortcutSelected(wxCommandEvent& evt) {
 	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Show(true);
 }
 
-void cMain::SaveFile(wxCommandEvent& evt) {
-	evt.Skip();
+bool cMain::RequireWritable() {
 	if (!m_bank_file) {
 		UIOutputText("First load the database");
+		return false;
+	}
+	if (m_read_only) {
+		UIOutputText("This session is read-only: another session holds the network database's write lock. Close this session and relaunch once that session is done to make changes.");
+		return false;
+	}
+	return true;
+}
+
+void cMain::SaveFile(wxCommandEvent& evt) {
+	evt.Skip();
+	if (!RequireWritable()) {
 		return;
 	}
 	m_bank_file->Save(evt.GetId() == MENU_SAVE);
@@ -501,8 +572,7 @@ void cMain::SaveFile(wxCommandEvent& evt) {
 
 void cMain::Categorize(wxCommandEvent& evt) {
 	evt.Skip();
-	if (!m_bank_file) {
-		UIOutputText("First load the database");
+	if (!RequireWritable()) {
 		return;
 	}
 	uint8_t flags = 0;
@@ -536,7 +606,14 @@ void cMain::Categorize(wxCommandEvent& evt) {
 void cMain::LoadFile(wxCommandEvent& evt) {
 	evt.Skip();
 	if (evt.GetId() == MENU_EXTRACT) {
-		BankAccountFile::ExtractSave(DEFAULT_SAVE_LOCATION);
+		// Extract whatever file this session actually loaded/would save to - in network mode
+		// that's the network .baf, not the local DEFAULT_SAVE_LOCATION this used to hardcode
+		// (which would silently extract nothing, or a stale unrelated local file).
+		if (!m_bank_file) {
+			UIOutputText("First load the database");
+			return;
+		}
+		BankAccountFile::ExtractSave(m_bank_file->GetFilename());
 		return;
 	}
 	// "Discard changes": the user is explicitly throwing away unsaved work, so the
@@ -603,7 +680,36 @@ bool cMain::NewAccountDetails(const String& acc_number, String& name, String& ba
 }
 
 void cMain::DoLoad() {
-	m_bank_file.reset(new BankAccountFile(DEFAULT_SAVE_LOCATION));
+	DbLocationSettings settings = DbLocationSettings::Load();
+	String save_location = DEFAULT_SAVE_LOCATION;
+	m_read_only = false;
+
+	if (settings.mode == DbLocationMode::Network) {
+		save_location = JoinPath(settings.network_folder, "BData.baf");
+		NetworkLockResult lock_result = m_network_lock.TryAcquire(settings.network_folder);
+		if (lock_result == NetworkLockResult::Unreachable) {
+			// Refuse to open outright rather than silently falling back to a local copy -
+			// that would risk two divergent "the database" existing without the user
+			// realizing it. m_bank_file is left null; every command elsewhere already
+			// guards on that (see the `if (!m_bank_file)` checks throughout this file) and
+			// reports "First load the database", so nothing crashes - the window just sits
+			// there non-functional until the user fixes connectivity and restarts.
+			wxMessageBox(
+				"Cannot reach the configured network database location '" + settings.network_folder +
+				"' (see db\\location.cfg). Check connectivity/the share and restart the application.",
+				"Network database unreachable", wxICON_ERROR | wxOK);
+			m_status_bar->SetStatusText("ERROR: network database location unreachable");
+			LogError() << "Network database location unreachable: " << settings.network_folder.utf8_str();
+			return;
+		}
+		m_read_only = (lock_result == NetworkLockResult::HeldElsewhere);
+		SetTitle(m_read_only ? "Bank Account [READ-ONLY - network db]" : "Bank Account [network db]");
+	} else {
+		m_network_lock.Release();
+		SetTitle("Bank Account");
+	}
+
+	m_bank_file.reset(new BankAccountFile(save_location));
 	if (!m_bank_file->Load()) {
 		m_status_bar->SetStatusText("ERROR: Missing data file");
 		LogWarn() << "Database missing! Load DAF database file, or import new datasets!";
@@ -858,6 +964,21 @@ void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transa
 
 void cMain::ApplyTransactionEditableColumns() {
 	const int col_count = m_result_grid->GetNumberCols();
+	if (m_read_only) {
+		// Session-wide read-only overrides the per-column Category/Desc editability below -
+		// EnableEditing(false) alone would still leave wxGrid's own per-cell read-only attrib
+		// unset (defaulting to editable), so every column's attr must say so explicitly too,
+		// same as ApplyEntityEditableColumns' equivalent early-out.
+		m_result_grid->EnableEditing(false);
+		for (int c = 0; c < col_count; ++c) {
+			wxGridCellAttr* attr = new wxGridCellAttr();
+			int align = (m_grid_master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
+			attr->SetAlignment(align, wxALIGN_CENTRE);
+			attr->SetReadOnly(true);
+			m_result_grid->SetColAttr(c, attr);
+		}
+		return;
+	}
 	m_result_grid->EnableEditing(true);
 	int category_col = -1, desc_col = -1;
 	for (int c = 0; c < col_count; ++c) {
@@ -914,14 +1035,14 @@ void cMain::ApplyEntityEditableColumns() {
 	if ((name_col < 0) || (m_grid_entity_id_col < 0)) {
 		return; // unexpected shape - leave non-editable rather than guess
 	}
-	m_result_grid->EnableEditing(true);
+	m_result_grid->EnableEditing(!m_read_only);
 	// One attribute per column rather than one SetReadOnly() call per cell - see
 	// ApplyTransactionEditableColumns for why that matters once row counts get large.
 	for (int c = 0; c < col_count; ++c) {
 		wxGridCellAttr* attr = new wxGridCellAttr();
 		int align = (m_grid_master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
 		attr->SetAlignment(align, wxALIGN_CENTRE);
-		attr->SetReadOnly(c != name_col);
+		attr->SetReadOnly(m_read_only || (c != name_col));
 		m_result_grid->SetColAttr(c, attr);
 	}
 }
@@ -979,7 +1100,10 @@ void cMain::OnGridCellChanged(wxGridEvent& evt) {
 }
 
 void cMain::OnGridCellRightClick(wxGridEvent& evt) {
-	if (!m_bank_file) {
+	if (!m_bank_file || m_read_only) {
+		// This menu's only actions (Add keyword.../Merge...) both mutate - nothing useful to
+		// offer a read-only session, so skip building it rather than showing a menu whose
+		// items would all need individually disabling.
 		return;
 	}
 	int row = evt.GetRow();
@@ -1453,6 +1577,9 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 }
 
 void cMain::MergeButtonClicked(wxCommandEvent& evt) {
+	if (!RequireWritable()) {
+		return;
+	}
 	wxString merge_from = m_ctrl_grp_utility.m_merge_from_textctrl->GetValue();
 	wxString merge_to = m_ctrl_grp_utility.m_merge_to_textctrl->GetValue();
 	wxString merge_topic = m_ctrl_grp_utility.m_topic_combo->GetValue();
@@ -1517,6 +1644,9 @@ void cMain::MergeButtonClicked(wxCommandEvent& evt) {
 
 void cMain::AddKeywordButtonClicked(wxCommandEvent& evt) {
  	evt.Skip();
+	if (!RequireWritable()) {
+		return;
+	}
 	String merge_topic = (String)m_ctrl_grp_utility.m_topic_combo->GetValue();
 	String id_str = (String)m_ctrl_grp_utility.m_keyword_target_textctrl->GetValue();
 	String keyword = (String)m_ctrl_grp_utility.m_keyword_textctrl->GetValue();
@@ -1540,6 +1670,10 @@ void cMain::Test(wxCommandEvent& evt) {
 	evt.Skip();
 	int id = evt.GetId();
 	if (id == MENU_TEST_MANUAL_RESOLVER) {
+		if (!m_bank_file) {
+			UIOutputText("First load the database");
+			return;
+		}
 		Id id(INVALID_ID);
 		String new_name, keyword, description;
 		bool keyword_definitive = true;
@@ -1565,6 +1699,10 @@ void cMain::Test(wxCommandEvent& evt) {
 		(void) dialog.ShowModal();
 		return;
 	} else if (id == MENU_TEST_PERIODIC_QUERY) {
+		if (!m_bank_file) {
+			UIOutputText("First load the database");
+			return;
+		}
 		Query q;
 		//PrepareQuery(q);
 		PeriodicCategoryQuery* paq = new PeriodicCategoryQuery;
@@ -1581,8 +1719,7 @@ void cMain::Test(wxCommandEvent& evt) {
 		}
 		UIOutputTable(m_bank_file->GetExchangeRateTable(EUR));
 	} else if (id == MENU_APPLY_RECOVERY) {
-		if (!m_bank_file) {
-			UIOutputText("First load the database");
+		if (!RequireWritable()) {
 			return;
 		}
 		wxFileDialog openFileDialog(this, "Select recovery data file", "", "recovery.txt",
@@ -1607,8 +1744,7 @@ void cMain::Test(wxCommandEvent& evt) {
 	} else if (id == MENU_REPLAY_JOURNAL) {
 		// Manual trigger for testing the replay engine end-to-end - the same path the
 		// startup "recover unsaved work?" prompt uses (see OfferJournalRecoveryIfPending).
-		if (!m_bank_file) {
-			UIOutputText("First load the database");
+		if (!RequireWritable()) {
 			return;
 		}
 		ReplayJournal();
@@ -1618,6 +1754,9 @@ void cMain::Test(wxCommandEvent& evt) {
 
 void cMain::Import(wxCommandEvent& evt) {
 	evt.Skip();
+	if (!RequireWritable()) {
+		return;
+	}
 	try {
 		wxFileDialog
 			openFileDialog(this, _("Import from file"), "", "",
@@ -1645,8 +1784,7 @@ void cMain::Import(wxCommandEvent& evt) {
 
 void cMain::UpdateExchangeRates(wxCommandEvent& evt) {
 	evt.Skip();
-	if (!m_bank_file) {
-		UIOutputText("First load the database");
+	if (!RequireWritable()) {
 		return;
 	}
 	FetchCancelToken cancel_token;
@@ -1706,6 +1844,13 @@ void cMain::ShowLogViewer(wxCommandEvent& evt) {
 }
 
 void cMain::UpdateMenu(wxEvent&) {
+	// Fires on wxEVT_MENU_OPEN, i.e. as soon as the user clicks any top-level menu - reachable
+	// even when DoLoad() left m_bank_file null (network location unreachable at startup), so
+	// this needs its own guard rather than relying on the caller to have loaded anything.
+	if (!m_bank_file) {
+		m_discard_changes_menu_item->Enable(false);
+		return;
+	}
 	m_discard_changes_menu_item->Enable(m_bank_file->GetState() == BankAccountFile::DIRTY);
 }
 

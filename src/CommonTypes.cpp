@@ -49,6 +49,15 @@ bool caseInsensitiveStringContains(const String& string, const String& sub) {
     return (string.Lower().find(sub.Lower()) != String::npos);
 }
 
+String JoinPath(const String& folder, const String& filename) {
+    String path = folder;
+    if (!path.empty() && (path[path.length() - 1] != '\\') && (path[path.length() - 1] != '/')) {
+        path += "\\";
+    }
+    path += filename;
+    return path;
+}
+
 // From: https://stackoverflow.com/questions/56717088/algorithm-for-converting-serial-date-excel-to-year-month-day-in-c
 
 void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear) {
