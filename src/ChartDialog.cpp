@@ -150,7 +150,7 @@ namespace {
 	// being drawn on its own - i.e. Others absorbs (at most) the bottom 10% of the total, so it
 	// can never end up bigger than the real slices it absorbed the way a fixed-rank "top N" cutoff
 	// could.
-	constexpr double OTHERS_FOLD_TAIL_SHARE = 0.10;
+	constexpr double OTHERS_FOLD_TAIL_SHARE = 0.05;
 
 	// wxCharts' own default theme (wxChartsPresentationTheme) only ever pre-registers dataset
 	// colours for implicit ids 0-2, and each of those 3 is a semi-transparent, washed-out shade

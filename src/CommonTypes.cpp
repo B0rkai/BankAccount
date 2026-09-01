@@ -188,7 +188,9 @@ StringVector ParseMultiValueString(const String& val) {
             }
             vals.emplace_back(val, prevpos, pos - prevpos);
         } while (pos != String::npos);
-        vals.emplace_back(val, prevpos, val.size() - prevpos);
+        if (val.size() - prevpos) {
+            vals.emplace_back(val, prevpos, val.size() - prevpos);
+        }
     }
     return vals;
 }
