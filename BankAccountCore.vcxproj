@@ -122,7 +122,9 @@
     <ClCompile Include="src\ManagerType.cpp" />
     <ClCompile Include="src\MnbExchangeRateClient.cpp" />
     <ClCompile Include="src\NetworkLock.cpp" />
+    <ClCompile Include="src\FavoriteQuery.cpp" />
     <ClCompile Include="src\Query.cpp" />
+    <ClCompile Include="src\RelativePeriod.cpp" />
     <ClCompile Include="src\ReleaseManifest.cpp" />
     <ClCompile Include="src\SelfUpdater.cpp" />
     <ClCompile Include="src\Transaction.cpp" />
@@ -160,7 +162,9 @@
     <ClInclude Include="include\ManagerType.h" />
     <ClInclude Include="include\MnbExchangeRateClient.h" />
     <ClInclude Include="include\NetworkLock.h" />
+    <ClInclude Include="include\FavoriteQuery.h" />
     <ClInclude Include="include\Query.h" />
+    <ClInclude Include="include\RelativePeriod.h" />
     <ClInclude Include="include\RefCounted.h" />
     <ClInclude Include="include\ReleaseManifest.h" />
     <ClInclude Include="include\SelfUpdater.h" />

@@ -9,6 +9,8 @@
   <ItemGroup>
     <ClCompile Include="tests\AccountManagerTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\CommonTypesTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\FavoriteQueryTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\RelativePeriodTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\Crc32Tests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\CurrencyTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\ManagedTypeTests.cpp"><Filter>Source Files</Filter></ClCompile>

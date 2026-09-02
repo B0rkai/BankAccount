@@ -58,135 +58,16 @@ the Win32 configs are stale/unused. Language standard: C++17. Character set: Uni
 
 ### External dependencies (not vendored in `include`/`src`)
 
-The project expects these to exist as siblings/fixed paths on the dev machine, outside this repo -
-with one exception: **nlohmann/json** (MIT-licensed,
-[nlohmann/json](https://github.com/nlohmann/json), v3.11.3) *is* checked directly into
-`include/nlohmann/json.hpp` (plus its `LICENSE.MIT`), unlike everything else in this list. It's a
-single-header, no-build library — no `.lib`, no CMake step, no per-machine setup — so vendoring the
-header itself is cheaper than adding another sibling-checkout dependency. `include` is already on
-every project's `IncludePath` (`BankAccountCore`/`BankAccount`/`BankAccountTests` alike), so no
-`.vcxproj` changes were needed to add it. Used for the small hand-edited/generated JSON config
-files (`db\location.json`, `release.json` — see "Optional network db location" below) and (once
-built) favorite/saved queries.
-
-- **wxWidgets 3.0** headers at `C:\Users\<user>\source\wxWidgets\include` (both configs).
-- **ZipLib** headers at `C:\Users\<user>\source\ziplib\Source\ZipLib`; Debug|x64 links its
-  built libs from `..\..\ziplib\Bin\x64\Debug\*.lib` (i.e. a `ziplib` checkout next to this repo).
-- **xlnt** (MIT-licensed, [xlnt-community/xlnt](https://github.com/xlnt-community/xlnt) — the
-  maintained fork of the original, now-abandoned `tfussell/xlnt`) is a source checkout at
-  `C:\Users\<user>\source\xlnt`, built locally via CMake (`cmake -G "Visual Studio 17 2022" -A x64
-  -DSTATIC=ON -DXLNT_CXX_LANG=17 -DTESTS=OFF -DSAMPLES=OFF -DBENCHMARKS=OFF -DDOCUMENTATION=OFF`
-  from a `build` subfolder, then `cmake --build . --config Debug` and `--config Release`) —
-  **remember `git submodule update --init --recursive` after cloning**, its third-party deps
-  (libstudxml, fmt, utfcpp, fast_float) are git submodules and the configure step fails cryptically
-  without them. Produces `build\source\Debug\xlntd.lib` and `build\source\Release\xlnt.lib`, both
-  referenced directly from `BankAccount.vcxproj` (no copy into `external/`). Used by
-  [src/ExcelExport.cpp](src/ExcelExport.cpp) (the "Export Results to Excel" query-menu item) for
-  writing a real, styled `.xlsx` (bold/filled header row, borders, per-cell number formats for
-  dates and each tracked currency) — unlike the OpenXLSX library tried first, xlnt has a real
-  styling API and, since it's self-built rather than a prebuilt Release-only binary, works in both
-  Debug and Release.
-- Prebuilt wxWidgets/ZipLib/zlib/bzip2/lzma `.lib`/`.pdb` files are checked into `external/`
-  and used for Release|x64 and general linking (`AdditionalLibraryDirectories`).
-- **wxCharts** (MIT-licensed, [wxIshiko/wxCharts](https://github.com/wxIshiko/wxCharts)) is a
-  source checkout at `C:\Users\<user>\source\wxCharts`, built locally via CMake the same way as
-  xlnt/googletest: `cmake -G "Visual Studio 17 2022" -A x64 -DwxWidgets_ROOT_DIR=C:\Users\<user>\source\wxWidgets`
-  from a `build` subfolder, then `cmake --build . --config Debug` and `--config Release`. Its
-  `find_package(wxWidgets)` call needs the classic `lib\vc_x64_lib\*.lib` layout next to the
-  `mswu`/`mswud`/`wx\setup.h` folders that are already present under the `wxWidgets` checkout —
-  since this project's actual `.lib` files live flattened in this repo's `external\` instead
-  (not in that checkout), hardlink them in once per machine:
-  ```powershell
-  Get-ChildItem "C:\Users\<user>\source\repos\BankAccount\external\*.lib" | ForEach-Object {
-    New-Item -ItemType HardLink -Path "C:\Users\<user>\source\wxWidgets\lib\vc_x64_lib\$($_.Name)" -Target $_.FullName -ErrorAction SilentlyContinue
-  }
-  ```
-  Produces `build\bin\Debug\wxchartsd.lib` and `build\bin\Release\wxcharts.lib` (same
-  Debug/Release naming split as xlnt), referenced directly from `BankAccount.vcxproj` along with
-  `build\wxcharts_export.h` (a generated header, needed as an extra include dir — config-
-  independent since the library is built static, so `WXCHARTS_EXPORT` expands to nothing).
-  `BankAccountCore`/`BankAccountTests` don't link it — same GUI-only dependency shape as xlnt.
-  **The checkout carries local patches** (not upstream, and not tracked by this repo's git since
-  the checkout lives outside it — deleting and re-cloning `wxCharts` loses them). The full diff is
-  saved at
-  [external/wxCharts-patches/local-patches.patch](external/wxCharts-patches/local-patches.patch)
-  in this repo (that folder holds only the patch file, not the checkout itself) - after a fresh
-  `wxCharts` clone, re-apply with `git apply` from inside the checkout before building, e.g.
-  `git -C C:\Users\<user>\source\wxCharts apply C:\Users\<user>\source\repos\BankAccount\external\wxCharts-patches\local-patches.patch`.
-  It covers six things: (1) the library's own tooltip/axis-label code (`wxbarchart.cpp`,
-  `wxcolumnchart.cpp`, `wxstackedcolumnchart.cpp`, `wxlinechart.cpp`, `wxchartslicedata.cpp`,
-  `wxchartsutilities.cpp`'s `BuildNumericalLabels`) formatted numbers via a bare
-  `std::stringstream <<`, which renders large values in scientific notation (`7.44745e+07`) -
-  replaced with a new `wxChartsUtilities::FormatNumber()` giving fixed, thousands-grouped
-  formatting instead. (2) a new `wxChartSliceData::SetTooltipTextOverride()` - a pie/doughnut/
-  polar-area slice alone has no access to the *other* slices' values, so it can't compute its own
-  percentage of the whole; the override lets `ChartDialog.cpp` build the full multi-line
-  "label / total (NN.N%) / avg per period" tooltip itself, once it has all the slices' values to
-  compute a percentage from (see `ChartTabPanel::BuildSliceChart()`). (3) `wxChartTooltip::Draw()`
-  (`wxcharttooltip.cpp`) only ever measured/drew its text as one line - needed for exactly that
-  multi-line override text, so it now splits on `\n`, sizes the tooltip bubble to the widest line
-  and the total line count, and draws each line at its own vertical offset. (4) `wxPieChartData`
-  (`wxdoughnutandpiechartbase.h`/`.cpp`, shared by Pie and Doughnut) stored its slices in a
-  `std::map<wxString, wxChartSliceData>` keyed by label - so both the wedge draw order and any
-  legend built from `GetSlices()` were forced alphabetical-by-label, with no way for a caller to
-  make the biggest slice draw (or list) first. Changed to an append-order-preserving
-  `wxVector<wxChartSliceData>` instead (matching `wxPolarAreaChartData`'s own storage), with
-  `wxPieChartData::Add()`'s same-label merge-on-append behaviour reimplemented as a linear search
-  (slice counts here are at most a few dozen/hundred categories, so this stays cheap) - the
-  `wxPieChartCtrl`/`wxDoughnutChartCtrl` observer classes' `OnUpdate()` overrides (and
-  `wxChartValueObserver` base) needed the matching type change too. `ChartTabPanel::BuildSliceChart()`
-  appends slices pre-sorted by descending magnitude, so this makes both the wedges and the legend
-  (built by hand from that same sorted list, rather than via `wxChartsLegendData`'s
-  still-present-but-now-unused `std::map`-keyed constructor overload) come out in that order.
-  (5) `wxDoughnutAndPieChartBase::DoFit()` (`wxdoughnutandpiechartbase.cpp`) hardcoded its first
-  slice's start angle to `0.0` (the positive x-axis, i.e. 3 o'clock - angles here are screen-space
-  with y increasing downward) with no way for a caller to change it, unlike `wxPolarAreaChartData`
-  which already exposed `wxPolarAreaChartOptions::SetStartAngle()` for the same purpose - changed
-  to `-M_PI / 2` so Pie/Doughnut start at 12 o'clock too, matching the conventional pie-chart
-  layout; `ChartDialog.cpp`'s `BuildSliceChart()` sets the same `-M_PI / 2` on a
-  `wxPolarAreaChartOptions` instance for Polar Area (no patch needed there, since the option
-  already existed). (6) `wxChartsArc` (`wxchartsarc.cpp`) - the class every pie/doughnut/polar-area
-  slice is drawn and hit-tested as - normalized an angle `> 2*M_PI` (in its constructor and
-  `SetAngles()`) but never one `< 0`, and `GetTooltipPosition()`'s midpoint math
-  (`m_startAngle + (m_endAngle - m_startAngle) / 2`) never accounted for `m_endAngle` wrapping
-  past `0` either. Both were harmless for the original always-starts-at-`0.0` pie (slice angles
-  only ever ran monotonically upward from `0` to `2*M_PI`, never negative, never wrapping) but
-  broke as soon as (5) introduced a nonzero, negative start angle: `DoFit()`'s running `startAngle`
-  local begins at `-M_PI / 2` and only turns positive once enough slices have been placed to reach
-  angle `0`, so however many leading slices are still negative when handed to `SetAngles()` kept
-  their un-normalized negative angle - `HitTest()` normalizes the *mouse* angle into `[0, 2*M_PI)`
-  before comparing, so comparing it against a still-negative `m_startAngle`/`m_endAngle` silently
-  failed for the portion of those slices between 12 o'clock and the old 3 o'clock start (no
-  tooltip on hover there), and the same wrap broke `GetTooltipPosition()`'s naive midpoint too.
-  Fixed by mirroring the existing `> 2*M_PI` clamps with matching `< 0` ones (`+= 2*M_PI`), and by
-  having `GetTooltipPosition()` add `2*M_PI` to `m_endAngle` before averaging whenever it's less
-  than `m_startAngle`.
-  Separately, application code (`ChartDialog.cpp`'s `EnsureDatasetThemesRegistered`) registers a
-  solid, opaque colour into the process-wide `wxChartsDefaultTheme` for every dataset index a
-  chart needs (covering the Bar/Stacked Bar/Line dataset-theme slots together, since each chart
-  type reads its own) — needed because the library's own default theme
-  (`wxChartsPresentationTheme`) only ever pre-registers implicit dataset ids 0-2, each a
-  semi-transparent washed-out shade by design; any dataset beyond that gets a **null**
-  `wxSharedPtr<wxChartsDatasetTheme>` from `wxChartsTheme::GetDatasetTheme()`
-  (`std::map::operator[]` on a missing key), which every `*Chart::Initialize()` then dereferences
-  unconditionally — so a periodic chart with more than 3
-  topics/series would otherwise crash. This one is *not* in the patch file since it lives
-  entirely in `ChartDialog.cpp` (no vendored source touched) - `wxChartsDefaultTheme` is a public
-  `extern` singleton, reachable from application code.
-  Builds every chart type in one static lib (pie/bar/line and more); which types the app actually
-  uses is a call site decision, not a build-time one.
-- **GoogleTest** (`BankAccountTests.vcxproj` only) is a source checkout at
-  `C:\Users\<user>\source\googletest`, built locally via CMake the same way as xlnt:
-  `cmake -G "Visual Studio 17 2022" -A x64 -Dgtest_force_shared_crt=ON -DBUILD_GMOCK=ON` from a
-  `build` subfolder, then `cmake --build . --config Debug` and `--config Release`.
-  `-Dgtest_force_shared_crt=ON` is required - GoogleTest's CMake default is the static CRT
-  (`/MT`/`/MTd`), which mismatches this solution's default dynamic CRT (`/MD`/`/MDd`) and fails
-  to link otherwise. Produces `build\lib\Debug\{gtest,gtest_main}.lib` and
-  `build\lib\Release\{gtest,gtest_main}.lib` (same filenames per config, unlike xlnt's
-  `xlntd.lib`/`xlnt.lib` split), referenced directly from `BankAccountTests.vcxproj`.
-
-If these paths don't exist on a new machine, the build will fail on missing headers/libs before
-any source-level issue — check that first.
+Full setup steps (checkout paths, CMake invocations, generated `.lib` locations) for wxWidgets,
+ZipLib, xlnt, wxCharts, and GoogleTest are in [docs/build-setup.md](docs/build-setup.md) — read
+that when setting up a new machine or when a build fails on a missing header/lib. wxCharts is
+cloned from **our own private fork** (`https://github.com/B0rkai/wxCharts`), which carries this
+project's local bug fixes/tweaks as real commits on top of upstream — see
+[docs/wxcharts-patches.md](docs/wxcharts-patches.md) for what they do and why. One exception is
+vendored directly in this repo: **nlohmann/json**
+(MIT-licensed, v3.11.3) at `include/nlohmann/json.hpp` — a single-header, no-build library, used
+for the small JSON config/data files (`db\location.json`, `release.json`,
+`db\favorite_queries.json` — schemas in [docs/json-file-schemas.md](docs/json-file-schemas.md)).
 
 ## Data storage
 
@@ -210,64 +91,13 @@ methods on each domain class (see `ManagerType<T>::StreamOut/StreamIn` in
 
 The `.baf` (and its `.backup` sibling) can live on a shared network folder (a Samba/SMB share)
 instead of the local `db\` folder, so multiple machines can see the same database — with only
-one session allowed to write at a time; every other session opens read-only.
-
-- **Where it's configured**: `db\location.json`, a small local (per-machine, hand-edited) JSON
-  file — `DbLocationSettings` ([include/DbLocationSettings.h](include/DbLocationSettings.h)/
-  [src/DbLocationSettings.cpp](src/DbLocationSettings.cpp)), parsed with the vendored
-  `nlohmann/json` (see "External dependencies" below). Recognized keys: `"mode"`
-  (`"standalone"`|`"network"`, value case-insensitive), `"path"` (only read when mode is
-  `"network"`), and `"release_path"` (optional, only meaningful when mode is `"network"` —
-  defaults to `path` + `\release`; see `ReleaseManifest.h`/the release-deployment tooling in
-  `scripts/PackageRelease.ps1`). Any other key (e.g. a hand-written `"comment"`) is read and
-  ignored — deliberately kept as a JSON key rather than a `//`/`#` comment syntax, so the file
-  stays strictly valid JSON. Missing file, malformed JSON, a non-object root, or any
-  unrecognized/incomplete value all resolve to `Standalone` — so every existing install keeps
-  working unchanged with no file needed at all. There is no in-app editor for it (deliberately,
-  for v1). `release.json` (`ReleaseManifest`) is the same JSON-object shape, one level up the
-  stack (`"version"`, `"crc32"` as a hex string) - machine-generated by `PackageRelease.ps1`, never
-  hand-edited.
-- **The write lock**: `NetworkLock` ([include/NetworkLock.h](include/NetworkLock.h)/
-  [src/NetworkLock.cpp](src/NetworkLock.cpp)) extracts the exact technique `Journal.cpp`
-  already used locally (see below) into a reusable, folder-parameterized class: a
-  `<folder>\write.lock` file opened via `CreateFileA` with `FILE_SHARE_READ` (no write
-  sharing), held open for the session's lifetime. Windows releases the handle itself on
-  process exit — clean or crashed — so there's no stale-lock file to detect or clean up, unlike
-  a lock file that merely records a PID/timestamp. `TryAcquire()` distinguishes
-  `HeldElsewhere` (a real sharing violation — another session already holds it) from
-  `Unreachable` (the folder/share itself couldn't be opened, e.g. down/misconfigured), since
-  those need different handling.
-- **Startup resolution**: `cMain::DoLoad()` ([src/cMain.cpp](src/cMain.cpp)) reads
-  `DbLocationSettings`, and in network mode calls `NetworkLock::TryAcquire()` before opening
-  anything. `Unreachable` → a hard error dialog and refuses to open at all (`m_bank_file`
-  stays null) rather than silently falling back to a local copy, which would risk two
-  divergent "the database" existing without the user realizing it. `HeldElsewhere` → loads
-  normally (reads need no lock) but sets `m_read_only = true`. `Acquired` → behaves exactly
-  like standalone mode, writable. The write-lock decision is made once at startup only — a
-  read-only session does not retry live; the user closes and relaunches once the writer is
-  done (re-acquiring the *same* already-held folder, e.g. on "Discard changes", is a no-op in
-  `NetworkLock` rather than a release-then-reopen, so there's never even a momentary gap
-  where another machine could steal the lock out from under an already-writable session).
-- **Read-only enforcement**: `cMain::RequireWritable()` is the single chokepoint every
-  mutating action (Save, Import, Categorize, Merge, Add keyword, the recovery-file/journal
-  replay test actions) calls first — false means don't touch `m_bank_file`, having already
-  told the user why (no database loaded at all, vs. loaded but this session lost the
-  write-lock race). Grid cell editing is blocked at its own chokepoint instead —
-  `ApplyTransactionEditableColumns`/`ApplyEntityEditableColumns` force every column read-only
-  and disable grid editing outright when `m_read_only`, so wxGrid itself refuses to enter edit
-  mode rather than relying on catching an edit after the fact. The right-click context menu
-  (Add keyword.../Merge...) isn't offered at all when read-only, since both its actions
-  mutate. The window title reflects the mode (`"Bank Account"` / `"Bank Account [network
-  db]"` / `"Bank Account [READ-ONLY - network db]"`) as the persistent visual indicator.
-- **What stays local regardless of mode**: `db\journal.txt` (the crash-recovery journal, see
-  [include/Journal.h](include/Journal.h)) keeps its fixed local path and its own,
-  unrelated, single-instance lock — it's recovery for *this machine's* in-flight unsaved
-  edits, not the shared resource. `DEFAULT_UNCOMPRESSED_FILE_PATH` (the transient plain-text
-  intermediate `Save()`/`Load()` stream through) is also a separate hardcoded local constant
-  in `BankAccountFile.cpp`, untouched by network mode — so the unencrypted intermediate never
-  touches the network, only the final zipped `.baf` does. `MakeBackup`/`LoadBackup` already
-  derive the `.backup` path from `BankAccountFile`'s own `m_filename`, so once that's the
-  network path, the backup automatically lands next to it with no extra code.
+one session allowed to write at a time (via `NetworkLock`); every other session opens read-only
+(enforced through `cMain::RequireWritable()` and read-only grid/menu restrictions). Configured via
+`db\location.json` (`DbLocationSettings`) — missing/malformed/incomplete config always falls back
+to standalone mode. `db\journal.txt` and the local plain-text save intermediate stay local
+regardless of mode. Full detail (the write-lock mechanics, startup resolution rules, read-only
+enforcement chokepoints) is in [docs/network-db-location.md](docs/network-db-location.md); the
+JSON schema is in [docs/json-file-schemas.md](docs/json-file-schemas.md).
 
 ## Bank import formats
 
@@ -292,22 +122,16 @@ utility panels), wires wx event handlers, and drives load/save/import/query/cate
 actions. It also implements the `IManualResolve` and `INewAccount` callback interfaces so the
 backend can pop up resolution/new-account dialogs without depending on wx types.
 
-**Result grid**: `cMain::m_result_grid` is populated by three writer paths — `UIOutputTable`
-(read-only aggregate/summary tables), `UIOutputTable(table, transactions)` (editable Category/
-Desc columns, keyed off `AccountManager::TransactionIdentity` via `IdentifyAll`), and
-`UIOutputEntityTable` (editable Name column for List Clients/Categories/Types/Accounts). All
-three funnel through `SetGridData` (caches the full unsorted/unfiltered `StringTable` into
-`m_grid_master_table` plus its identities) and `RenderGrid` (derives the displayed rows from
-that cache by applying the filter-box text and the active sort column/direction, then
-repopulates the widget and reapplies the per-mode editable-column rules) — click a column
-header to sort (`StringTable::RIGHT_ALIGNED` columns like Amount/ID sort numerically, others as
-case-insensitive text); the sort indicator is a plain text suffix (` ^`/` v`) rather than
-`wxGrid`'s native arrow, since that only renders via `SetUseNativeColLabels()`/
-`UseNativeColHeader()`, which restyle column headers to the OS theme while leaving row labels
-on wx's plain style, an inconsistent look. Right-clicking an entity row offers "Add
-keyword..."; if other whole rows are also selected (drag/shift/ctrl-click on row labels -
-`wxGrid::GetSelectedRows()`), Client/Category/Type rows instead offer "Merge N selected...
-into '\<clicked row\>'" (Account has no `MergeQuery`, so no merge option there).
+**Result grid**: `cMain::m_result_notebook` is a `wxNotebook` holding one `wxGrid`-per-page
+`GridTab` for every `StringTable` a result produced at once — a query with both a "show
+transactions" checkbox and a summary/periodic checkbox ticked yields a "Transactions" tab
+alongside one tab per summary/periodic table, instead of only the first table winning the grid
+and the rest being demoted to plain text. Every writer (`UIOutputTable`, `UIOutputEntityTable`,
+`RunAndRenderQuery`) funnels through `SetGridTabs`/`RenderGridTab`/`RenderAllGridTabs`, which
+apply the shared filter-box text and each tab's own independent column sort. Right-clicking a
+row offers "Add keyword..." or, with multiple whole rows selected, "Merge N selected...". Full
+detail on the writer paths, tab-selection defaults, and sort/filter mechanics is in
+[docs/result-grid-architecture.md](docs/result-grid-architecture.md).
 
 **Domain/backend layers** (no UI dependency, in `include`/`src` outside `cMain`/dialogs):
 
@@ -343,6 +167,30 @@ into '\<clicked row\>'" (Account has no `MergeQuery`, so no merge option there).
   changes. `AccountManager::MakeQuery(WQuery&)` is the mutating entry point.
 - Both hierarchies are driven from `cMain::PrepareQuery`, which reads the current UI filter
   controls and assembles the right `QueryElement`/`WQueryElement` chain.
+- **Favorite queries** ([include/FavoriteQuery.h](include/FavoriteQuery.h)/
+  [src/FavoriteQuery.cpp](src/FavoriteQuery.cpp), designed in
+  [docs/favorite-queries-design.md](docs/favorite-queries-design.md)) are a declarative,
+  wx-GUI-free counterpart to `PrepareQuery`: `FavoriteQueryDef` mirrors what `PrepareQuery` reads
+  off live UI widgets, loaded from `db\favorite_queries.json` (schema in
+  [docs/json-file-schemas.md](docs/json-file-schemas.md)) with the same fail-safe contract as
+  `db\location.json` — a bad entry is skipped/logged, never a crash. `BuildQueryFromFavorite()`
+  turns one into a runnable `Query` the same way `PrepareQuery` does for the UI-driven path, and
+  both funnel through the same `cMain::RunAndRenderQuery()` render tail so a favorite and a manual
+  query render identically. Relative date keywords (`"this_month"`, `"last_30_days"`, ...) are
+  resolved by [include/RelativePeriod.h](include/RelativePeriod.h)'s `ResolveRelativePeriod()` —
+  the same range math the "Periods" menu shortcuts use.
+
+**Chart display**: `ChartDialog`/`ChartTabPanel` ([include/ChartDialog.h](include/ChartDialog.h)/
+[src/ChartDialog.cpp](src/ChartDialog.cpp)) render one query's `ChartResult` as Income/Expense
+notebook tabs of pie/doughnut/polar-area/bar/stacked-bar/line wxCharts controls. `ChartDialog` is
+a `wxFrame` (despite the name, kept to avoid an unrelated file-rename) shown non-modally and
+reused across queries via `cMain::ShowOrRefreshChart()` - the same lazily-created/raised-if-
+already-open/nulled-on-close lifecycle `LogViewerFrame` already used, rather than the one-shot
+`ShowModal()` dialog it used to be. A "show chart" checkbox in the Query panel
+(`m_show_chart_auto_chkb`, off by default) makes `QueryButtonClicked`/`FavoriteQuerySelected`
+auto-open/refresh it after any query with chart data; the "Show as Chart..."/"Export Results to
+Excel..." Query-menu items were removed as redundant with the always-present, grid-state-aware
+toolbar buttons (`m_show_chart_btn`/`m_export_excel_btn`) that already did the same thing.
 
 **Manual resolution flow**: when importing a transaction whose client/category/type can't be
 matched automatically, `AccountManager::ProcessOneTopic` calls into `IManualResolve` (implemented

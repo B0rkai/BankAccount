@@ -905,7 +905,7 @@ AccountManager::TransactionIdentity AccountManager::Identify(const Transaction* 
 	return { account_id, m_accounts.at(account_id)->IndexOf(tr) };
 }
 
-std::vector<AccountManager::TransactionIdentity> AccountManager::IdentifyAll(const PtrVector<const Transaction>& list) const {
+std::vector<AccountManager::TransactionIdentity> AccountManager::IdentifyAll(const std::vector<const Transaction*>& list) const {
 	std::vector<TransactionIdentity> result;
 	result.reserve(list.size());
 	for (const Transaction* tr : list) {

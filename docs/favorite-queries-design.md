@@ -1,6 +1,10 @@
 # Design: favorite (saved) queries
 
-Status: **design only, not implemented**. Discussed 2026-09-02.
+Status: **implemented** 2026-09-02 - `include/FavoriteQuery.h`/`src/FavoriteQuery.cpp`,
+`include/RelativePeriod.h`/`src/RelativePeriod.cpp`, `Query → Favorite Queries` submenu in
+`cMain.cpp`. See CLAUDE.md's Query-system section for the shipped shape. One addition beyond the
+original design, made during implementation: each favorite can specify a **chart display
+preference** - see "Chart preference" below.
 
 ## Motivation
 
@@ -151,12 +155,43 @@ Once nlohmann/json is in the project for this feature, the two other existing ha
 same format for consistency — see
 [json-config-migration-design.md](json-config-migration-design.md) (designed 2026-09-02).
 
-## Open decisions (proposed defaults, flag if you want different)
+## Chart preference (added during implementation)
+
+Prompted by a real annoyance: the chart companion window (see the auto-chart-display feature)
+defaults to whichever tab/kind comes first - Income before Expense, and for a `TOPIC_SUM` shape,
+Pie before Doughnut/Polar Area/Bar - which for a lot of favorites (e.g. "spending by category")
+isn't the side/kind you actually want to see by default. Each favorite can now optionally specify:
+
+```jsonc
+{
+  "name": "This month by category",
+  "relative_period": "this_month",
+  "aggregate_by": ["category"],
+  "chart": { "side": "expense", "kind": "pie" }
+}
+```
+
+Both `side` (`"income"`|`"expense"`) and `kind` (`"pie"`|`"doughnut"`|`"polar_area"`|`"bar"`|
+`"stacked_bar"`|`"line"`) are independently optional. Kept as plain strings on `FavoriteQueryDef`
+(not the GUI-side `ChartWidgetKind` enum) so the Core struct stays wx-GUI-header-free; `cMain`
+translates them right before constructing a `ChartDialog`, falling back to today's default
+(first available kind for the shape; Income tab if present else Expense) for anything empty,
+unrecognized, or not offered for that particular query's shape (e.g. requesting `"stacked_bar"`
+for a `TOPIC_SUM` result, which only offers Pie/Doughnut/Polar Area/Bar). For a manual,
+UI-driven query, *whether* a chart shows at all is still governed by the "show chart" checkbox
+alone - but a favorite that explicitly names a `chart` preference auto-shows it regardless of
+that checkbox (added 2026-09-02, after the checkbox-gated version above shipped: a favorite
+carrying a chart preference the checkbox happens to hide reads as broken, not as a deliberate
+opt-out - specifying the preference *is* the request to see it). `RunAndRenderQuery` treats a
+non-empty `m_preferred_chart_side`/`m_preferred_chart_kind` (set by `FavoriteQuerySelected`
+right before it runs the query; `QueryButtonClicked` always clears both first) as that signal.
+
+## Decisions finalized during implementation
 
 1. **File location**: `db\favorite_queries.json`, not committed, no in-app editor for v1 (same
-   precedent as `db\location.cfg`).
+   precedent as `db\location.json`).
 2. **Reload**: load once at startup only, like `DbLocationSettings` — no live-reload/menu item to
-   re-read it, editing the file requires a restart. Simpler; matches existing precedent.
-3. **Amount filters**: left out of `FavoriteQueryDef` for v1 (`QueryAmount` exists but nothing in
-   the mobile snapshot or the obvious "favorite query" use cases needs it yet) — easy to add later
-   the same way clients/categories/types were.
+   re-read it, editing the file requires a restart.
+3. **Amount filters**: left out of `FavoriteQueryDef` (`QueryAmount` exists but nothing in the
+   mobile snapshot or the obvious "favorite query" use cases needed it) — easy to add later the
+   same way clients/categories/types were.

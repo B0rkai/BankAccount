@@ -1,6 +1,7 @@
 #include "ChartDialog.h"
 #include <cmath>
 #include <algorithm>
+#include <optional>
 #include "wx/sizer.h"
 #include "wx/choice.h"
 #include "wx/checkbox.h"
@@ -22,6 +23,18 @@ namespace {
 			return HUF;
 		}
 		return data.begin()->first; // ChartTabPanel is only ever constructed with non-empty data
+	}
+
+	// Returns std::nullopt for an empty/unrecognized string - callers fall back to the default
+	// (first available) kind for the shape, same as when no favorite chart preference was given.
+	std::optional<ChartWidgetKind> ParseChartWidgetKind(const String& kind) {
+		if (kind == "pie") return ChartWidgetKind::PIE;
+		if (kind == "doughnut") return ChartWidgetKind::DOUGHNUT;
+		if (kind == "polar_area") return ChartWidgetKind::POLAR_AREA;
+		if (kind == "bar") return ChartWidgetKind::BAR;
+		if (kind == "stacked_bar") return ChartWidgetKind::STACKED_BAR;
+		if (kind == "line") return ChartWidgetKind::LINE;
+		return std::nullopt;
 	}
 
 	wxString KindLabel(ChartWidgetKind kind) {
@@ -300,12 +313,22 @@ namespace {
 	}
 }
 
-ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit)
+ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit, const String& preferred_kind)
 	: wxPanel(parent), m_data(data), m_shape(shape), m_currency(PickDefaultCurrency(data)), m_period_unit(period_unit) {
 	for (const auto& pair : data) {
 		m_currencies.push_back(pair.first);
 	}
 	PopulateKindChoices();
+	// Index into m_available_kinds to select initially - 0 (today's default) unless a favorite
+	// requested a kind that's actually offered for this shape.
+	int initial_kind_index = 0;
+	std::optional<ChartWidgetKind> wanted_kind = ParseChartWidgetKind(preferred_kind);
+	if (wanted_kind) {
+		auto it = std::find(m_available_kinds.begin(), m_available_kinds.end(), *wanted_kind);
+		if (it != m_available_kinds.end()) {
+			initial_kind_index = (int)std::distance(m_available_kinds.begin(), it);
+		}
+	}
 
 	wxBoxSizer* top = new wxBoxSizer(wxVERTICAL);
 
@@ -341,7 +364,7 @@ ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, 
 		for (ChartWidgetKind kind : m_available_kinds) {
 			m_kind_choice->Append(KindLabel(kind));
 		}
-		m_kind_choice->SetSelection(0);
+		m_kind_choice->SetSelection(initial_kind_index);
 		m_kind_choice->Bind(wxEVT_CHOICE, &ChartTabPanel::OnKindChanged, this);
 		toolbar->Add(m_kind_choice, 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
 	}
@@ -662,19 +685,28 @@ void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKin
 	m_chart_area_sizer->Add(legend, 1, wxEXPAND);
 }
 
-ChartDialog::ChartDialog(wxWindow* parent, const ChartResult& data, ChartShape shape)
-	: wxDialog(parent, wxID_ANY, "Chart", wxDefaultPosition, wxSize(1000, 800), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER) {
+ChartDialog::ChartDialog(wxWindow* parent, const ChartResult& data, ChartShape shape, const String& preferred_side, const String& preferred_kind)
+	: wxFrame(parent, wxID_ANY, "Chart", wxDefaultPosition, wxSize(1000, 800)) {
 	SetMinSize(wxSize(700, 500)); // a topic-sum bar/pie can have dozens of categories - more room by default, still shrinkable
 	wxNotebook* notebook = new wxNotebook(this, wxID_ANY);
 	// Guarded independently (rather than assuming both are always non-empty together) - the
 	// common case does mirror the same currencies on both sides (see
 	// QuerySumByTopic::GetChartResult()/PeriodicQuery::GetChartResult()), but nothing here
-	// depends on that holding.
+	// depends on that holding. Income always added first (tab order stays fixed/predictable
+	// regardless of preferred_side) - only which tab starts selected changes below.
+	int income_page = -1, expense_page = -1;
 	if (!data.m_income.empty()) {
-		notebook->AddPage(new ChartTabPanel(notebook, data.m_income, shape, data.m_period_unit), "Income");
+		notebook->AddPage(new ChartTabPanel(notebook, data.m_income, shape, data.m_period_unit, preferred_kind), "Income");
+		income_page = (int)notebook->GetPageCount() - 1;
 	}
 	if (!data.m_expense.empty()) {
-		notebook->AddPage(new ChartTabPanel(notebook, data.m_expense, shape, data.m_period_unit), "Expense");
+		notebook->AddPage(new ChartTabPanel(notebook, data.m_expense, shape, data.m_period_unit, preferred_kind), "Expense");
+		expense_page = (int)notebook->GetPageCount() - 1;
+	}
+	if ((preferred_side == "expense") && (expense_page >= 0)) {
+		notebook->SetSelection(expense_page);
+	} else if ((preferred_side == "income") && (income_page >= 0)) {
+		notebook->SetSelection(income_page);
 	}
 
 	wxBoxSizer* top = new wxBoxSizer(wxVERTICAL);

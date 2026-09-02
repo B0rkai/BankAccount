@@ -142,7 +142,12 @@ public:
 	StringTable MakeQuery(WQuery& query);
 
 	TransactionIdentity Identify(const Transaction* tr) const;
-	std::vector<TransactionIdentity> IdentifyAll(const PtrVector<const Transaction>& list) const;
+	// Takes the plain std::vector<const Transaction*> base rather than PtrVector<const
+	// Transaction> itself - PtrVector<const Transaction> still binds here (public inheritance),
+	// but this also lets a caller hand over a plain std::vector<const Transaction*> it built
+	// itself (e.g. copied out of a struct field where PtrVector's deleted copy-assignment,
+	// caused by its const m_owner member, would otherwise get in the way).
+	std::vector<TransactionIdentity> IdentifyAll(const std::vector<const Transaction*>& list) const;
 	void ApplyEdit(const TransactionIdentity& identity, WQueryElement& element);
 	// Resolves the CLIENT/CATEGORY/TYPE id a transaction's cell actually points to - not its
 	// displayed name, which is ambiguous to look back up for a grouped Category ("Group::Sub"

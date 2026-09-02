@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-#include "wx/dialog.h"
+#include "wx/frame.h"
 #include "wx/panel.h"
 #include "ChartData.h"
 
@@ -94,15 +94,30 @@ class ChartTabPanel : public wxPanel {
 	// specifically, matching how the run-app skill already screenshots this app for testing.
 	void OnExportClicked(wxCommandEvent& evt);
 public:
-	ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit);
+	// `preferred_kind` is a favorite query's optional "chart.kind" string (see FavoriteQuery.h) -
+	// "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line", or empty for no preference. Falls
+	// back to today's default (first available kind for this shape) when empty, unrecognized, or
+	// not offered for this tab's shape (e.g. "stacked_bar" requested for a TOPIC_SUM chart).
+	ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit, const String& preferred_kind = cStringEmpty);
 };
 
 // Shows one query's ChartResult in a separate window alongside the result grid (never replacing
 // it), as two notebook tabs - Income and Expense are never merged into one signed chart, since a
 // pie slice/bar-chart axis can't represent a negative magnitude and a merged net trend obscures
 // which direction actually moved. Only opened when ChartResult::IsEmpty() is false - see
-// cMain::ShowChartClicked.
-class ChartDialog : public wxDialog {
+// cMain::ShowChartClicked/ShowOrRefreshChart.
+//
+// A wxFrame, not a wxDialog, despite the class's name (kept to avoid an unrelated file-rename
+// churn) - cMain::ShowOrRefreshChart() shows it non-modally and reuses/rebuilds it across
+// queries, the same persistent-companion-window pattern LogViewerFrame already uses, and a plain
+// wxFrame's close-button/wxEVT_CLOSE_WINDOW behaviour outside a modal loop is the well-trodden
+// path for that, unlike wxDialog's (which is really designed around ShowModal()).
+class ChartDialog : public wxFrame {
 public:
-	ChartDialog(wxWindow* parent, const ChartResult& data, ChartShape shape);
+	// `preferred_side`/`preferred_kind` are a favorite query's optional "chart" object (see
+	// FavoriteQuery.h) - preferred_side is "income"|"expense" (which notebook tab starts
+	// selected; falls back to today's default, Income if present else Expense, when empty or
+	// that side has no data at all), preferred_kind is passed through to both tabs' ChartTabPanel
+	// unchanged (see its own constructor for how an empty/unavailable value falls back).
+	ChartDialog(wxWindow* parent, const ChartResult& data, ChartShape shape, const String& preferred_side = cStringEmpty, const String& preferred_kind = cStringEmpty);
 };

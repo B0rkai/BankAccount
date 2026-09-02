@@ -12,6 +12,8 @@
 #include "cMain.h"
 #include "Currency.h"
 #include "Query.h"
+#include "RelativePeriod.h"
+#include "FavoriteQuery.h"
 #include "WQuery.h"
 #include "Transaction.h"
 #include "BankAccountFile.h"
@@ -121,8 +123,6 @@ enum CtrIds {
 	MENU_TEST_EUR_RATES,
 	MENU_VIEW_LOG,
 	MENU_ABOUT,
-	MENU_EXPORT_EXCEL,
-	MENU_SHOW_CHART,
 	MENU_PERIOD_THIS_MONTH,
 	MENU_PERIOD_LAST_MONTH,
 	MENU_PERIOD_THIS_QUARTER,
@@ -176,8 +176,6 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 #endif
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 	EVT_MENU(MENU_ABOUT, ShowAbout)
-	EVT_MENU(MENU_EXPORT_EXCEL, ExportToExcel)
-	EVT_MENU(MENU_SHOW_CHART, ShowChartClicked)
 	EVT_MENU(MENU_PERIOD_THIS_MONTH, PeriodShortcutSelected)
 	EVT_MENU(MENU_PERIOD_LAST_MONTH, PeriodShortcutSelected)
 	EVT_MENU(MENU_PERIOD_THIS_QUARTER, PeriodShortcutSelected)
@@ -209,10 +207,10 @@ cMain::cMain()
 	m_grid_filter_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "", wxPoint(65, 237), wxSize(300, 24));
 	m_grid_filter_textctrl->Bind(wxEVT_TEXT, &cMain::OnGridFilterTextChanged, this);
 
-	// Right-aligned to the same right edge m_info_textctrl/m_result_grid track (see SizeUpdate,
-	// which repositions these two alongside resizing those) - pictogram-only with a tooltip
-	// instead of a visible label - both start disabled since the grid starts empty, live-updated
-	// by UpdateGridActionButtons(). Positions given here are placeholders, overwritten by the
+	// Right-aligned to the same right edge m_info_textctrl/m_result_notebook track (see
+	// SizeUpdate, which repositions these two alongside resizing those) - pictogram-only with a
+	// tooltip instead of a visible label - both start disabled since the grid starts empty,
+	// live-updated by UpdateGridActionButtons(). Positions given here are placeholders, overwritten by the
 	// SendSizeEvent() call at the end of this constructor.
 	m_export_excel_btn = new wxBitmapButton(m_main_panel, wxID_ANY, MakeExportIconBitmap(20), wxPoint(1291, 237), wxSize(24, 24));
 	m_export_excel_btn->SetToolTip("Export results to Excel");
@@ -223,13 +221,8 @@ cMain::cMain()
 	m_export_excel_btn->Enable(false);
 	m_show_chart_btn->Enable(false);
 
-	m_result_grid = new wxGrid(m_main_panel, wxID_ANY, wxPoint(20, 270), wxSize(1325, 370));
-	m_result_grid->CreateGrid(0, 0);
-	m_result_grid->EnableEditing(false);
-	m_result_grid->SetDefaultCellFont(GetMonoSpaceFont());
-	m_result_grid->Bind(wxEVT_GRID_CELL_CHANGED, &cMain::OnGridCellChanged, this);
-	m_result_grid->Bind(wxEVT_GRID_CELL_RIGHT_CLICK, &cMain::OnGridCellRightClick, this);
-	m_result_grid->Bind(wxEVT_GRID_LABEL_LEFT_CLICK, &cMain::OnGridLabelLeftClick, this);
+	m_result_notebook = new wxNotebook(m_main_panel, wxID_ANY, wxPoint(20, 270), wxSize(1325, 370));
+	m_result_notebook->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, &cMain::OnGridTabChanged, this);
 
 	m_status_bar = new wxStatusBar(this, wxID_ANY, wxST_SIZEGRIP);
 	SetStatusBar(m_status_bar);
@@ -239,7 +232,7 @@ cMain::cMain()
 	wxFrame::Bind(wxEVT_MENU_OPEN, &cMain::UpdateMenu, this);
 
 	// Fires an initial wxEVT_SIZE so SizeUpdate() positions the grid action buttons (and sizes
-	// m_info_textctrl/m_result_grid) correctly from the start, rather than only once the user
+	// m_info_textctrl/m_result_notebook) correctly from the start, rather than only once the user
 	// first resizes the window - a real resize event isn't guaranteed to fire before Show().
 	SendSizeEvent();
 }
@@ -472,84 +465,52 @@ void cMain::DateFilterToggle(wxCommandEvent& evt) {
 	evt.Skip();
 }
 
-// First day of the given (0-based, wxDateTime::Month-style) month/year.
-static wxDateTime FirstDayOfMonth(int month0, int year) {
-	return wxDateTime(1, (wxDateTime::Month)month0, year);
-}
-
-// Last day of the given (0-based) month/year - wxDateTime::SetToLastMonthDay() looks at the
-// object's own already-set month/year, so construct on the 1st first and mutate from there.
-static wxDateTime LastDayOfMonth(int month0, int year) {
-	wxDateTime dt(1, (wxDateTime::Month)month0, year);
-	dt.SetToLastMonthDay();
-	return dt;
-}
-
-// Shared by the Quarter/Half shortcuts below: given the 0-based month the range should start
-// on and how many months it spans, returns the {from, to} pair for the year containing that
-// start month - the caller has already walked start_month0 (and, on wraparound, year) back by
-// one period for the "Last ..." variants, so this only ever needs to reason about a single year.
-static std::pair<wxDateTime, wxDateTime> MonthSpanRange(int start_month0, int span_months, int year) {
-	return { FirstDayOfMonth(start_month0, year), LastDayOfMonth(start_month0 + span_months - 1, year) };
+// The reverse of RelativePeriod.cpp's (private) ToExcelDate() - needed here since the calendar
+// controls want a wxDateTime, while ResolveRelativePeriod() (shared with BuildQueryFromFavorite,
+// which wants Excel-serial dates for QueryDate directly) returns DateRange's uint16_t form.
+static wxDateTime ExcelDateToWx(uint16_t excel_date) {
+	int d, m, y;
+	ExcelSerialDateToDMY(excel_date, d, m, y);
+	return wxDateTime(d, (wxDateTime::Month)(m - 1), y);
 }
 
 void cMain::PeriodShortcutSelected(wxCommandEvent& evt) {
 	evt.Skip();
 	const wxDateTime today = wxDateTime::Today();
 	const int year = today.GetYear();
-	const int month0 = today.GetMonth(); // wxDateTime::Month is 0-based (Jan == 0)
 	wxDateTime from, to;
+	String keyword;
 	switch (evt.GetId()) {
-	case MENU_PERIOD_THIS_MONTH:
-		std::tie(from, to) = MonthSpanRange(month0, 1, year);
-		break;
-	case MENU_PERIOD_LAST_MONTH:
-		if (month0 == 0) {
-			std::tie(from, to) = MonthSpanRange(11, 1, year - 1);
-		} else {
-			std::tie(from, to) = MonthSpanRange(month0 - 1, 1, year);
-		}
-		break;
-	case MENU_PERIOD_THIS_QUARTER:
-		std::tie(from, to) = MonthSpanRange((month0 / 3) * 3, 3, year);
-		break;
-	case MENU_PERIOD_LAST_QUARTER:
-		if (month0 < 3) {
-			std::tie(from, to) = MonthSpanRange(9, 3, year - 1);
-		} else {
-			std::tie(from, to) = MonthSpanRange((month0 / 3) * 3 - 3, 3, year);
-		}
-		break;
-	case MENU_PERIOD_THIS_HALF:
-		std::tie(from, to) = MonthSpanRange((month0 / 6) * 6, 6, year);
-		break;
-	case MENU_PERIOD_LAST_HALF:
-		if (month0 < 6) {
-			std::tie(from, to) = MonthSpanRange(6, 6, year - 1);
-		} else {
-			std::tie(from, to) = MonthSpanRange(0, 6, year);
-		}
-		break;
-	case MENU_PERIOD_THIS_YEAR:
-		std::tie(from, to) = MonthSpanRange(0, 12, year);
-		break;
-	case MENU_PERIOD_LAST_YEAR:
-		std::tie(from, to) = MonthSpanRange(0, 12, year - 1);
-		break;
+	case MENU_PERIOD_THIS_MONTH:   keyword = "this_month";   break;
+	case MENU_PERIOD_LAST_MONTH:   keyword = "last_month";   break;
+	case MENU_PERIOD_THIS_QUARTER: keyword = "this_quarter"; break;
+	case MENU_PERIOD_LAST_QUARTER: keyword = "last_quarter"; break;
+	case MENU_PERIOD_THIS_HALF:    keyword = "this_half";    break;
+	case MENU_PERIOD_LAST_HALF:    keyword = "last_half";    break;
+	case MENU_PERIOD_THIS_YEAR:    keyword = "this_year";    break;
+	case MENU_PERIOD_LAST_YEAR:    keyword = "last_year";    break;
+	// The remaining "earlier year" shortcuts are dynamic full-calendar-year buttons (their
+	// labels are literal years, see InitMenu()) rather than a fixed semantic keyword worth
+	// exposing to favorite-query JSON, so these stay computed directly instead of going through
+	// ResolveRelativePeriod().
 	case MENU_PERIOD_EARLIER_YEAR_1:
-		std::tie(from, to) = MonthSpanRange(0, 12, year - 2);
-		break;
+		from = wxDateTime(1, wxDateTime::Jan, year - 2); to = wxDateTime(31, wxDateTime::Dec, year - 2); break;
 	case MENU_PERIOD_EARLIER_YEAR_2:
-		std::tie(from, to) = MonthSpanRange(0, 12, year - 3);
-		break;
+		from = wxDateTime(1, wxDateTime::Jan, year - 3); to = wxDateTime(31, wxDateTime::Dec, year - 3); break;
 	case MENU_PERIOD_EARLIER_YEAR_3:
-		std::tie(from, to) = MonthSpanRange(0, 12, year - 4);
-		break;
+		from = wxDateTime(1, wxDateTime::Jan, year - 4); to = wxDateTime(31, wxDateTime::Dec, year - 4); break;
 	case MENU_PERIOD_EARLIER_YEAR_4:
-		std::tie(from, to) = MonthSpanRange(0, 12, year - 5);
-		break;
+		from = wxDateTime(1, wxDateTime::Jan, year - 5); to = wxDateTime(31, wxDateTime::Dec, year - 5); break;
 	default:
 		return;
+	}
+	if (!keyword.empty()) {
+		DateRange range = ResolveRelativePeriod(keyword, today);
+		if (!range.valid) {
+			return;
+		}
+		from = ExcelDateToWx(range.from);
+		to = ExcelDateToWx(range.to);
 	}
 	m_ctrl_grp_basic_filter.m_use_date_filter_chkb->SetValue(true);
 	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->SetDate(from);
@@ -817,29 +778,56 @@ namespace {
 		}
 		return false;
 	}
+
+	// Topic2String() (CommonTypes.cpp) only covers CLIENT/CATEGORY/TYPE - it's scoped to the
+	// merge-topic combo box, which has no "Account" entry (Account has no MergeQuery) - so grid
+	// tab labels need their own topic name, covering ACCOUNT/CURRENCY too (QuerySumByTopic's
+	// generic "no specific checkbox checked" fallback reports its topic as CURRENCY).
+	String GridTabTopicName(QueryTopic topic) {
+		switch (topic) {
+		case QueryTopic::CLIENT: return "Client";
+		case QueryTopic::CATEGORY: return "Category";
+		case QueryTopic::TYPE: return "Type";
+		case QueryTopic::ACCOUNT: return "Account";
+		case QueryTopic::CURRENCY: return "Currency";
+		default: return "Summary";
+		}
+	}
+
+	// The notebook tab label for a QueryElement that produced a non-empty GetTableResult() -
+	// distinguishes a periodic breakdown (PeriodicQuery and its Category/Client/Type/Account
+	// subclasses) from a plain by-topic sum (QuerySumByTopic and its subclasses), since both
+	// report the same GetTopic().
+	String GridTabLabelFor(const QueryElement* qe) {
+		String topic = GridTabTopicName(qe->GetTopic());
+		if (dynamic_cast<const PeriodicQuery*>(qe)) {
+			return topic + " (Periodic)";
+		}
+		return topic + " Summary";
+	}
 }
 
-void cMain::FillGridWidget(const StringTable& table) {
-	m_result_grid->EnableEditing(false);
-	if (m_result_grid->GetNumberRows()) {
-		m_result_grid->DeleteRows(0, m_result_grid->GetNumberRows());
+void cMain::FillGridWidget(wxGrid* grid, const StringTable& table) {
+	grid->EnableEditing(false);
+	if (grid->GetNumberRows()) {
+		grid->DeleteRows(0, grid->GetNumberRows());
 	}
-	if (m_result_grid->GetNumberCols()) {
-		m_result_grid->DeleteCols(0, m_result_grid->GetNumberCols());
+	if (grid->GetNumberCols()) {
+		grid->DeleteCols(0, grid->GetNumberCols());
 	}
 	if (table.empty()) {
 		return;
 	}
 	const int col_count = (int)table.front().size();
 	const int row_count = (int)table.size() - 1; // header row is not a data row
-	m_result_grid->AppendCols(col_count);
-	m_result_grid->AppendRows(row_count);
+	grid->AppendCols(col_count);
+	grid->AppendRows(row_count);
 	for (int c = 0; c < col_count; ++c) {
-		m_result_grid->SetColLabelValue(c, table[0][c]);
+		grid->SetColLabelValue(c, table[0][c]);
 		for (int r = 0; r < row_count; ++r) {
 			const StringVector& row = table[r + 1];
 			if ((size_t)c < row.size()) {
-				m_result_grid->SetCellValue(r, c, row[c]);
+				grid->SetCellValue(r, c, row[c]);
 			}
 		}
 	}
@@ -852,145 +840,207 @@ void cMain::FillGridWidget(const StringTable& table) {
 		int align = (table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
 		wxGridCellAttr* attr = new wxGridCellAttr();
 		attr->SetAlignment(align, wxALIGN_CENTRE);
-		m_result_grid->SetColAttr(c, attr);
+		grid->SetColAttr(c, attr);
 	}
-	m_result_grid->AutoSizeColumns();
+	grid->AutoSizeColumns();
 }
 
-void cMain::SetGridData(const StringTable& table) {
-	m_grid_master_table = table;
-	m_grid_master_identities.clear();
-	m_grid_identities.clear();
-	m_grid_entity_mode = false;
-	m_grid_editable_transactions = false;
-	m_grid_entity_id_col = -1;
-	m_grid_sort_col = -1;
-	m_grid_sort_ascending = true;
+void cMain::SetGridTabs(const std::vector<GridTabSpec>& specs, size_t default_selected) {
+	if (m_result_notebook->GetPageCount()) {
+		m_result_notebook->DeleteAllPages(); // also destroys each page's (and thus each tab's) wxGrid
+	}
+	m_grid_tabs.clear();
 	if (m_grid_filter_textctrl) {
 		m_grid_filter_textctrl->ChangeValue(wxEmptyString);
 	}
-	// The default for every grid-populating path - QueryButtonClicked is the only one that then
-	// overrides this with real chart data, once it knows which QueryElement (if any) is behind
-	// the table it just handed here.
-	m_current_chart_data = ChartResult();
-	m_current_chart_shape = ChartShape::NONE;
+	m_grid_tabs.reserve(specs.size());
+	for (const GridTabSpec& spec : specs) {
+		GridTab tab;
+		tab.master_table = spec.table;
+		tab.entity_mode = spec.entity_mode;
+		tab.entity_topic = spec.entity_topic;
+		tab.chart_data = spec.chart_data;
+		tab.chart_shape = spec.chart_shape;
+		if (!spec.transactions.empty()) {
+			tab.editable_transactions = true;
+			tab.master_identities = m_bank_file->IdentifyAll(spec.transactions);
+		}
+		wxPanel* page = new wxPanel(m_result_notebook);
+		wxGrid* grid = new wxGrid(page, wxID_ANY);
+		grid->CreateGrid(0, 0);
+		grid->EnableEditing(false);
+		grid->SetDefaultCellFont(GetMonoSpaceFont());
+		grid->Bind(wxEVT_GRID_CELL_CHANGED, &cMain::OnGridCellChanged, this);
+		grid->Bind(wxEVT_GRID_CELL_RIGHT_CLICK, &cMain::OnGridCellRightClick, this);
+		grid->Bind(wxEVT_GRID_LABEL_LEFT_CLICK, &cMain::OnGridLabelLeftClick, this);
+		wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+		sizer->Add(grid, 1, wxEXPAND);
+		page->SetSizer(sizer);
+		tab.grid = grid;
+		m_grid_tabs.push_back(tab);
+		m_result_notebook->AddPage(page, spec.label);
+	}
+	for (GridTab& tab : m_grid_tabs) {
+		RenderGridTab(tab);
+	}
+	if (!m_grid_tabs.empty()) {
+		m_result_notebook->SetSelection((int)std::min(default_selected, m_grid_tabs.size() - 1));
+	}
+	UpdateGridActionButtons();
 }
 
-void cMain::RenderGrid() {
+void cMain::RenderGridTab(GridTab& tab) {
 	std::vector<size_t> order;
-	const size_t data_rows = m_grid_master_table.empty() ? 0 : (m_grid_master_table.size() - 1);
+	const size_t data_rows = tab.master_table.empty() ? 0 : (tab.master_table.size() - 1);
 	order.reserve(data_rows);
 	wxString filter_lower = m_grid_filter_textctrl ? m_grid_filter_textctrl->GetValue().Lower() : wxString();
 	for (size_t i = 0; i < data_rows; ++i) {
-		if (filter_lower.IsEmpty() || RowMatchesFilter(m_grid_master_table[i + 1], filter_lower)) {
+		if (filter_lower.IsEmpty() || RowMatchesFilter(tab.master_table[i + 1], filter_lower)) {
 			order.push_back(i);
 		}
 	}
-	if ((m_grid_sort_col >= 0) && !m_grid_master_table.empty() &&
-		((size_t)m_grid_sort_col < m_grid_master_table.front().size())) {
-		const int sort_col = m_grid_sort_col;
-		const bool ascending = m_grid_sort_ascending;
-		const bool numeric = (m_grid_master_table.GetMetaData(sort_col) == StringTable::RIGHT_ALIGNED);
+	if ((tab.sort_col >= 0) && !tab.master_table.empty() &&
+		((size_t)tab.sort_col < tab.master_table.front().size())) {
+		const int sort_col = tab.sort_col;
+		const bool ascending = tab.sort_ascending;
+		const bool numeric = (tab.master_table.GetMetaData(sort_col) == StringTable::RIGHT_ALIGNED);
 		std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-			int cmp = CompareCellValues(m_grid_master_table[a + 1][sort_col], m_grid_master_table[b + 1][sort_col], numeric);
+			int cmp = CompareCellValues(tab.master_table[a + 1][sort_col], tab.master_table[b + 1][sort_col], numeric);
 			return ascending ? (cmp < 0) : (cmp > 0);
 		});
 	}
-	StringTable view = m_grid_master_table; // copies per-column alignment metadata too
+	StringTable view = tab.master_table; // copies per-column alignment metadata too
 	if (!view.empty()) {
 		view.erase(view.begin() + 1, view.end());
 	}
 	std::vector<AccountManager::TransactionIdentity> new_identities;
-	if (m_grid_editable_transactions) {
+	if (tab.editable_transactions) {
 		new_identities.reserve(order.size());
 	}
 	for (size_t idx : order) {
-		view.push_back(m_grid_master_table[idx + 1]);
-		if (m_grid_editable_transactions) {
-			new_identities.push_back(m_grid_master_identities[idx]);
+		view.push_back(tab.master_table[idx + 1]);
+		if (tab.editable_transactions) {
+			new_identities.push_back(tab.master_identities[idx]);
 		}
 	}
-	m_grid_identities = std::move(new_identities);
-	FillGridWidget(view);
-	if (m_grid_editable_transactions) {
-		ApplyTransactionEditableColumns();
-	} else if (m_grid_entity_mode) {
-		ApplyEntityEditableColumns();
+	tab.identities = std::move(new_identities);
+	FillGridWidget(tab.grid, view);
+	if (tab.editable_transactions) {
+		ApplyTransactionEditableColumns(tab);
+	} else if (tab.entity_mode) {
+		ApplyEntityEditableColumns(tab);
 	}
 	// wxGrid only paints a sort arrow when SetUseNativeColLabels()/UseNativeColHeader() is on,
 	// and those switch column headers to the OS-themed look while leaving row labels on wx's
 	// plain flat style - the two clash visibly. Drawing the indicator as a plain text suffix
 	// instead keeps every part of the grid on the same rendering path.
-	if ((m_grid_sort_col >= 0) && (m_grid_sort_col < m_result_grid->GetNumberCols())) {
-		String label = m_result_grid->GetColLabelValue(m_grid_sort_col);
+	if ((tab.sort_col >= 0) && (tab.sort_col < tab.grid->GetNumberCols())) {
+		String label = tab.grid->GetColLabelValue(tab.sort_col);
 		// Plain ASCII rather than a Unicode arrow glyph - this file has no BOM, so a literal
 		// non-ASCII byte's interpretation would depend on the compiler's guessed source
 		// encoding instead of being unambiguous.
-		label += m_grid_sort_ascending ? " ^" : " v";
-		m_result_grid->SetColLabelValue(m_grid_sort_col, label);
+		label += tab.sort_ascending ? " ^" : " v";
+		tab.grid->SetColLabelValue(tab.sort_col, label);
+	}
+}
+
+void cMain::RenderAllGridTabs() {
+	for (GridTab& tab : m_grid_tabs) {
+		RenderGridTab(tab);
 	}
 	UpdateGridActionButtons();
 }
 
+cMain::GridTab* cMain::ActiveTab() {
+	if (!m_result_notebook) {
+		return nullptr;
+	}
+	int sel = m_result_notebook->GetSelection();
+	if ((sel < 0) || ((size_t)sel >= m_grid_tabs.size())) {
+		return nullptr;
+	}
+	return &m_grid_tabs[(size_t)sel];
+}
+
+cMain::GridTab* cMain::TabForGrid(wxObject* grid_obj) {
+	for (GridTab& tab : m_grid_tabs) {
+		if (tab.grid == grid_obj) {
+			return &tab;
+		}
+	}
+	return nullptr;
+}
+
 void cMain::UpdateGridActionButtons() {
-	const bool has_grid_data = m_result_grid && (m_result_grid->GetNumberRows() > 0);
+	GridTab* tab = ActiveTab();
+	const bool has_grid_data = tab && (tab->grid->GetNumberRows() > 0);
 	if (m_export_excel_btn) {
 		m_export_excel_btn->Enable(has_grid_data);
 	}
 	if (m_show_chart_btn) {
-		m_show_chart_btn->Enable(has_grid_data && !m_current_chart_data.IsEmpty());
+		m_show_chart_btn->Enable(has_grid_data && !tab->chart_data.IsEmpty());
 	}
+}
+
+void cMain::OnGridTabChanged(wxBookCtrlEvent& evt) {
+	evt.Skip();
+	UpdateGridActionButtons();
 }
 
 void cMain::OnGridLabelLeftClick(wxGridEvent& evt) {
+	GridTab* tab = TabForGrid(evt.GetEventObject());
 	int col = evt.GetCol();
-	if ((col < 0) || m_grid_master_table.empty()) {
+	if (!tab || (col < 0) || tab->master_table.empty()) {
 		evt.Skip(); // row-label or corner click, or nothing to sort
 		return;
 	}
-	if (m_grid_sort_col == col) {
-		m_grid_sort_ascending = !m_grid_sort_ascending;
+	if (tab->sort_col == col) {
+		tab->sort_ascending = !tab->sort_ascending;
 	} else {
-		m_grid_sort_col = col;
-		m_grid_sort_ascending = true;
+		tab->sort_col = col;
+		tab->sort_ascending = true;
 	}
-	RenderGrid();
+	RenderGridTab(*tab);
+	UpdateGridActionButtons();
 }
 
 void cMain::OnGridFilterTextChanged(wxCommandEvent&) {
-	RenderGrid();
+	RenderAllGridTabs();
 }
 
 void cMain::UIOutputTable(const StringTable& table, const PtrVector<const Transaction>& transactions) {
-	SetGridData(table);
-	if (!transactions.empty()) {
-		m_grid_editable_transactions = true;
-		m_grid_master_identities = m_bank_file->IdentifyAll(transactions);
+	if (table.empty() && transactions.empty()) {
+		SetGridTabs({});
+		return;
 	}
-	RenderGrid();
+	GridTabSpec spec;
+	spec.label = transactions.empty() ? "Results" : "Transactions";
+	spec.table = table;
+	spec.transactions = transactions;
+	SetGridTabs({ spec });
 }
 
-void cMain::ApplyTransactionEditableColumns() {
-	const int col_count = m_result_grid->GetNumberCols();
+void cMain::ApplyTransactionEditableColumns(GridTab& tab) {
+	const int col_count = tab.grid->GetNumberCols();
 	if (m_read_only) {
 		// Session-wide read-only overrides the per-column Category/Desc editability below -
 		// EnableEditing(false) alone would still leave wxGrid's own per-cell read-only attrib
 		// unset (defaulting to editable), so every column's attr must say so explicitly too,
 		// same as ApplyEntityEditableColumns' equivalent early-out.
-		m_result_grid->EnableEditing(false);
+		tab.grid->EnableEditing(false);
 		for (int c = 0; c < col_count; ++c) {
 			wxGridCellAttr* attr = new wxGridCellAttr();
-			int align = (m_grid_master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
+			int align = (tab.master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
 			attr->SetAlignment(align, wxALIGN_CENTRE);
 			attr->SetReadOnly(true);
-			m_result_grid->SetColAttr(c, attr);
+			tab.grid->SetColAttr(c, attr);
 		}
 		return;
 	}
-	m_result_grid->EnableEditing(true);
+	tab.grid->EnableEditing(true);
 	int category_col = -1, desc_col = -1;
 	for (int c = 0; c < col_count; ++c) {
-		String label = m_result_grid->GetColLabelValue(c);
+		String label = tab.grid->GetColLabelValue(c);
 		if (label == "Category") {
 			category_col = c;
 		} else if (label == "Desc") {
@@ -1005,53 +1055,57 @@ void cMain::ApplyTransactionEditableColumns() {
 	// replaces the plain-alignment one FillGridWidget set, so alignment is recomputed here too.
 	for (int c = 0; c < col_count; ++c) {
 		wxGridCellAttr* attr = new wxGridCellAttr();
-		int align = (m_grid_master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
+		int align = (tab.master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
 		attr->SetAlignment(align, wxALIGN_CENTRE);
 		attr->SetReadOnly((c != category_col) && (c != desc_col));
 		if (c == category_col) {
 			attr->SetEditor(new wxGridCellChoiceEditor(wxArrayString(categories.size(), categories.data()), false));
 		}
-		m_result_grid->SetColAttr(c, attr);
+		tab.grid->SetColAttr(c, attr);
 	}
 }
 
 void cMain::UIOutputEntityTable(const StringTable& table, QueryTopic topic) {
-	SetGridData(table);
-	if (!table.empty()) {
-		m_grid_entity_mode = true;
-		m_grid_entity_topic = topic;
+	if (table.empty()) {
+		SetGridTabs({});
+		return;
 	}
-	RenderGrid();
+	GridTabSpec spec;
+	spec.label = Topic2String(topic);
+	spec.table = table;
+	spec.entity_mode = true;
+	spec.entity_topic = topic;
+	SetGridTabs({ spec });
 }
 
-void cMain::ApplyEntityEditableColumns() {
-	const int col_count = m_result_grid->GetNumberCols();
+void cMain::ApplyEntityEditableColumns(GridTab& tab) {
+	const int col_count = tab.grid->GetNumberCols();
 	// Every List(Clients|Categories|Types|Accounts) table starts with an "ID" column, but
 	// the editable name column's label differs for accounts (AccountManager::List()'s own
 	// "Account name" vs the generic ManagerType<Child>::GetInfos()'s "Name") - look up both
 	// by label rather than assume a fixed index either way.
-	String name_col_label = (m_grid_entity_topic == QueryTopic::ACCOUNT) ? "Account name" : "Name";
+	String name_col_label = (tab.entity_topic == QueryTopic::ACCOUNT) ? "Account name" : "Name";
 	int name_col = -1;
 	for (int c = 0; c < col_count; ++c) {
-		String label = m_result_grid->GetColLabelValue(c);
+		String label = tab.grid->GetColLabelValue(c);
 		if (label == name_col_label) {
 			name_col = c;
 		} else if (label == "ID") {
-			m_grid_entity_id_col = c;
+			tab.entity_id_col = c;
 		}
 	}
-	if ((name_col < 0) || (m_grid_entity_id_col < 0)) {
+	if ((name_col < 0) || (tab.entity_id_col < 0)) {
 		return; // unexpected shape - leave non-editable rather than guess
 	}
-	m_result_grid->EnableEditing(!m_read_only);
+	tab.grid->EnableEditing(!m_read_only);
 	// One attribute per column rather than one SetReadOnly() call per cell - see
 	// ApplyTransactionEditableColumns for why that matters once row counts get large.
 	for (int c = 0; c < col_count; ++c) {
 		wxGridCellAttr* attr = new wxGridCellAttr();
-		int align = (m_grid_master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
+		int align = (tab.master_table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) ? wxALIGN_RIGHT : wxALIGN_LEFT;
 		attr->SetAlignment(align, wxALIGN_CENTRE);
 		attr->SetReadOnly(m_read_only || (c != name_col));
-		m_result_grid->SetColAttr(c, attr);
+		tab.grid->SetColAttr(c, attr);
 	}
 }
 
@@ -1061,34 +1115,40 @@ void cMain::OnGridCellChanged(wxGridEvent& evt) {
 	}
 	m_in_grid_cell_changed = true;
 	struct ResetGuard { bool& flag; ~ResetGuard() { flag = false; } } reset_guard{m_in_grid_cell_changed};
+	GridTab* tab = TabForGrid(evt.GetEventObject());
+	if (!tab) {
+		return;
+	}
 	int row = evt.GetRow();
-	String col_label = m_result_grid->GetColLabelValue(evt.GetCol());
-	String value = m_result_grid->GetCellValue(row, evt.GetCol());
-	if (m_grid_entity_mode) {
+	String col_label = tab->grid->GetColLabelValue(evt.GetCol());
+	String value = tab->grid->GetCellValue(row, evt.GetCol());
+	if (tab->entity_mode) {
 		// The only editable column here is the name column ApplyEntityEditableColumns
 		// left unlocked, so col_label doesn't need re-checking - just read the row's own ID
 		// cell (self-describing regardless of row order) and rename.
-		String id_text = m_result_grid->GetCellValue(row, m_grid_entity_id_col);
+		String id_text = tab->grid->GetCellValue(row, tab->entity_id_col);
 		long id_val;
 		if (!id_text.ToLong(&id_val)) {
 			return;
 		}
-		QueryTopic topic = m_grid_entity_topic;
+		QueryTopic topic = tab->entity_topic;
 		if (!m_bank_file->RenameId(topic, Id((Id::Type)id_val), value)) {
 			UIOutputText("Could not rename - see the log for the reason (e.g. that name already belongs to a different entry; use Merge for that instead).");
 		}
 		// Re-list rather than leave the cell showing whatever was typed: on success this is
 		// what List() would already show, and on failure/no-op it reverts the cell to the
-		// real current name instead of silently displaying a rename that never happened.
+		// real current name instead of silently displaying a rename that never happened. `tab`
+		// itself is dangling after this call (UIOutputEntityTable rebuilds every tab) - fine,
+		// nothing below reads it again on this path.
 		UIOutputEntityTable(m_bank_file->GetSummary(topic), topic);
 		UpdateAccFilter();
 		UpdateStatusBar();
 		return;
 	}
-	if ((size_t)row >= m_grid_identities.size()) {
+	if ((size_t)row >= tab->identities.size()) {
 		return;
 	}
-	const AccountManager::TransactionIdentity& identity = m_grid_identities[row];
+	const AccountManager::TransactionIdentity& identity = tab->identities[row];
 	if (col_label == "Category") {
 		Id id = m_bank_file->GetCategoryIdByFullName(value);
 		if (id == INVALID_ID) { // shouldn't happen from a closed dropdown, but guard anyway
@@ -1114,6 +1174,10 @@ void cMain::OnGridCellRightClick(wxGridEvent& evt) {
 		// items would all need individually disabling.
 		return;
 	}
+	GridTab* tab = TabForGrid(evt.GetEventObject());
+	if (!tab) {
+		return;
+	}
 	int row = evt.GetRow();
 	int col = evt.GetCol();
 	LogDebug() << "OnGridCellRightClick: row=" << row << " col=" << col;
@@ -1123,22 +1187,22 @@ void cMain::OnGridCellRightClick(wxGridEvent& evt) {
 	QueryTopic topic;
 	Id target_id(INVALID_ID);
 	String target_name;
-	if (m_grid_entity_mode) {
+	if (tab->entity_mode) {
 		// Whole row is one entity here, regardless of which cell was clicked.
-		if ((m_grid_entity_id_col < 0) || (row >= m_result_grid->GetNumberRows())) {
+		if ((tab->entity_id_col < 0) || (row >= tab->grid->GetNumberRows())) {
 			return;
 		}
-		topic = m_grid_entity_topic;
+		topic = tab->entity_topic;
 		long id_val;
-		if (!m_result_grid->GetCellValue(row, m_grid_entity_id_col).ToLong(&id_val)) {
+		if (!tab->grid->GetCellValue(row, tab->entity_id_col).ToLong(&id_val)) {
 			return;
 		}
 		target_id = Id((Id::Type)id_val);
 		String name_col_label = (topic == QueryTopic::ACCOUNT) ? "Account name" : "Name";
-		int col_count = m_result_grid->GetNumberCols();
+		int col_count = tab->grid->GetNumberCols();
 		for (int c = 0; c < col_count; ++c) {
-			if (m_result_grid->GetColLabelValue(c) == name_col_label) {
-				target_name = m_result_grid->GetCellValue(row, c);
+			if (tab->grid->GetColLabelValue(c) == name_col_label) {
+				target_name = tab->grid->GetCellValue(row, c);
 				break;
 			}
 		}
@@ -1148,7 +1212,7 @@ void cMain::OnGridCellRightClick(wxGridEvent& evt) {
 		// the displayed name, which is ambiguous for a grouped Category ("Group::Sub"
 		// display text won't match ManagedType::CheckName's bare-name-only comparison the
 		// way a raw lookup-by-name would expect).
-		String col_label = m_result_grid->GetColLabelValue(col);
+		String col_label = tab->grid->GetColLabelValue(col);
 		if (col_label == "Client") {
 			topic = QueryTopic::CLIENT;
 		} else if (col_label == "Category") {
@@ -1158,11 +1222,11 @@ void cMain::OnGridCellRightClick(wxGridEvent& evt) {
 		} else {
 			return;
 		}
-		if ((size_t)row >= m_grid_identities.size()) {
+		if ((size_t)row >= tab->identities.size()) {
 			return;
 		}
-		target_id = m_bank_file->GetTransactionFieldId(m_grid_identities[row], topic);
-		target_name = m_result_grid->GetCellValue(row, col);
+		target_id = m_bank_file->GetTransactionFieldId(tab->identities[row], topic);
+		target_name = tab->grid->GetCellValue(row, col);
 	}
 	if (target_id == INVALID_ID) {
 		return;
@@ -1172,18 +1236,19 @@ void cMain::OnGridCellRightClick(wxGridEvent& evt) {
 	m_context_menu_topic = topic;
 	m_context_menu_target_id = target_id;
 	m_context_menu_target_name = target_name;
+	m_context_menu_entity_mode = tab->entity_mode;
 	m_context_menu_merge_others.clear();
 	// Merge only makes sense for CLIENT/CATEGORY/TYPE (the only topics with a MergeQuery),
 	// and only in the entity listing, where a whole row is one entity and other whole rows
 	// can be selected alongside it via GetSelectedRows() (row-label click/drag selection).
-	if (m_grid_entity_mode &&
+	if (tab->entity_mode &&
 		((topic == QueryTopic::CLIENT) || (topic == QueryTopic::CATEGORY) || (topic == QueryTopic::TYPE))) {
-		for (int r : m_result_grid->GetSelectedRows()) {
-			if ((r < 0) || (r >= m_result_grid->GetNumberRows())) {
+		for (int r : tab->grid->GetSelectedRows()) {
+			if ((r < 0) || (r >= tab->grid->GetNumberRows())) {
 				continue;
 			}
 			long other_id_val;
-			if (!m_result_grid->GetCellValue(r, m_grid_entity_id_col).ToLong(&other_id_val)) {
+			if (!tab->grid->GetCellValue(r, tab->entity_id_col).ToLong(&other_id_val)) {
 				continue;
 			}
 			Id other_id((Id::Type)other_id_val);
@@ -1203,7 +1268,7 @@ void cMain::OnGridCellRightClick(wxGridEvent& evt) {
 	} else {
 		menu.Append(MENU_CTX_ADD_KEYWORD, "Add keyword...");
 	}
-	m_result_grid->PopupMenu(&menu, evt.GetPosition());
+	tab->grid->PopupMenu(&menu, evt.GetPosition());
 }
 
 void cMain::OnAddKeywordFromContextMenu(wxCommandEvent& evt) {
@@ -1219,7 +1284,7 @@ void cMain::OnAddKeywordFromContextMenu(wxCommandEvent& evt) {
 		return;
 	}
 	m_bank_file->AddKeyword(m_context_menu_topic, m_context_menu_target_id, keyword, dlg.IsDefinitive());
-	if (m_grid_entity_mode) {
+	if (m_context_menu_entity_mode) {
 		UIOutputEntityTable(m_bank_file->GetSummary(m_context_menu_topic), m_context_menu_topic);
 	}
 	UpdateStatusBar();
@@ -1395,9 +1460,23 @@ void cMain::InitMenu() {
 	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
 	querymenu->Append(MENU_LIST_CLIENTS, "List Clients");
 	querymenu->Append(MENU_LIST_CATEGORIES, "List Categories");
-	querymenu->AppendSeparator();
-	querymenu->Append(MENU_EXPORT_EXCEL, "Export Results to Excel...");
-	querymenu->Append(MENU_SHOW_CHART, "Show as Chart...");
+	m_favorite_queries = LoadFavoriteQueries();
+	if (!m_favorite_queries.empty()) {
+		querymenu->AppendSeparator();
+		wxMenu* favoritesmenu = new wxMenu();
+		// Dynamic ids (rather than the compile-time MENU_* enum the rest of this menu bar uses) -
+		// there's no fixed count of favorites to give a name to at compile time. NewControlId(n)
+		// reserves a contiguous block, so a favorite's index is just its id offset from the base
+		// (see FavoriteQuerySelected) - one Bind() per item, since a dynamic id can't go in the
+		// static EVT_MENU() event table below.
+		m_favorite_query_id_base = wxWindow::NewControlId((int)m_favorite_queries.size());
+		for (size_t i = 0; i < m_favorite_queries.size(); ++i) {
+			int id = m_favorite_query_id_base + (int)i;
+			favoritesmenu->Append(id, m_favorite_queries[i].name);
+			favoritesmenu->Bind(wxEVT_MENU, &cMain::FavoriteQuerySelected, this, id);
+		}
+		querymenu->AppendSubMenu(favoritesmenu, "Favorite Queries");
+	}
 	periodsmenu->Append(MENU_PERIOD_THIS_MONTH, "This Month");
 	periodsmenu->Append(MENU_PERIOD_LAST_MONTH, "Last Month");
 	periodsmenu->AppendSeparator();
@@ -1487,10 +1566,10 @@ void cMain::SizeUpdate(wxSizeEvent& evt) {
 	if (m_info_textctrl) {
 		m_info_textctrl->SetSize(evt.GetSize().GetWidth() - 55, 60);
 	}
-	if (m_result_grid) {
-		m_result_grid->SetSize(evt.GetSize() - wxSize(55, 360));
+	if (m_result_notebook) {
+		m_result_notebook->SetSize(evt.GetSize() - wxSize(55, 360));
 	}
-	// Right-aligned to the same right edge m_info_textctrl/m_result_grid track above (both are
+	// Right-aligned to the same right edge m_info_textctrl/m_result_notebook track above (both are
 	// pinned at x=20 and sized to evt.GetSize().GetWidth() - 55, so their shared right edge is
 	// evt.GetSize().GetWidth() - 35) - previously these two had a hardcoded x position instead,
 	// so they'd only land in the right place at one specific window width and could end up
@@ -1544,47 +1623,76 @@ void cMain::QueryButtonClicked(wxCommandEvent& evt) {
 		UIOutputText("First load the database");
 		return;
 	}
-	String result;
 	Query q;
 	PrepareQuery(q);
-	auto table = m_bank_file->MakeQuery(q);
+	// A manual, UI-driven query never carries a favorite's chart preference forward.
+	m_preferred_chart_side.clear();
+	m_preferred_chart_kind.clear();
+	RunAndRenderQuery(q);
+}
 
-	StringTable grid_table;
-	QueryElement* charting_source = nullptr; // the QueryElement (if any) whose table became grid_table
+void cMain::RunAndRenderQuery(Query& q) {
+	String result;
+	auto table = m_bank_file->MakeQuery(q); // the transaction list, when ReturnList() is set
+
+	std::vector<GridTabSpec> tabs;
 	for (auto* qe : q) {
 		result.append(qe->GetStringResult());
 		auto qe_table = qe->GetTableResult();
 		if (qe_table.empty()) {
 			continue;
 		}
-		if (grid_table.empty()) {
-			grid_table = qe_table; // first table found is the default grid content
-			charting_source = qe;
-		} else {
-			result.append(PrettyTable(qe_table)); // further tables stay as plain text
-		}
+		GridTabSpec spec;
+		spec.label = GridTabLabelFor(qe);
+		spec.table = qe_table;
+		spec.chart_data = qe->GetChartResult();
+		spec.chart_shape = qe->GetChartShape();
+		tabs.push_back(std::move(spec));
 	}
-	bool grid_is_transaction_list = false;
 	if (!table.empty()) {
-		grid_table = table; // the transaction list, when present, takes priority for the grid
-		grid_is_transaction_list = true;
-		charting_source = nullptr; // a raw transaction list has no chart data
+		// The transaction list, when present, is appended last - every summary/periodic tab
+		// pushed above stays first, so index 0 (RunAndRenderQuery's caller never overrides
+		// SetGridTabs()'s default_selected) lands on a summary tab by default rather than the
+		// (often much longer) raw transaction list.
+		GridTabSpec spec;
+		spec.label = "Transactions";
+		spec.table = table;
+		spec.transactions = q.GetResult(); // editable - it's an actual transaction list
+		tabs.push_back(std::move(spec));
 	}
 
 	UIOutputText(result);
-	if (grid_is_transaction_list) {
-		UIOutputTable(grid_table, q.GetResult()); // editable - it's an actual transaction list
-	} else {
-		UIOutputTable(grid_table); // aggregate/sum table - not editable
+	SetGridTabs(tabs);
+	GridTab* active = ActiveTab();
+	// A favorite that explicitly names a chart preference (m_preferred_chart_side/_kind, set by
+	// FavoriteQuerySelected right before this call - QueryButtonClicked always clears them first)
+	// is itself an explicit request to see that chart, regardless of the "show chart" auto
+	// checkbox - a favorite carrying an unused chart preference because the checkbox happened to
+	// be off is confusing, not a deliberate opt-out.
+	bool has_chart_preference = !m_preferred_chart_side.empty() || !m_preferred_chart_kind.empty();
+	if (active && (m_ctrl_grp_query.m_show_chart_auto_chkb->GetValue() || has_chart_preference) && !active->chart_data.IsEmpty()) {
+		ShowOrRefreshChart();
 	}
-	// UIOutputTable() above already reset chart state to "none" via SetGridData() - this is the
-	// one call site that can supply the real thing, since only here is a QueryElement (still
-	// alive - q hasn't gone out of scope yet) known to be behind what's now in the grid.
-	if (charting_source) {
-		m_current_chart_data = charting_source->GetChartResult();
-		m_current_chart_shape = charting_source->GetChartShape();
+}
+
+void cMain::FavoriteQuerySelected(wxCommandEvent& evt) {
+	evt.Skip();
+	if (!m_bank_file) {
+		UIOutputText("First load the database");
+		return;
 	}
-	UpdateGridActionButtons();
+	size_t index = (size_t)(evt.GetId() - m_favorite_query_id_base);
+	if (index >= m_favorite_queries.size()) {
+		return;
+	}
+	const FavoriteQueryDef& def = m_favorite_queries[index];
+	m_preferred_chart_side = def.chart_side;
+	m_preferred_chart_kind = def.chart_kind;
+	Query q;
+	wxArrayInt enabled_accounts;
+	m_ctrl_grp_basic_filter.m_acc_chklb->GetCheckedItems(enabled_accounts);
+	BuildQueryFromFavorite(def, q, wxDateTime::Today(), enabled_accounts);
+	RunAndRenderQuery(q);
 }
 
 void cMain::MergeButtonClicked(wxCommandEvent& evt) {
@@ -1787,7 +1895,8 @@ void cMain::UpdateExchangeRates(wxCommandEvent& evt) {
 
 void cMain::ExportToExcel(wxCommandEvent& evt) {
 	evt.Skip();
-	if (!m_result_grid->GetNumberRows()) {
+	GridTab* tab = ActiveTab();
+	if (!tab || !tab->grid->GetNumberRows()) {
 		UIOutputText("Nothing to export - run a query or list first.");
 		return;
 	}
@@ -1796,7 +1905,7 @@ void cMain::ExportToExcel(wxCommandEvent& evt) {
 	if (saveDialog.ShowModal() == wxID_CANCEL) {
 		return;
 	}
-	if (ExportGridToExcel(m_result_grid, saveDialog.GetPath())) {
+	if (ExportGridToExcel(tab->grid, saveDialog.GetPath())) {
 		UIOutputText("Exported to " + saveDialog.GetPath());
 	} else {
 		UIOutputText("ERROR: Export failed, see the log for details.");
@@ -1805,16 +1914,43 @@ void cMain::ExportToExcel(wxCommandEvent& evt) {
 
 void cMain::ShowChartClicked(wxCommandEvent& evt) {
 	evt.Skip();
-	if (!m_result_grid->GetNumberRows()) {
+	GridTab* tab = ActiveTab();
+	if (!tab || !tab->grid->GetNumberRows()) {
 		UIOutputText("Nothing to chart - run a query or list first.");
 		return;
 	}
-	if (m_current_chart_data.IsEmpty()) {
+	if (tab->chart_data.IsEmpty()) {
 		UIOutputText("This result has no chart data - charts are available for periodic and category/client/type/account sum queries.");
 		return;
 	}
-	ChartDialog dlg(this, m_current_chart_data, m_current_chart_shape);
-	dlg.ShowModal();
+	ShowOrRefreshChart();
+}
+
+void cMain::ShowOrRefreshChart() {
+	GridTab* tab = ActiveTab();
+	if (!tab) {
+		return;
+	}
+	wxPoint pos = wxDefaultPosition;
+	wxSize size = wxDefaultSize;
+	bool had_existing = (m_chart_dialog != nullptr);
+	if (had_existing) {
+		pos = m_chart_dialog->GetPosition();
+		size = m_chart_dialog->GetSize();
+		m_chart_dialog->Destroy(); // does not fire wxEVT_CLOSE_WINDOW - the user-close handler below is for the other path
+		m_chart_dialog = nullptr;
+	}
+	m_chart_dialog = new ChartDialog(this, tab->chart_data, tab->chart_shape, m_preferred_chart_side, m_preferred_chart_kind);
+	if (had_existing) {
+		m_chart_dialog->SetPosition(pos);
+		m_chart_dialog->SetSize(size);
+	}
+	m_chart_dialog->Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) {
+		m_chart_dialog = nullptr;
+		e.Skip();
+	});
+	m_chart_dialog->Show();
+	m_chart_dialog->Raise();
 }
 
 void cMain::ShowLogViewer(wxCommandEvent& evt) {
@@ -1911,6 +2047,8 @@ void ControlGroupQuery::DoInitialize(wxWindow* parent) {
 	m_controls.push_back(m_category_sum_chkb = new wxCheckBox(parent, wxID_ANY, "category summary", wxPoint(HORIZONTAL_ALIGN_3, MINOR_VERTICAL_ALIGN_3)));
 	m_controls.push_back(m_client_sum_chkb = new wxCheckBox(parent, wxID_ANY, "client summary", wxPoint(HORIZONTAL_ALIGN_3, MINOR_VERTICAL_ALIGN_4)));
 	m_controls.push_back(m_type_sum_chkb = new wxCheckBox(parent, wxID_ANY, "type summary", wxPoint(HORIZONTAL_ALIGN_3, MINOR_VERTICAL_ALIGN_5)));
+	m_controls.push_back(m_show_chart_auto_chkb = new wxCheckBox(parent, wxID_ANY, "show chart", wxPoint(HORIZONTAL_ALIGN_3, MINOR_VERTICAL_ALIGN_6)));
+	m_show_chart_auto_chkb->SetToolTip("Automatically open/refresh the chart window after running a query that has chart data");
 
 	m_controls.push_back(m_query_but = new wxButton(parent, QUERY_BUTT, "Query", wxPoint(HORIZONTAL_ALIGN_3, MAJOR_VERTICAL_ALIGN_3), cDefaultCtrlSize));
 
