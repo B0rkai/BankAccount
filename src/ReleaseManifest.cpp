@@ -3,37 +3,30 @@
 #include <cstdlib>
 #include "ReleaseManifest.h"
 #include "Logger.h"
-
-namespace {
-	String Trim(String s) {
-		s.Trim(true).Trim(false);
-		return s;
-	}
-}
+#include <nlohmann/json.hpp>
 
 const char* ReleaseManifest::FileName() {
-	return "release.cfg";
+	return "release.json";
 }
 
 ReleaseManifest ReleaseManifest::Parse(std::istream& in) {
 	ReleaseManifest manifest;
-	std::string raw_line;
-	while (std::getline(in, raw_line)) {
-		String line = Trim(String(raw_line));
-		if (line.empty() || line[0] == '#') {
-			continue;
-		}
-		size_t eq = line.find('=');
-		if (eq == String::npos) {
-			continue;
-		}
-		String key = Trim(line.substr(0, eq)).Lower();
-		String value = Trim(line.substr(eq + 1));
-		if (key == "version") {
-			manifest.version = value;
-		} else if (key == "crc32") {
-			manifest.crc32 = (uint32_t)std::strtoul(value.utf8_str(), nullptr, 16);
-		}
+	nlohmann::json j;
+	try {
+		in >> j;
+	} catch (const nlohmann::json::exception& e) {
+		LogWarn() << "release.json: failed to parse (" << e.what() << ") - ignoring";
+		return manifest;
+	}
+	if (!j.is_object()) {
+		LogWarn() << "release.json: root is not a JSON object - ignoring";
+		return manifest;
+	}
+	if (j.contains("version") && j["version"].is_string()) {
+		manifest.version = j["version"].get<std::string>();
+	}
+	if (j.contains("crc32") && j["crc32"].is_string()) {
+		manifest.crc32 = (uint32_t)std::strtoul(j["crc32"].get<std::string>().c_str(), nullptr, 16);
 	}
 	manifest.valid = !manifest.version.empty() && (manifest.crc32 != 0);
 	return manifest;
@@ -50,7 +43,7 @@ ReleaseManifest ReleaseManifest::Load(const String& release_folder) {
 	if (manifest.valid) {
 		LogInfo() << "Release manifest at " << path.utf8_str() << ": version " << manifest.version.utf8_str();
 	} else {
-		LogWarn() << "Release manifest at " << path.utf8_str() << " is missing version=/crc32= - ignoring";
+		LogWarn() << "Release manifest at " << path.utf8_str() << " is missing version/crc32 - ignoring";
 	}
 	return manifest;
 }

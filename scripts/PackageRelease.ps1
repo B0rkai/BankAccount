@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Cuts a BankAccount release: bumps include\Version.h, builds Release|x64, computes the
-    built exe's CRC32, and publishes BankAccount.exe + release.cfg to a network release
+    built exe's CRC32, and publishes BankAccount.exe + release.json to a network release
     folder - the counterpart to cMain::CheckForUpdate()/SelfUpdater::ApplyUpdate() on the
     client side (see CLAUDE.md's "deploy releases through this network location" notes).
 
@@ -112,11 +112,8 @@ if (-not (Test-Path $ReleaseFolder)) {
     New-Item -ItemType Directory -Path $ReleaseFolder -Force | Out-Null
 }
 Copy-Item -Path $exePath -Destination (Join-Path $ReleaseFolder "BankAccount.exe") -Force
-$manifestPath = Join-Path $ReleaseFolder "release.cfg"
-@"
-version=$Version
-crc32=$crc32Hex
-"@ | Out-File -FilePath $manifestPath -Encoding ascii -NoNewline
+$manifestPath = Join-Path $ReleaseFolder "release.json"
+[ordered]@{ version = $Version; crc32 = $crc32Hex } | ConvertTo-Json | Out-File -FilePath $manifestPath -Encoding ascii -NoNewline
 
 Write-Host ""
 Write-Host "Published version $Version to $ReleaseFolder"

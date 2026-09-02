@@ -18,7 +18,7 @@ struct DbLocationSettings {
 	// Folder that holds (or will hold) BData.baf, its .backup sibling, and the network
 	// write-lock file. Only meaningful when mode == Network.
 	String network_folder;
-	// Folder holding release.cfg/the published BankAccount.exe (see ReleaseManifest.h) - the
+	// Folder holding release.json/the published BankAccount.exe (see ReleaseManifest.h) - the
 	// update checker's source. Only meaningful when mode == Network: defaults to
 	// network_folder + "\release" when an explicit release_path= line isn't given, and stays
 	// empty in Standalone mode regardless of any release_path= line present (no update
@@ -26,7 +26,7 @@ struct DbLocationSettings {
 	// through this network location" feature).
 	String release_folder;
 
-	// db\location.cfg - not under any per-user profile, so it travels with a portable
+	// db\location.json - not under any per-user profile, so it travels with a portable
 	// install the same way db\ already does.
 	static const char* FilePath();
 
@@ -34,11 +34,12 @@ struct DbLocationSettings {
 	// exercise the parsing logic through an istringstream without touching real files.
 	static DbLocationSettings Load();
 
-	// key=value lines ('#' starts a comment, blank lines ignored). Recognized keys:
-	// "mode" (standalone|network, case-insensitive), "path" (verbatim, only read when
-	// mode=network), and "release_path" (verbatim, optional, only meaningful when
-	// mode=network - see release_folder above). Unrecognized mode values, or mode=network
-	// with an empty path, log a warning and fall back to Standalone rather than failing to
-	// start.
+	// A JSON object with recognized keys "mode" ("standalone"|"network", case-insensitive),
+	// "path" (verbatim string, only read when mode is "network"), and "release_path"
+	// (verbatim string, optional, only meaningful when mode is "network" - see release_folder
+	// above). Any other key (e.g. a hand-written "comment" explaining the setup) is read and
+	// silently ignored. Malformed JSON, a non-object root, unrecognized mode values, or
+	// mode=network with an empty path all log a warning and fall back to Standalone rather
+	// than failing to start.
 	static DbLocationSettings Parse(std::istream& in);
 };

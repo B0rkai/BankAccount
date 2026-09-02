@@ -11,7 +11,7 @@ TEST(ReleaseManifestTest, EmptyStreamYieldsInvalid) {
 }
 
 TEST(ReleaseManifestTest, WellFormedManifestParsesAsValid) {
-    std::istringstream in("version=1.3.0\ncrc32=1A2B3C4D\n");
+    std::istringstream in(R"({"version":"1.3.0","crc32":"1A2B3C4D"})");
     ReleaseManifest manifest = ReleaseManifest::Parse(in);
     EXPECT_TRUE(manifest.valid);
     EXPECT_EQ(manifest.version, "1.3.0");
@@ -19,44 +19,37 @@ TEST(ReleaseManifestTest, WellFormedManifestParsesAsValid) {
 }
 
 TEST(ReleaseManifestTest, CrcIsCaseInsensitiveHex) {
-    std::istringstream in("version=1.3.0\ncrc32=1a2b3c4d\n");
+    std::istringstream in(R"({"version":"1.3.0","crc32":"1a2b3c4d"})");
     ReleaseManifest manifest = ReleaseManifest::Parse(in);
     EXPECT_EQ(manifest.crc32, 0x1A2B3C4Du);
 }
 
 TEST(ReleaseManifestTest, MissingVersionIsInvalid) {
-    std::istringstream in("crc32=1A2B3C4D\n");
+    std::istringstream in(R"({"crc32":"1A2B3C4D"})");
     ReleaseManifest manifest = ReleaseManifest::Parse(in);
     EXPECT_FALSE(manifest.valid);
 }
 
 TEST(ReleaseManifestTest, MissingCrcIsInvalid) {
-    std::istringstream in("version=1.3.0\n");
+    std::istringstream in(R"({"version":"1.3.0"})");
     ReleaseManifest manifest = ReleaseManifest::Parse(in);
     EXPECT_FALSE(manifest.valid);
 }
 
-TEST(ReleaseManifestTest, CommentsAndBlankLinesAreIgnored) {
-    std::istringstream in("# comment\n\nversion=1.3.0\n\ncrc32=1A2B3C4D\n# trailing\n");
+TEST(ReleaseManifestTest, MalformedJsonIsInvalid) {
+    std::istringstream in("{not valid json");
     ReleaseManifest manifest = ReleaseManifest::Parse(in);
-    EXPECT_TRUE(manifest.valid);
+    EXPECT_FALSE(manifest.valid);
 }
 
-TEST(ReleaseManifestTest, SurroundingWhitespaceIsTrimmed) {
-    std::istringstream in("  version = 1.3.0  \n  crc32 =  1A2B3C4D  \n");
+TEST(ReleaseManifestTest, NonObjectRootIsInvalid) {
+    std::istringstream in("[1, 2, 3]");
     ReleaseManifest manifest = ReleaseManifest::Parse(in);
-    EXPECT_EQ(manifest.version, "1.3.0");
-    EXPECT_EQ(manifest.crc32, 0x1A2B3C4Du);
-}
-
-TEST(ReleaseManifestTest, KeyComparisonIsCaseInsensitive) {
-    std::istringstream in("VERSION=1.3.0\nCRC32=1A2B3C4D\n");
-    ReleaseManifest manifest = ReleaseManifest::Parse(in);
-    EXPECT_TRUE(manifest.valid);
+    EXPECT_FALSE(manifest.valid);
 }
 
 TEST(ReleaseManifestTest, FileNameIsTheDocumentedConstant) {
-    EXPECT_STREQ(ReleaseManifest::FileName(), "release.cfg");
+    EXPECT_STREQ(ReleaseManifest::FileName(), "release.json");
 }
 
 }

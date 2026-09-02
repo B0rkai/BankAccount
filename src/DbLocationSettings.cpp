@@ -2,15 +2,9 @@
 #include <string>
 #include "DbLocationSettings.h"
 #include "Logger.h"
+#include <nlohmann/json.hpp>
 
-static const char* DEFAULT_LOCATION_FILE_PATH("db\\location.cfg");
-
-namespace {
-	String Trim(String s) {
-		s.Trim(true).Trim(false);
-		return s;
-	}
-}
+static const char* DEFAULT_LOCATION_FILE_PATH("db\\location.json");
 
 const char* DbLocationSettings::FilePath() {
 	return DEFAULT_LOCATION_FILE_PATH;
@@ -18,29 +12,29 @@ const char* DbLocationSettings::FilePath() {
 
 DbLocationSettings DbLocationSettings::Parse(std::istream& in) {
 	DbLocationSettings settings;
-	String mode_value;
+	nlohmann::json j;
+	try {
+		in >> j;
+	} catch (const nlohmann::json::exception& e) {
+		LogWarn() << "location.json: failed to parse (" << e.what() << ") - defaulting to standalone";
+		return settings;
+	}
+	if (!j.is_object()) {
+		LogWarn() << "location.json: root is not a JSON object - defaulting to standalone";
+		return settings;
+	}
 	bool mode_seen = false;
+	String mode_value;
 	String release_path_value;
-	std::string raw_line;
-	while (std::getline(in, raw_line)) {
-		String line = Trim(String(raw_line));
-		if (line.empty() || line[0] == '#') {
-			continue;
-		}
-		size_t eq = line.find('=');
-		if (eq == String::npos) {
-			continue;
-		}
-		String key = Trim(line.substr(0, eq)).Lower();
-		String value = Trim(line.substr(eq + 1));
-		if (key == "mode") {
-			mode_value = value.Lower();
-			mode_seen = true;
-		} else if (key == "path") {
-			settings.network_folder = value;
-		} else if (key == "release_path") {
-			release_path_value = value;
-		}
+	if (j.contains("mode") && j["mode"].is_string()) {
+		mode_value = String(j["mode"].get<std::string>()).Lower();
+		mode_seen = true;
+	}
+	if (j.contains("path") && j["path"].is_string()) {
+		settings.network_folder = j["path"].get<std::string>();
+	}
+	if (j.contains("release_path") && j["release_path"].is_string()) {
+		release_path_value = j["release_path"].get<std::string>();
 	}
 	if (mode_seen) {
 		if (mode_value == "network") {
@@ -48,11 +42,11 @@ DbLocationSettings DbLocationSettings::Parse(std::istream& in) {
 		} else if (mode_value == "standalone") {
 			settings.mode = DbLocationMode::Standalone;
 		} else {
-			LogWarn() << "location.cfg: unrecognized mode '" << mode_value.utf8_str() << "' - defaulting to standalone";
+			LogWarn() << "location.json: unrecognized mode '" << mode_value.utf8_str() << "' - defaulting to standalone";
 		}
 	}
 	if (settings.mode == DbLocationMode::Network && settings.network_folder.empty()) {
-		LogWarn() << "location.cfg: mode=network but no path set - defaulting to standalone";
+		LogWarn() << "location.json: mode=network but no path set - defaulting to standalone";
 		settings.mode = DbLocationMode::Standalone;
 	}
 	if (settings.mode == DbLocationMode::Network) {
