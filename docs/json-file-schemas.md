@@ -24,17 +24,30 @@ lives in the local `db\` folder (default) or on a shared network location. Parse
 ```json
 {
   "mode": "network",
-  "path": "\\\\server\\bankaccount\\db",
-  "release_path": "\\\\server\\bankaccount\\release",
+  "path": "\\\\server\\bankaccount",
   "comment": "optional free-text note, ignored by the parser"
 }
+```
+
+`path` is the shared network **root** — `db` and `release` are fixed subfolder names appended
+under it, so the layout on the share is always:
+
+```
+\\server\bankaccount\
+  db\
+    BData.baf
+    BData.baf.backup
+    write.lock
+  release\
+    BankAccount.exe
+    release.json
 ```
 
 | Key | Type | Required | Notes |
 |---|---|---|---|
 | `mode` | string | no | `"standalone"` \| `"network"`, case-insensitive. Missing, unrecognized, or absent → `Standalone`. |
-| `path` | string | only when `mode` is `"network"` | Folder holding `BData.baf`, its `.backup` sibling, and the network write-lock file. Ignored in standalone mode. `mode=network` with an empty/missing `path` logs a warning and falls back to `Standalone`. |
-| `release_path` | string | no | Folder holding `release.json` and the published `BankAccount.exe` (see below). Only meaningful when `mode` is `"network"`. Defaults to `path + "\release"` when omitted. |
+| `path` | string | only when `mode` is `"network"` | The network root folder. `path + "\db"` holds `BData.baf`, its `.backup` sibling, and the network write-lock file; `path + "\release"` holds `release.json` and the published `BankAccount.exe` (see below), unless overridden by `release_path`. Ignored in standalone mode. `mode=network` with an empty/missing `path` logs a warning and falls back to `Standalone`. |
+| `release_path` | string | no | Overrides the default `path + "\release"` location for `release.json`/the published `BankAccount.exe` (see below), for the rare case it doesn't live as a sibling of `path`'s `db` subfolder. Only meaningful when `mode` is `"network"`. |
 
 Root must be a JSON object; anything else (including a missing file) resolves to `Standalone`
 with `network_folder`/`release_folder` left empty.

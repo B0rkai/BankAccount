@@ -15,15 +15,16 @@ enum class DbLocationMode {
 // a reader for now - there is no in-app editor yet, the user maintains the file by hand.
 struct DbLocationSettings {
 	DbLocationMode mode = DbLocationMode::Standalone;
-	// Folder that holds (or will hold) BData.baf, its .backup sibling, and the network
-	// write-lock file. Only meaningful when mode == Network.
+	// "path" + "\db" - the folder that holds (or will hold) BData.baf, its .backup sibling,
+	// and the network write-lock file. Only meaningful when mode == Network.
 	String network_folder;
 	// Folder holding release.json/the published BankAccount.exe (see ReleaseManifest.h) - the
-	// update checker's source. Only meaningful when mode == Network: defaults to
-	// network_folder + "\release" when an explicit release_path= line isn't given, and stays
-	// empty in Standalone mode regardless of any release_path= line present (no update
-	// checking without a network location to check against at all - see the "deploy releases
-	// through this network location" feature).
+	// update checker's source. Only meaningful when mode == Network: defaults to "path" +
+	// "\release" (a sibling of network_folder's "\db", both directly under the same network
+	// root) when an explicit release_path= line isn't given, and stays empty in Standalone
+	// mode regardless of any release_path= line present (no update checking without a network
+	// location to check against at all - see the "deploy releases through this network
+	// location" feature).
 	String release_folder;
 
 	// db\location.json - not under any per-user profile, so it travels with a portable
@@ -35,11 +36,12 @@ struct DbLocationSettings {
 	static DbLocationSettings Load();
 
 	// A JSON object with recognized keys "mode" ("standalone"|"network", case-insensitive),
-	// "path" (verbatim string, only read when mode is "network"), and "release_path"
-	// (verbatim string, optional, only meaningful when mode is "network" - see release_folder
-	// above). Any other key (e.g. a hand-written "comment" explaining the setup) is read and
-	// silently ignored. Malformed JSON, a non-object root, unrecognized mode values, or
-	// mode=network with an empty path all log a warning and fall back to Standalone rather
-	// than failing to start.
+	// "path" (verbatim string, only read when mode is "network" - the shared network root;
+	// "\db" and "\release" are appended under it to get network_folder/release_folder), and
+	// "release_path" (verbatim string, optional, only meaningful when mode is "network" -
+	// overrides the "path" + "\release" default, see release_folder above). Any other key
+	// (e.g. a hand-written "comment" explaining the setup) is read and silently ignored.
+	// Malformed JSON, a non-object root, unrecognized mode values, or mode=network with an
+	// empty path all log a warning and fall back to Standalone rather than failing to start.
 	static DbLocationSettings Parse(std::istream& in);
 };

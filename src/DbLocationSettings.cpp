@@ -25,13 +25,14 @@ DbLocationSettings DbLocationSettings::Parse(std::istream& in) {
 	}
 	bool mode_seen = false;
 	String mode_value;
+	String root_path_value;
 	String release_path_value;
 	if (j.contains("mode") && j["mode"].is_string()) {
 		mode_value = String(j["mode"].get<std::string>()).Lower();
 		mode_seen = true;
 	}
 	if (j.contains("path") && j["path"].is_string()) {
-		settings.network_folder = j["path"].get<std::string>();
+		root_path_value = j["path"].get<std::string>();
 	}
 	if (j.contains("release_path") && j["release_path"].is_string()) {
 		release_path_value = j["release_path"].get<std::string>();
@@ -45,12 +46,13 @@ DbLocationSettings DbLocationSettings::Parse(std::istream& in) {
 			LogWarn() << "location.json: unrecognized mode '" << mode_value.utf8_str() << "' - defaulting to standalone";
 		}
 	}
-	if (settings.mode == DbLocationMode::Network && settings.network_folder.empty()) {
+	if (settings.mode == DbLocationMode::Network && root_path_value.empty()) {
 		LogWarn() << "location.json: mode=network but no path set - defaulting to standalone";
 		settings.mode = DbLocationMode::Standalone;
 	}
 	if (settings.mode == DbLocationMode::Network) {
-		settings.release_folder = !release_path_value.empty() ? release_path_value : JoinPath(settings.network_folder, "release");
+		settings.network_folder = JoinPath(root_path_value, "db");
+		settings.release_folder = !release_path_value.empty() ? release_path_value : JoinPath(root_path_value, "release");
 	}
 	return settings;
 }

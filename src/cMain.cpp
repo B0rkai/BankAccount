@@ -665,7 +665,7 @@ void cMain::DoLoad() {
 			// there non-functional until the user fixes connectivity and restarts.
 			wxMessageBox(
 				"Cannot reach the configured network database location '" + settings.network_folder +
-				"' (see db\\location.cfg). Check connectivity/the share and restart the application.",
+				"' (see db\\location.json). Check connectivity/the share and restart the application.",
 				"Network database unreachable", wxICON_ERROR | wxOK);
 			m_status_bar->SetStatusText("ERROR: network database location unreachable");
 			LogError() << "Network database location unreachable: " << settings.network_folder.utf8_str();

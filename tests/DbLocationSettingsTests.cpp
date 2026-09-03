@@ -18,14 +18,14 @@ TEST(DbLocationSettingsTest, ExplicitStandaloneModeIgnoresAnyPath) {
 }
 
 TEST(DbLocationSettingsTest, NetworkModeWithPathIsRecognized) {
-    std::istringstream in(R"({"mode":"network","path":"\\\\server\\share\\db"})");
+    std::istringstream in(R"({"mode":"network","path":"\\\\server\\share"})");
     DbLocationSettings settings = DbLocationSettings::Parse(in);
     EXPECT_TRUE(settings.mode == DbLocationMode::Network);
     EXPECT_EQ(settings.network_folder, "\\\\server\\share\\db");
 }
 
 TEST(DbLocationSettingsTest, ModeAndValueComparisonIsCaseInsensitive) {
-    std::istringstream in(R"({"mode":"Network","path":"\\\\server\\share\\db"})");
+    std::istringstream in(R"({"mode":"Network","path":"\\\\server\\share"})");
     DbLocationSettings settings = DbLocationSettings::Parse(in);
     EXPECT_TRUE(settings.mode == DbLocationMode::Network);
     EXPECT_EQ(settings.network_folder, "\\\\server\\share\\db");
@@ -44,7 +44,7 @@ TEST(DbLocationSettingsTest, NetworkModeWithoutPathFallsBackToStandalone) {
 }
 
 TEST(DbLocationSettingsTest, UnrecognizedKeysIncludingCommentAreIgnored) {
-    std::istringstream in(R"({"comment":"network db - see CLAUDE.md","mode":"network","path":"\\\\server\\share\\db"})");
+    std::istringstream in(R"({"comment":"network db - see CLAUDE.md","mode":"network","path":"\\\\server\\share"})");
     DbLocationSettings settings = DbLocationSettings::Parse(in);
     EXPECT_TRUE(settings.mode == DbLocationMode::Network);
     EXPECT_EQ(settings.network_folder, "\\\\server\\share\\db");
@@ -63,14 +63,14 @@ TEST(DbLocationSettingsTest, NonObjectRootFallsBackToStandalone) {
     EXPECT_TRUE(settings.mode == DbLocationMode::Standalone);
 }
 
-TEST(DbLocationSettingsTest, ReleaseFolderDefaultsToNetworkFolderPlusRelease) {
-    std::istringstream in(R"({"mode":"network","path":"\\\\server\\share\\db"})");
+TEST(DbLocationSettingsTest, ReleaseFolderDefaultsToPathPlusRelease) {
+    std::istringstream in(R"({"mode":"network","path":"\\\\server\\share"})");
     DbLocationSettings settings = DbLocationSettings::Parse(in);
-    EXPECT_EQ(settings.release_folder, "\\\\server\\share\\db\\release");
+    EXPECT_EQ(settings.release_folder, "\\\\server\\share\\release");
 }
 
 TEST(DbLocationSettingsTest, ExplicitReleasePathOverridesTheDefault) {
-    std::istringstream in(R"({"mode":"network","path":"\\\\server\\share\\db","release_path":"\\\\server\\share\\other-release"})");
+    std::istringstream in(R"({"mode":"network","path":"\\\\server\\share","release_path":"\\\\server\\share\\other-release"})");
     DbLocationSettings settings = DbLocationSettings::Parse(in);
     EXPECT_EQ(settings.release_folder, "\\\\server\\share\\other-release");
 }

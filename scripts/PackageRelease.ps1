@@ -18,9 +18,9 @@
 
 .PARAMETER ReleaseFolder
     The network folder to publish into (e.g. \\server\bankaccount\release) - matches
-    DbLocationSettings::release_folder on the client (db\location.cfg's release_path=, or
-    <path>\release by default). Required - no default, so this can never run against an
-    unintended target by muscle memory.
+    DbLocationSettings::release_folder on the client (db\location.json's "path" + "\release" by
+    default, or its "release_path" override). Required - no default, so this can never run
+    against an unintended target by muscle memory.
 
 .PARAMETER Configuration
     Build configuration to publish. Defaults to Release.
