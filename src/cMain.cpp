@@ -1442,19 +1442,23 @@ void cMain::InitMenu() {
 	wxMenu* querymenu = new wxMenu();
 	wxMenu* periodsmenu = new wxMenu();
 	wxMenu* viewmenu = new wxMenu();
-	wxMenu* testmenu = new wxMenu();
 	wxMenu* helpmenu = new wxMenu();
 	m_menu_bar->Append(dbmenu, "Database");
 	m_menu_bar->Append(querymenu, "Query");
 	m_menu_bar->Append(periodsmenu, "Periods");
 	m_menu_bar->Append(viewmenu, "View");
+#ifdef _DEBUG
+	wxMenu* testmenu = new wxMenu();
 	m_menu_bar->Append(testmenu, "Test");
+#endif
 	m_menu_bar->Append(helpmenu, "Help");
 	m_discard_changes_menu_item = dbmenu->Append(MENU_LOAD, "Discard changes");
 	dbmenu->Append(MENU_IMPORT, "Import from file");
 	dbmenu->Append(MENU_SAVE, "Save file");
+#ifdef _DEBUG
 	dbmenu->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
 	dbmenu->Append(MENU_EXTRACT, "Extract save file");
+#endif
 	dbmenu->Append(MENU_UPDATE_EXCHANGE_RATES, "Update Exchange Rates");
 	querymenu->Append(MENU_LIST_ACCOUNTS, "List Accounts");
 	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
@@ -1495,11 +1499,11 @@ void cMain::InitMenu() {
 	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_4, std::to_string(year - 5));
 
 	viewmenu->Append(MENU_VIEW_LOG, "Show Log Viewer");
+#ifdef _DEBUG
 	testmenu->Append(MENU_TEST_MANUAL_RESOLVER, "ManualResolverDialog");
 	testmenu->Append(MENU_TEST_NEW_ACCOUNT, "NewAccountDetailsDialog");
 	testmenu->Append(MENU_TEST_PERIODIC_QUERY, "Periodic Query");
 	testmenu->Append(MENU_TEST_EUR_RATES, "List EUR Exchange Rates");
-#ifdef _DEBUG
 	testmenu->AppendSeparator();
 	testmenu->Append(MENU_REPLAY_JOURNAL, "Replay Recovery Journal (TEST)");
 #endif
