@@ -51,8 +51,8 @@ struct FavoriteQueryDef {
     bool exclude_clients = false, exclude_categories = false, exclude_types = false;
     // date range: either explicit or a named relative shortcut reusing the Periods menu's logic
     enum class DateMode { NONE, ABSOLUTE, RELATIVE } date_mode = DateMode::NONE;
-    ExcelDate date_from, date_to;      // ABSOLUTE
-    String relative_period;            // RELATIVE, e.g. "this_month", "last_30_days"
+    ExcelDate date_from, date_to;      // ABSOLUTE or RELATIVE dates e.g. "today", "end_of_last_month"
+    String relative_period;            // RELATIVE periods, e.g. "this_month", "last_30_days"
     std::vector<String> aggregate_by;  // subset of {"category","client","type","account"}, empty = plain list
     String period;                // "none"|"yearly"|"half_yearly"|"quarterly"|"monthly"|"daily"
     bool show_list = true;

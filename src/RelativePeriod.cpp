@@ -74,6 +74,13 @@ DateRange ResolveRelativePeriod(const String& keyword, const wxDateTime& today) 
 		}
 		from = FirstDayOfMonth(start_month0, start_year);
 		to = LastDayOfMonth(month0, year);
+	} else if (keyword.StartsWith("last_") && keyword.EndsWith("_whole_years") && keyword.Length() > 17) {
+		unsigned long years = 0;
+		if (!keyword.Mid(5, keyword.Length() - 17).ToULong(&years) || (years == 0)) {
+			return DateRange{};
+		}
+		from = FirstDayOfMonth(0, year - years);
+		to = LastDayOfMonth(11, year-1);
 	} else {
 		return DateRange{};
 	}
@@ -83,4 +90,43 @@ DateRange ResolveRelativePeriod(const String& keyword, const wxDateTime& today) 
 	range.to = ToExcelDate(to);
 	range.valid = true;
 	return range;
+}
+
+bool ResolveRelativeDate(const String& keyword, const wxDateTime& today, uint16_t& excel_date) {
+	const int year = today.GetYear();
+	const int month0 = today.GetMonth(); // wxDateTime::Month is 0-based (Jan == 0)
+	if (keyword == "today") {
+		excel_date = ToExcelDate(today);
+	} else if (keyword == "start_of_this_month") {
+		excel_date = ToExcelDate(FirstDayOfMonth(month0, year));
+	} else if (keyword == "start_of_this_quarter") {
+		excel_date = ToExcelDate(FirstDayOfMonth(month0 - (month0 % 3), year));
+	} else if (keyword == "start_of_this_half") {
+		excel_date = ToExcelDate(FirstDayOfMonth(month0 - (month0 % 6), year));
+	} else if (keyword == "start_of_this_year") {
+		excel_date = ToExcelDate(FirstDayOfMonth(0, year));
+	} else if (keyword == "end_of_last_month") {
+		if (month0 == 0) {
+			excel_date = ToExcelDate(LastDayOfMonth(11, year - 1));
+		} else {
+			excel_date = ToExcelDate(LastDayOfMonth(month0-1, year));
+		}
+	} else if (keyword == "end_of_last_quarter") {
+		if (month0 < 3) {
+			excel_date = ToExcelDate(LastDayOfMonth(11, year - 1));
+		} else {
+			excel_date = ToExcelDate(LastDayOfMonth(month0 - (month0 % 3) - 1, year));
+		}
+	} else if (keyword == "end_of_last_half") {
+		if (month0 < 6) {
+			excel_date = ToExcelDate(LastDayOfMonth(11, year - 1));
+		} else {
+			excel_date = ToExcelDate(LastDayOfMonth(5, year));
+		}
+	} else if (keyword == "end_of_last_year") {
+		excel_date = ToExcelDate(LastDayOfMonth(11, year - 1));
+	} else {
+		return false;
+	}
+	return true;
 }

@@ -95,15 +95,18 @@ TEST(ParseFavoriteQueriesTest, DateFromToSetsFixedRangeDateMode) {
     auto favorites = ParseFavoriteQueries(in);
     ASSERT_EQ(favorites.size(), 1u);
     EXPECT_TRUE(favorites[0].date_mode == FavoriteQueryDef::DateMode::FIXED_RANGE);
-    EXPECT_EQ(favorites[0].date_from, (uint16_t)DMYToExcelSerialDate(1, 1, 2026));
-    EXPECT_EQ(favorites[0].date_to, (uint16_t)DMYToExcelSerialDate(31, 3, 2026));
+    EXPECT_EQ(favorites[0].date_from, "2026-01-01");
+    EXPECT_EQ(favorites[0].date_to, "2026-03-31");
 }
 
-TEST(ParseFavoriteQueriesTest, UnparseableDateFromToLeavesDateModeAtNoFilter) {
+TEST(ParseFavoriteQueriesTest, UnparseableDateFromToStillSetsFixedRangeDateMode) {
+    // Parsing only checks that both keys are present and are JSON strings - it doesn't validate
+    // the date shape itself, that's deferred to BuildQueryFromFavorite (see
+    // UnparseableDateFromToDropsDateFilter below).
     std::istringstream in(R"([{"name":"Bad dates","date_from":"not-a-date","date_to":"2026-03-31"}])");
     auto favorites = ParseFavoriteQueries(in);
     ASSERT_EQ(favorites.size(), 1u);
-    EXPECT_TRUE(favorites[0].date_mode == FavoriteQueryDef::DateMode::NO_FILTER);
+    EXPECT_TRUE(favorites[0].date_mode == FavoriteQueryDef::DateMode::FIXED_RANGE);
 }
 
 TEST(ParseFavoriteQueriesTest, NoDateKeysLeavesDateModeAtNoFilter) {
@@ -217,13 +220,28 @@ TEST(BuildQueryFromFavoriteTest, FixedRangeDateModeAddsADatumElement) {
     FavoriteQueryDef def;
     def.name = "Fixed range";
     def.date_mode = FavoriteQueryDef::DateMode::FIXED_RANGE;
-    def.date_from = (uint16_t)DMYToExcelSerialDate(1, 1, 2026);
-    def.date_to = (uint16_t)DMYToExcelSerialDate(31, 1, 2026);
+    def.date_from = "2026-01-01";
+    def.date_to = "2026-01-31";
     Query q;
     BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
     std::vector<QueryTopic> topics = Topics(q);
     ASSERT_EQ(topics.size(), 3u); // account, datum, currency fallback
     EXPECT_EQ(topics[1], QueryTopic::DATUM);
+}
+
+TEST(BuildQueryFromFavoriteTest, UnparseableDateFromToDropsDateFilter) {
+    FavoriteQueryDef def;
+    def.name = "Bad dates";
+    def.date_mode = FavoriteQueryDef::DateMode::FIXED_RANGE;
+    def.date_from = "not-a-date";
+    def.date_to = "2026-03-31";
+    Query q;
+    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    std::vector<QueryTopic> topics = Topics(q);
+    ASSERT_EQ(topics.size(), 2u); // account, currency fallback - no datum
+    for (QueryTopic t : topics) {
+        EXPECT_NE(t, QueryTopic::DATUM);
+    }
 }
 
 TEST(BuildQueryFromFavoriteTest, ValidRelativePeriodAddsADatumElement) {

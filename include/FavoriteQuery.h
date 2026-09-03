@@ -24,8 +24,8 @@ struct FavoriteQueryDef {
 	// up included on the GUI side (anything that includes <windows.h>).
 	enum class DateMode { NO_FILTER, FIXED_RANGE, RELATIVE_KEYWORD };
 	DateMode date_mode = DateMode::NO_FILTER;
-	uint16_t date_from = 0; // Excel serial date - FIXED_RANGE only
-	uint16_t date_to = 0;   // Excel serial date - FIXED_RANGE only
+	String date_from; // ISO date format YYYY-MM-DD or relative keywords e.g. "today", "end_of_last_month etc
+	String date_to;   // ISO date format YYYY-MM-DD or relative keywords e.g. "today", "end_of_last_month etc
 	String relative_period; // e.g. "this_month" - RELATIVE_KEYWORD only, see RelativePeriod.h
 
 	std::vector<String> aggregate_by; // subset of "category"/"client"/"type"/"account", empty = plain list

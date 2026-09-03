@@ -81,17 +81,10 @@ namespace {
 		if (!relative_period.empty()) {
 			def.date_mode = FavoriteQueryDef::DateMode::RELATIVE_KEYWORD;
 			def.relative_period = relative_period;
-		} else if (j.contains("date_from") && j.contains("date_to")
-				&& j["date_from"].is_string() && j["date_to"].is_string()) {
-			uint16_t from = ParseIsoDate(j["date_from"].get<std::string>());
-			uint16_t to = ParseIsoDate(j["date_to"].get<std::string>());
-			if ((from != 0) && (to != 0)) {
-				def.date_mode = FavoriteQueryDef::DateMode::FIXED_RANGE;
-				def.date_from = from;
-				def.date_to = to;
-			} else {
-				LogWarn() << "favorite_queries.json: \"" << name.utf8_str() << "\" has an unparseable date_from/date_to - ignoring the date filter";
-			}
+		} else if (j.contains("date_from") && j.contains("date_to") && j["date_from"].is_string() && j["date_to"].is_string()) {
+			def.date_mode = FavoriteQueryDef::DateMode::FIXED_RANGE;
+			def.date_from = j["date_from"].get<std::string>();
+			def.date_to = j["date_to"].get<std::string>();
 		}
 
 		if (j.contains("chart") && j["chart"].is_object()) {
@@ -222,10 +215,16 @@ void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const wxD
 	query.SetReturnList(def.show_list);
 
 	if (def.date_mode == FavoriteQueryDef::DateMode::FIXED_RANGE) {
-		QueryDate* qdate = new QueryDate;
-		qdate->SetMin(def.date_from);
-		qdate->SetMax(def.date_to);
-		query.push_back((QueryElement*)qdate);
+		uint16_t from = ParseIsoDate(def.date_from.ToStdString());
+		uint16_t to = ParseIsoDate(def.date_to.ToStdString());
+		if ((from != 0 || ResolveRelativeDate(def.date_from, today, from)) && (to != 0 || ResolveRelativeDate(def.date_to, today, to))) {
+			QueryDate* qdate = new QueryDate;
+			qdate->SetMin(from);
+			qdate->SetMax(to);
+			query.push_back((QueryElement*)qdate);
+		} else {
+			LogWarn() << "favorite_queries.json: \"" << def.name.utf8_str() << "\" has an unparseable date_from/date_to \"" << def.date_from.utf8_str() << " - " << def.date_to.utf8_str() << "\" - ignoring the date filter";
+		}
 	} else if (def.date_mode == FavoriteQueryDef::DateMode::RELATIVE_KEYWORD) {
 		DateRange range = ResolveRelativePeriod(def.relative_period, today);
 		if (range.valid) {
