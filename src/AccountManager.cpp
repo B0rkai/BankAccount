@@ -124,18 +124,31 @@ String AccountManager::GetClientName(const Id id) const {
 
 StringTable AccountManager::List() const {
 	StringTable table;
-	table.push_back({"ID", "Status", "Account name", "Currency", "Bank name", "First entry", "Last entry", "Entries", "Categorized", "Account number"});
-	table.insert_meta({StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED});
+	table.push_back({"ID", "State", "Account name", "Currency", "Bank name", "First entry", "Last entry", "Status", "Entries", "Categorized", "Account number"});
+	table.insert_meta({StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED});
 	size_t id = 0;
 	for (const Account* acc : m_accounts) {
 		StringVector& row = table.emplace_back();
 		row.push_back(std::to_string(id++));
-		row.push_back(acc->Status() ? "Open" : "Closed");
+		row.push_back(acc->IsOpen() ? "Open" : "Closed");
 		row.push_back(acc->GetName());
 		row.push_back(acc->GetCurrency()->GetName());
 		row.push_back(acc->GetGroupName());
-		row.push_back(acc->GetFirstRecord() ? GetDateFormat(acc->GetFirstRecord()->GetDate()) : cStringEmpty);
-		row.push_back(acc->GetFirstRecord() ? GetDateFormat(acc->GetLastRecord()->GetDate()) : cStringEmpty);
+		row.push_back(acc->GetFirstRecord() ? DateAsString(acc->GetFirstRecord()->GetDate()) : cStringEmpty);
+		uint16_t last_entry = acc->GetFirstRecord() ? acc->GetLastRecord()->GetDate() : 0;
+		row.push_back(last_entry ? DateAsString(last_entry) : cStringEmpty);
+		String status = "Update needed";
+		if (acc->IsOpen()) {
+			if (last_entry) {
+				uint16_t days_passed_since_last_record = GetToday()->GetInExcelFormat() - last_entry;
+				if (days_passed_since_last_record <= 30) {
+					status = "Up to date";
+				}
+			}
+		} else {
+			status = cStringEmpty;
+		}
+		row.push_back(status);
 		row.push_back(std::to_string(acc->Size()));
 		{ // categorization
 			Query q;
@@ -261,7 +274,7 @@ String AccountManager::GetLastRecordDate() const {
 			max = tr->GetDate();
 		}
 	}
-	return GetDateFormat(max);
+	return DateAsString(max);
 }
 
 StringTable AccountManager::GetSummary(const QueryTopic topic) {
@@ -703,7 +716,7 @@ IdSet AccountManager::SearchIdsSuggested(const QueryTopic topic, const String& n
 static String PrepareTransactionDetails(const RawTransactionData& data, const String& resolved_client = cStringEmpty) {
 	String details;
 	details.append(std::to_string(RawTransactionData::index)).append("/").append(std::to_string(RawTransactionData::size)).append(cDIVIDER);
-	details.append(GetDateFormat(data.date)).append(cDIVIDER);
+	details.append(DateAsString(data.date)).append(cDIVIDER);
 	details.append(data.type).append(cDIVIDER);
 	details.append(data.amount.PrettyPrint()).append(cDIVIDER);
 	details.append(data.client);
@@ -752,7 +765,7 @@ Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTo
 void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionData& data, IManualResolve* resolve_if) {
 	// Type
 	StringVector tr_data;
-	tr_data.push_back(GetDateFormat(data.date));
+	tr_data.push_back(DateAsString(data.date));
 	tr_data.push_back(data.type);
 	tr_data.push_back(data.amount.PrettyPrint());
 	Id ttype = ProcessOneTopic(data, QueryTopic::TYPE, data.type, resolve_if);
@@ -791,7 +804,7 @@ AccountManager::ImportResult AccountManager::Import(const String& filename, IMan
 	Account* acc = m_accounts[account_id];
 	if (acc->Size()) {
 		if (acc->GetLastRecord()->GetDate() < import_data.data.front().date) {
-			m_logger.LogError() << "Cannot Import data if it is not overlapping at least one day with stored data (" << GetDateFormat(acc->GetLastRecord()->GetDate()) << ")";
+			m_logger.LogError() << "Cannot Import data if it is not overlapping at least one day with stored data (" << DateAsString(acc->GetLastRecord()->GetDate()) << ")";
 			return {};
 		}
 	}
@@ -880,7 +893,7 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 			acc->MakeQuery(query, changed);
 		}
 	} catch (...) {
-		m_logger.LogWarn() << "User aboted WQuery execution";
+		m_logger.LogWarn() << "User aborted WQuery execution";
 	}
 	if (changed) {
 		Modified();

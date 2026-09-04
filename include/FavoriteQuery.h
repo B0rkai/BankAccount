@@ -2,7 +2,6 @@
 #include <istream>
 #include <vector>
 #include "CommonTypes.h"
-#include "wx/datetime.h"
 
 class Query;
 
@@ -58,7 +57,9 @@ std::vector<FavoriteQueryDef> LoadFavoriteQueries();
 // is skipped too (a favorite with no label can't be shown in a menu).
 std::vector<FavoriteQueryDef> ParseFavoriteQueries(std::istream& in);
 
-// Builds a Query from `def`, mirroring cMain::PrepareQuery's UI-driven construction. `today`
-// resolves DateMode::RELATIVE_KEYWORD (see RelativePeriod.h) - a parameter rather than
-// wxDateTime::Today() read internally, so callers (and tests) control it explicitly.
-void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const wxDateTime& today, const wxArrayInt& enabled_accounts);
+// Builds a Query from `def`, mirroring cMain::PrepareQuery's UI-driven construction.
+// DateMode::RELATIVE_KEYWORD is resolved against GetToday() (CommonTypes.h) - a test wanting a
+// fixed "today" sets one via SetToday() first. `enabled_accounts` is the UI checklist's checked
+// account ids, converted from wxArrayInt to plain std::vector<int> at the cMain boundary so this
+// wx-GUI-free header doesn't need a wx array type just to pass ids through.
+void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std::vector<int>& enabled_accounts);

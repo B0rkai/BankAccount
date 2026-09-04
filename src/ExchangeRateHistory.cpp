@@ -76,7 +76,7 @@ StringTable ExchangeRateHistory::GetTable(CurrencyType type) const {
 		return table;
 	}
 	for (const auto& pair : m_rates[type]) {
-		table.push_back({GetDateFormat(pair.first), String::Format("%.4f", pair.second * 100.)});
+		table.push_back({DateAsString(pair.first), String::Format("%.4f", pair.second * 100.)});
 	}
 	return table;
 }

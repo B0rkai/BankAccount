@@ -143,14 +143,14 @@ void Account::StreamOut(std::ostream& out) const {
 	StreamString(out, m_acc_number->GetString());
 	out << COMMA;
 	StreamString(out, GetName());
-	out << COMMA << m_curr->GetShortName() << COMMA << m_status << COMMA << m_transactions.size() << ENDL;
+	out << COMMA << m_curr->GetShortName() << COMMA << m_open << COMMA << m_transactions.size() << ENDL;
 	for (const auto& tr : m_transactions) {
 		tr.Stream(out);
 	}
 }
 
 void Account::StreamIn(std::istream& in) {
-	in >> m_status;
+	in >> m_open;
 	DumpChar(in); // dump comma
 	int size;
 	in >> size;

@@ -168,7 +168,7 @@ namespace {
 	}
 }
 
-void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const wxDateTime& today, const wxArrayInt& enabled_accounts) {
+void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std::vector<int>& enabled_accounts) {
 	QueryAccount* qa = new QueryAccount;
 	if (def.accounts.empty()) {
 		for (const int id : enabled_accounts) {
@@ -217,7 +217,7 @@ void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const wxD
 	if (def.date_mode == FavoriteQueryDef::DateMode::FIXED_RANGE) {
 		uint16_t from = ParseIsoDate(def.date_from.ToStdString());
 		uint16_t to = ParseIsoDate(def.date_to.ToStdString());
-		if ((from != 0 || ResolveRelativeDate(def.date_from, today, from)) && (to != 0 || ResolveRelativeDate(def.date_to, today, to))) {
+		if ((from != 0 || ResolveRelativeDate(def.date_from, from)) && (to != 0 || ResolveRelativeDate(def.date_to, to))) {
 			QueryDate* qdate = new QueryDate;
 			qdate->SetMin(from);
 			qdate->SetMax(to);
@@ -226,7 +226,7 @@ void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const wxD
 			LogWarn() << "favorite_queries.json: \"" << def.name.utf8_str() << "\" has an unparseable date_from/date_to \"" << def.date_from.utf8_str() << " - " << def.date_to.utf8_str() << "\" - ignoring the date filter";
 		}
 	} else if (def.date_mode == FavoriteQueryDef::DateMode::RELATIVE_KEYWORD) {
-		DateRange range = ResolveRelativePeriod(def.relative_period, today);
+		DateRange range = ResolveRelativePeriod(def.relative_period);
 		if (range.valid) {
 			QueryDate* qdate = new QueryDate;
 			qdate->SetMin(range.from);

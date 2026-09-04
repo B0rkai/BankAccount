@@ -122,15 +122,18 @@ gets factored out into `cMain::RunAndRenderQuery(Query& q)`, called by both
 
 `PeriodShortcutSelected`'s range math (`MonthSpanRange` and the this/last month/quarter/half/year
 switch) moves to a standalone, UI-free function — e.g.
-`ResolveRelativePeriod(const String& keyword, wxDateTime today) -> {from, to}` — reusable by both
-the existing Periods menu and `BuildQueryFromFavorite`'s `RELATIVE` date mode. Extend the keyword
-set with a couple of rolling-window options the Periods menu doesn't have but the mobile snapshot
-needs, e.g. `last_30_days`, `last_12_months`.
+`ResolveRelativePeriod(const String& keyword) -> {from, to}` — reusable by both the existing
+Periods menu and `BuildQueryFromFavorite`'s `RELATIVE` date mode. "Today" itself is read from
+`GetToday()` (`CommonTypes.h`) rather than passed in as a `wxDateTime` parameter — a global seam
+(a test installs a fake `Today` via `SetToday()` before calling in). Extend the keyword set with a
+couple of rolling-window options the Periods menu doesn't have but the mobile snapshot needs, e.g.
+`last_30_days`, `last_12_months`.
 
 ## Why this belongs in BankAccountCore, not cMain
 
 `FavoriteQueryDef`, the JSON parsing, `BuildQueryFromFavorite`, and `ResolveRelativePeriod` have
-no wx dependency — only the *menu wiring* (`InitMenu`, `FavoriteQuerySelected`) does. Keeping the
+no wx dependency beyond `String` itself (a `wxString` alias, used throughout Core) — only the
+*menu wiring* (`InitMenu`, `FavoriteQuerySelected`) needs actual wx GUI headers. Keeping the
 data/build/date-math layer in Core means the mobile-export feature (or a future headless
 export/CLI tool, if ever needed) can reuse the exact same favorite-query definitions and
 query-building code without linking wx at all — it only needs to run each favorite through

@@ -20,7 +20,7 @@ class WQuery;
 
 class Account : public IAccount, public NumberedType, public NamedType {
 	std::unique_ptr<const AccountNumber> m_acc_number;
-	bool m_status = true;
+	bool m_open = true;
 	Currency* m_curr;
 	std::vector<Transaction> m_transactions;
 	std::list<String> m_memos;
@@ -36,7 +36,7 @@ public:
 
 	inline String GetAccNumber() const { return m_acc_number->GetString(); }
 	bool CheckAccNumber(const String& other);
-	bool Status() const { return m_status; }
+	bool IsOpen() const { return m_open; }
 
 	bool PrepareImport(const uint16_t date);
 

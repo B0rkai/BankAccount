@@ -187,5 +187,16 @@ void ExcelSerialDateToDMY(int nSerialDate, int& nDay, int& nMonth, int& nYear);
 int DMYToExcelSerialDate(int nDay, int nMonth, int nYear);
 bool IsWeekend(uint16_t excelSerialDate); // MNB never publishes rates on Saturday/Sunday
 
-String GetDateFormat(const uint16_t date);
+String DateAsString(const uint16_t date);
 StringVector ParseMultiValueString(const String& val);
+
+class Today {
+public:
+	Today() = default;
+	virtual ~Today() = default;
+	virtual String GetAsString() = 0;
+	virtual uint16_t GetInExcelFormat() = 0;
+};
+
+Today* GetToday();
+void SetToday(Today* ptr);

@@ -24,7 +24,7 @@ TEST(AccountTest, StartsEmptyWithDefaultOpenStatus) {
     Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
 
     EXPECT_EQ(acc.Size(), 0u);
-    EXPECT_TRUE(acc.Status());
+    EXPECT_TRUE(acc.IsOpen());
     EXPECT_EQ(acc.GetName(), "Test Account");
 }
 

@@ -371,7 +371,7 @@ String QueryDate::GetStringResult() const {
 		return res; // not supported yet
 	case QueryAmount::RANGE:
 		res = "Date filter is set from ";
-		res.Append(GetDateFormat(m_min)).Append(" to ").Append(GetDateFormat(m_max)).Append(ENDL);
+		res.Append(DateAsString(m_min)).Append(" to ").Append(DateAsString(m_max)).Append(ENDL);
 		break;
 	default:
 		res = "QueryDate query is in invalid state";
@@ -437,7 +437,7 @@ bool QueryCount::CheckTransaction(const Transaction* tr) {
 String DateId2String(const TopicPeriodicSubQuery::Mode mode, int id) {
 	switch (mode) {
 	case TopicPeriodicSubQuery::DAILY:
-		return GetDateFormat(id);
+		return DateAsString(id);
 		break;
 	case TopicPeriodicSubQuery::MONTHLY:
 		return String::Format("%d-%02d", id / 12, id % 12 + 1);

@@ -94,7 +94,7 @@ TEST(ExcelDateTest, DmyToSerialAndBackRoundTrips) {
 
 TEST(ExcelDateTest, GetDateFormatIsZeroPaddedYyyyMmDd) {
     int serial = DMYToExcelSerialDate(6, 1, 2024);
-    EXPECT_EQ(GetDateFormat((uint16_t)serial), "2024.01.06");
+    EXPECT_EQ(DateAsString((uint16_t)serial), "2024.01.06");
 }
 
 TEST(ExcelDateTest, IsWeekendMatchesKnownCalendarDates) {

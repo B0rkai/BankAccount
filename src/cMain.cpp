@@ -192,8 +192,19 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_CTX_MERGE_SELECTED, OnMergeSelectedFromContextMenu)
 wxEND_EVENT_TABLE()
 
+class wxToday : public Today {
+	virtual String GetAsString() override {
+		return DateAsString(GetInExcelFormat());
+	}
+	virtual uint16_t GetInExcelFormat() override {
+		const wxDateTime d = wxDateTime::Today();
+		return (uint16_t)DMYToExcelSerialDate(d.GetDay(), d.GetMonth() + 1, d.GetYear());
+	}
+};
+
 cMain::cMain()
 : wxFrame(nullptr, wxID_ANY, AppTitle(), wxPoint(100, 100), wxSize(1126, 730)) {
+	SetToday(new wxToday);
 	SetMinSize(wxSize(1126, 430));
 	InitMenu();
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -255,6 +266,7 @@ cMain::~cMain() {
 	// the session-long lock on it as the very last step.
 	Journal::Reset();
 	Journal::Close();
+	SetToday(nullptr);
 }
 
 void cMain::Init() {
@@ -476,8 +488,8 @@ static wxDateTime ExcelDateToWx(uint16_t excel_date) {
 
 void cMain::PeriodShortcutSelected(wxCommandEvent& evt) {
 	evt.Skip();
-	const wxDateTime today = wxDateTime::Today();
-	const int year = today.GetYear();
+	int today_day, today_month, year;
+	ExcelSerialDateToDMY(GetToday()->GetInExcelFormat(), today_day, today_month, year);
 	wxDateTime from, to;
 	String keyword;
 	switch (evt.GetId()) {
@@ -505,7 +517,7 @@ void cMain::PeriodShortcutSelected(wxCommandEvent& evt) {
 		return;
 	}
 	if (!keyword.empty()) {
-		DateRange range = ResolveRelativePeriod(keyword, today);
+		DateRange range = ResolveRelativePeriod(keyword);
 		if (!range.valid) {
 			return;
 		}
@@ -686,6 +698,7 @@ void cMain::DoLoad() {
 	}
 	UpdateAccFilter();
 	UpdateStatusBar();
+	UIOutputEntityTable(m_bank_file->GetSummary(QueryTopic::ACCOUNT), QueryTopic::ACCOUNT);
 	OfferJournalRecoveryIfPending();
 }
 
@@ -1492,7 +1505,8 @@ void cMain::InitMenu() {
 	periodsmenu->AppendSeparator();
 	periodsmenu->Append(MENU_PERIOD_THIS_YEAR, "This Year");
 	periodsmenu->Append(MENU_PERIOD_LAST_YEAR, "Last Year");
-	const int year = wxDateTime::Today().GetYear();
+	int today_day, today_month, year;
+	ExcelSerialDateToDMY(GetToday()->GetInExcelFormat(), today_day, today_month, year);
 	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_1, std::to_string(year - 2));
 	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_2, std::to_string(year - 3));
 	periodsmenu->Append(MENU_PERIOD_EARLIER_YEAR_3, std::to_string(year - 4));
@@ -1693,9 +1707,10 @@ void cMain::FavoriteQuerySelected(wxCommandEvent& evt) {
 	m_preferred_chart_side = def.chart_side;
 	m_preferred_chart_kind = def.chart_kind;
 	Query q;
-	wxArrayInt enabled_accounts;
-	m_ctrl_grp_basic_filter.m_acc_chklb->GetCheckedItems(enabled_accounts);
-	BuildQueryFromFavorite(def, q, wxDateTime::Today(), enabled_accounts);
+	wxArrayInt checked_accounts;
+	m_ctrl_grp_basic_filter.m_acc_chklb->GetCheckedItems(checked_accounts);
+	std::vector<int> enabled_accounts(checked_accounts.begin(), checked_accounts.end());
+	BuildQueryFromFavorite(def, q, enabled_accounts);
 	RunAndRenderQuery(q);
 }
 

@@ -12,7 +12,7 @@ Transaction::Transaction(IAccount* parent, const Money amount, const uint16_t da
 StringVector Transaction::PrintDebug(const IIdResolve* resif) const {
     StringVector res;
     res.push_back(m_parent->GetAccName());
-    res.push_back(GetDateFormat(m_date));
+    res.push_back(DateAsString(m_date));
     res.push_back(resif->GetTransactionType(m_type_id));
     res.push_back(m_amount.PrettyPrint());
     res.push_back(resif->GetClientName(m_client_id));

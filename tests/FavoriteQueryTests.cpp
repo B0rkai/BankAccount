@@ -1,9 +1,26 @@
 #include "gtest/gtest.h"
 #include "FavoriteQuery.h"
 #include "Query.h"
+#include "CommonTypes.h"
 #include <sstream>
 
 namespace {
+
+// GetToday() (CommonTypes.h) is a global seam - BuildQueryFromFavorite() now reads it internally
+// (via RelativePeriod.h) instead of taking a today parameter, so a test wanting a fixed "today"
+// installs a FakeToday first.
+class FakeToday : public Today {
+public:
+    explicit FakeToday(uint16_t excel_date) : m_date(excel_date) {}
+    virtual String GetAsString() override { return DateAsString(m_date); }
+    virtual uint16_t GetInExcelFormat() override { return m_date; }
+private:
+    uint16_t m_date;
+};
+
+void UseToday(int day, int month, int year) {
+    SetToday(new FakeToday((uint16_t)DMYToExcelSerialDate(day, month, year)));
+}
 
 std::vector<QueryTopic> Topics(Query& q) {
     std::vector<QueryTopic> result;
@@ -137,7 +154,8 @@ TEST(BuildQueryFromFavoriteTest, PlainDefaultProducesAccountFilterAndCurrencyFal
     FavoriteQueryDef def;
     def.name = "Plain";
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     std::vector<QueryTopic> topics = Topics(q);
     ASSERT_EQ(topics.size(), 2u);
     EXPECT_EQ(topics[0], QueryTopic::ACCOUNT);
@@ -152,10 +170,9 @@ TEST(BuildQueryFromFavoriteTest, EmptyAccountsFallsBackToEnabledAccounts) {
     FavoriteQueryDef def;
     def.name = "No accounts specified";
     Query q;
-    wxArrayInt enabled;
-    enabled.Add(2);
-    enabled.Add(5);
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), enabled);
+    std::vector<int> enabled = { 2, 5 };
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, enabled);
     QueryElement* account_element = *q.begin();
     ASSERT_EQ(account_element->GetTopic(), QueryTopic::ACCOUNT);
     EXPECT_EQ(account_element->GetIds().size(), 2u);
@@ -168,9 +185,9 @@ TEST(BuildQueryFromFavoriteTest, ExplicitAccountsIgnoresEnabledAccounts) {
     def.name = "Explicit account";
     def.accounts = { "Checking" };
     Query q;
-    wxArrayInt enabled;
-    enabled.Add(2);
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), enabled);
+    std::vector<int> enabled = { 2 };
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, enabled);
     QueryElement* account_element = *q.begin();
     ASSERT_EQ(account_element->GetTopic(), QueryTopic::ACCOUNT);
     // Name-based filters resolve to ids later (via PreResolve(), needs a live INameResolve) -
@@ -183,7 +200,8 @@ TEST(BuildQueryFromFavoriteTest, ShowListFalseMakesReturnListFalse) {
     def.name = "Aggregate only";
     def.show_list = false;
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     EXPECT_FALSE(q.ReturnList());
 }
 
@@ -193,7 +211,8 @@ TEST(BuildQueryFromFavoriteTest, CategoryFilterAndAggregateByAddCategoryTopicEle
     def.categories = { "Groceries" };
     def.aggregate_by = { "category" };
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     std::vector<QueryTopic> topics = Topics(q);
     // account filter, category filter, category sum - no CURRENCY fallback since aggregate_by
     // wasn't empty.
@@ -209,7 +228,8 @@ TEST(BuildQueryFromFavoriteTest, PeriodSwitchesAggregationToPeriodicQuery) {
     def.aggregate_by = { "category" };
     def.period = "monthly";
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     std::vector<QueryTopic> topics = Topics(q);
     ASSERT_EQ(topics.size(), 2u); // account filter + the periodic category query, no separate filter this time
     EXPECT_EQ(topics[0], QueryTopic::ACCOUNT);
@@ -223,7 +243,8 @@ TEST(BuildQueryFromFavoriteTest, FixedRangeDateModeAddsADatumElement) {
     def.date_from = "2026-01-01";
     def.date_to = "2026-01-31";
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     std::vector<QueryTopic> topics = Topics(q);
     ASSERT_EQ(topics.size(), 3u); // account, datum, currency fallback
     EXPECT_EQ(topics[1], QueryTopic::DATUM);
@@ -236,7 +257,8 @@ TEST(BuildQueryFromFavoriteTest, UnparseableDateFromToDropsDateFilter) {
     def.date_from = "not-a-date";
     def.date_to = "2026-03-31";
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     std::vector<QueryTopic> topics = Topics(q);
     ASSERT_EQ(topics.size(), 2u); // account, currency fallback - no datum
     for (QueryTopic t : topics) {
@@ -250,7 +272,8 @@ TEST(BuildQueryFromFavoriteTest, ValidRelativePeriodAddsADatumElement) {
     def.date_mode = FavoriteQueryDef::DateMode::RELATIVE_KEYWORD;
     def.relative_period = "this_month";
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     std::vector<QueryTopic> topics = Topics(q);
     ASSERT_EQ(topics.size(), 3u);
     EXPECT_EQ(topics[1], QueryTopic::DATUM);
@@ -262,7 +285,8 @@ TEST(BuildQueryFromFavoriteTest, UnrecognizedRelativePeriodAddsNoDatumElement) {
     def.date_mode = FavoriteQueryDef::DateMode::RELATIVE_KEYWORD;
     def.relative_period = "not_a_real_keyword";
     Query q;
-    BuildQueryFromFavorite(def, q, wxDateTime(15, wxDateTime::Jun, 2026), wxArrayInt());
+    UseToday(15, 6, 2026);
+    BuildQueryFromFavorite(def, q, std::vector<int>());
     std::vector<QueryTopic> topics = Topics(q);
     ASSERT_EQ(topics.size(), 2u); // account, currency fallback - no datum
     for (QueryTopic t : topics) {

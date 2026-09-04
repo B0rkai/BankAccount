@@ -119,7 +119,7 @@ TEST(TransactionTest, PrintDebugIncludesAccountDateTypeAmountClientDescAndCatego
 
     ASSERT_EQ(debug.size(), 8u);
     EXPECT_EQ(debug[0], "Test Account");
-    EXPECT_EQ(debug[1], GetDateFormat(45000));
+    EXPECT_EQ(debug[1], DateAsString(45000));
     EXPECT_EQ(debug[2], "TYPENAME");
     EXPECT_EQ(debug[3], Money(HUF, 15000).PrettyPrint());
     EXPECT_EQ(debug[4], "CLIENTNAME");

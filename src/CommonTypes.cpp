@@ -162,7 +162,7 @@ bool IsWeekend(uint16_t excelSerialDate) {
     return (tm.tm_wday == 0) || (tm.tm_wday == 6); // Sunday=0, Saturday=6
 }
 
-String GetDateFormat(const uint16_t date) {
+String DateAsString(const uint16_t date) {
     int year, month, day;
     ExcelSerialDateToDMY(date, day, month, year);
     std::stringstream ss;
@@ -202,5 +202,21 @@ StringVector ParseMultiValueString(const String& val) {
         }
     }
     return vals;
+}
+
+Today* gToday = nullptr;
+
+Today* GetToday() {
+    return gToday;
+}
+
+void SetToday(Today* ptr) {
+    if (gToday) {
+        if (gToday == ptr) {
+            return;
+        }
+        delete gToday;
+    }
+    gToday = ptr;
 }
 
