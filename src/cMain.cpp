@@ -822,19 +822,35 @@ namespace {
 
 void cMain::FillGridWidget(wxGrid* grid, const StringTable& table) {
 	grid->EnableEditing(false);
-	if (grid->GetNumberRows()) {
-		grid->DeleteRows(0, grid->GetNumberRows());
-	}
-	if (grid->GetNumberCols()) {
-		grid->DeleteCols(0, grid->GetNumberCols());
-	}
 	if (table.empty()) {
+		if (grid->GetNumberRows()) {
+			grid->DeleteRows(0, grid->GetNumberRows());
+		}
+		if (grid->GetNumberCols()) {
+			grid->DeleteCols(0, grid->GetNumberCols());
+		}
 		return;
 	}
 	const int col_count = (int)table.front().size();
 	const int row_count = (int)table.size() - 1; // header row is not a data row
-	grid->AppendCols(col_count);
-	grid->AppendRows(row_count);
+	// Resizing (delete then re-append, even back to the same count) resets wxGrid's internal
+	// cursor to (0,0) and scrolls the view there to keep it visible - jarring on a re-render
+	// that doesn't actually change the row/col count (a rename, a sort click, a filter edit
+	// that happens to match the same number of rows). Only tear down and rebuild the grid's
+	// shape when it actually changed; otherwise the existing rows/cols - and the grid's cursor,
+	// selection and scroll position - are left alone and cell values are just overwritten below.
+	if (grid->GetNumberRows() != row_count) {
+		if (grid->GetNumberRows()) {
+			grid->DeleteRows(0, grid->GetNumberRows());
+		}
+		grid->AppendRows(row_count);
+	}
+	if (grid->GetNumberCols() != col_count) {
+		if (grid->GetNumberCols()) {
+			grid->DeleteCols(0, grid->GetNumberCols());
+		}
+		grid->AppendCols(col_count);
+	}
 	for (int c = 0; c < col_count; ++c) {
 		grid->SetColLabelValue(c, table[0][c]);
 		for (int r = 0; r < row_count; ++r) {
@@ -1157,10 +1173,28 @@ void cMain::OnGridCellChanged(wxGridEvent& evt) {
 			if (!m_bank_file->RenameId(topic, id, value)) {
 				UIOutputText("Could not rename - see the log for the reason (e.g. that name already belongs to a different entry; use Merge for that instead).");
 			}
-			// Re-list rather than leave the cell showing whatever was typed: on success this is
-			// what List() would already show, and on failure/no-op it reverts the cell to the
-			// real current name instead of silently displaying a rename that never happened.
-			UIOutputEntityTable(m_bank_file->GetSummary(topic), topic);
+			// Refresh in place rather than UIOutputEntityTable's full rebuild: that tears down
+			// and recreates the notebook page/wxGrid and clears the filter textbox, which reset
+			// a filtered list back to unfiltered on every rename. Re-pull the fresh table into
+			// the existing tab (same wxGrid, filter text and sort order untouched) and just
+			// re-render it - on success this shows what List() would already show, and on
+			// failure/no-op it reverts the cell to the real current name instead of silently
+			// displaying a rename that never happened.
+			StringTable table = m_bank_file->GetSummary(topic);
+			GridTab* live_tab = nullptr;
+			for (GridTab& tab : m_grid_tabs) {
+				if (tab.entity_mode && (tab.entity_topic == topic)) {
+					live_tab = &tab;
+					break;
+				}
+			}
+			if (live_tab && !table.empty()) {
+				live_tab->master_table = std::move(table);
+				RenderGridTab(*live_tab);
+				UpdateGridActionButtons();
+			} else {
+				UIOutputEntityTable(table, topic);
+			}
 			UpdateAccFilter();
 			UpdateStatusBar();
 		});
