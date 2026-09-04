@@ -58,7 +58,10 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
 # publishing a release with nothing to say. See CLAUDE.md's "Changelog" section: an "unreleased"
 # entry is expected to be appended on every commit, so by release time this should never be empty.
 $changelogPath = Join-Path $repoRoot "docs\changelog.json"
-$changelog = Get-Content $changelogPath -Raw | ConvertFrom-Json
+# Explicit UTF8 read: Get-Content's default encoding for a BOM-less file is the system ANSI
+# codepage, not UTF-8, which silently mangles any non-ASCII characters (e.g. turns "->" into
+# mojibake) before ConvertFrom-Json ever sees them.
+$changelog = [System.IO.File]::ReadAllText($changelogPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 if (@($changelog.released | Where-Object { $_.version -eq $Version })) {
     throw "Version '$Version' is already in docs\changelog.json's 'released' list - bump to a new version, or fix the existing entry by hand if this release hasn't actually shipped yet."
 }
@@ -133,7 +136,10 @@ $newChangelogEntry = [ordered]@{
 }
 $changelog.released = @($changelog.released) + $newChangelogEntry
 $changelog.unreleased = @()
-$changelog | ConvertTo-Json -Depth 5 | Out-File -FilePath $changelogPath -Encoding utf8 -NoNewline
+# Explicit UTF8-no-BOM write (matching the read above): Out-File -Encoding utf8 writes a BOM,
+# which the repo's other JSON files don't carry.
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($changelogPath, ($changelog | ConvertTo-Json -Depth 5), $utf8NoBom)
 
 # 7. Publish: exe + manifests into $ReleaseFolder
 if (-not (Test-Path $ReleaseFolder)) {

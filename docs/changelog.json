@@ -1,6 +1,14 @@
 {
-  "unreleased": [
-    "Show what changed after an update, and on demand via Help → What's New"
-  ],
-  "released": []
+    "unreleased": [
+        "Fix What's New dialog: OK button clipped off-screen, and UTF-8 text (e.g. accented characters) rendered garbled"
+    ],
+    "released": [
+        {
+            "version": "1.0.6",
+            "date": "2026-09-04",
+            "changes": [
+                "Show what changed after an update, and on demand via Help → What's New"
+            ]
+        }
+    ]
 }

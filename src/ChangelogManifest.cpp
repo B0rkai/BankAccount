@@ -30,19 +30,19 @@ ChangelogManifest ChangelogManifest::Parse(std::istream& in) {
 		if (!item.is_object() || !item.contains("version") || !item["version"].is_string()) {
 			continue;
 		}
-		String version = item["version"].get<std::string>();
+		String version = String::FromUTF8(item["version"].get<std::string>().c_str());
 		if (version.empty()) {
 			continue;
 		}
 		ChangelogEntry entry;
 		entry.version = version;
 		if (item.contains("date") && item["date"].is_string()) {
-			entry.date = item["date"].get<std::string>();
+			entry.date = String::FromUTF8(item["date"].get<std::string>().c_str());
 		}
 		if (item.contains("changes") && item["changes"].is_array()) {
 			for (const auto& change : item["changes"]) {
 				if (change.is_string()) {
-					entry.changes.push_back(String(change.get<std::string>()));
+					entry.changes.push_back(String::FromUTF8(change.get<std::string>().c_str()));
 				}
 			}
 		}
