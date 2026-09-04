@@ -21,6 +21,14 @@ bool SetDescriptionQuery::CheckTransaction(Transaction* tr) {
     return true;
 }
 
+SetClientQuery::SetClientQuery() : m_logger(Logger::GetRef("SCLI", "Set Client Query")) {}
+
+bool SetClientQuery::CheckTransaction(Transaction* tr) {
+    tr->GetClientId() = m_client_id;
+    m_logger.LogInfo() << "Client changed to ID " << (Id::Type)m_client_id << " for record: " << ContainerAsString(tr->PrintDebug(s_resolve_if)).utf8_str();
+    return true;
+}
+
 bool MergeQuery::IsOk() const {
     return (!m_others.empty() && (m_target_id != INVALID_ID));
 }
@@ -81,12 +89,61 @@ bool CategorizingQuery::IsOk() const {
 
 void CategorizingQuery::Execute(IWAccount* account_if) {
     if_categorize = account_if->GetCategorizingInterface();
+    if_account = account_if;
+}
+
+void CategorizingQuery::ResolveClient(Transaction* tr, bool& changed) {
+    StringVector vec = tr->PrintDebug(s_resolve_if);
+    String details = ContainerAsString(vec);
+    const Id before = tr->GetClientId();
+    bool resolved = false;
+    if (m_flags & AUTOMATIC) {
+        Id id = if_account->SearchUniqueId(QueryTopic::CLIENT, vec[Transaction::MEMO]);
+        if (id) {
+            if (m_flags & CAUTIOUS) {
+                // pop up the confirmation window about the match
+                String desc;
+                if_manual_resolve->DoManualResolve(details, "", desc, QueryTopic::CLIENT, IdSet({id}), id, true);
+                if (!desc.empty()) {
+                    tr->AddDescription(desc);
+                }
+            }
+            tr->GetClientId() = id;
+            ++m_client_automatic_resolved;
+            resolved = true;
+        }
+    }
+    if (!resolved && (m_flags & MANUAL)) {
+        // pop up the manual resolver window - same one Import uses for an unmatched client
+        Id client(tr->GetClientId());
+        String desc;
+        if_manual_resolve->DoManualResolve(details, "", desc, QueryTopic::CLIENT, IdSet(), client, true);
+        tr->GetClientId() = client;
+        if (!desc.empty()) {
+            tr->AddDescription(desc);
+        }
+        if (client) {
+            ++m_client_manual_resolved;
+        } else {
+            ++m_client_still_missing;
+        }
+    } else if (!resolved) {
+        ++m_client_still_missing;
+    }
+    // Comparing before/after (rather than tracking per-branch) also catches a CAUTIOUS
+    // confirmation that rejected the suggested match back to "no client" - correctly reported
+    // as unchanged rather than a false-positive "resolved".
+    changed = (tr->GetClientId() != before);
 }
 
 bool CategorizingQuery::CheckTransaction(Transaction* tr) {
     ++m_all;
+    bool client_changed = false;
+    if (!tr->GetClientId() || (m_flags & OVERRIDE)) {
+        ResolveClient(tr, client_changed);
+    }
     if (tr->GetCategoryId() && !(m_flags & OVERRIDE)) {
-        return false; // skip already categorized if not in override
+        return client_changed; // skip already categorized if not in override
     }
     bool success = false;
     StringVector vec = tr->PrintDebug(s_resolve_if);
@@ -124,7 +181,7 @@ bool CategorizingQuery::CheckTransaction(Transaction* tr) {
         }
         ++m_manual_categorized;
     }
-    return success;
+    return success || client_changed;
 }
 
 String CategorizingQuery::GetResult() const {
@@ -134,5 +191,8 @@ String CategorizingQuery::GetResult() const {
     res.append(std::to_string(m_manual_categorized)).append(" manual categorization done").append(ENDL);
     res.append(std::to_string(m_did_not_change)).append(" records' category did not change").append(ENDL);
     res.append(std::to_string(m_no_category_found)).append(" missing categorization").append(ENDL);
+    res.append(std::to_string(m_client_automatic_resolved)).append(" clients automatically resolved").append(ENDL);
+    res.append(std::to_string(m_client_manual_resolved)).append(" clients manually resolved").append(ENDL);
+    res.append(std::to_string(m_client_still_missing)).append(" clients still missing").append(ENDL);
     return res;
 }

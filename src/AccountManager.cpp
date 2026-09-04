@@ -713,6 +713,11 @@ IdSet AccountManager::SearchIdsSuggested(const QueryTopic topic, const String& n
 	}
 }
 
+Id AccountManager::SearchUniqueId(const QueryTopic topic, const String& name) {
+	IdSet ids = SearchIds(topic, name, false);
+	return (ids.size() == 1) ? *ids.begin() : Id(0);
+}
+
 static String PrepareTransactionDetails(const RawTransactionData& data, const String& resolved_client = cStringEmpty) {
 	String details;
 	details.append(std::to_string(RawTransactionData::index)).append("/").append(std::to_string(RawTransactionData::size)).append(cDIVIDER);

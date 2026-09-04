@@ -4,6 +4,7 @@
 #include "IAccount.h"
 #include "IIdResolve.h"
 #include "IWQuery.h"
+#include "IManualResolve.h"
 #include "Currency.h"
 #include <list>
 
@@ -45,18 +46,43 @@ public:
     }
 };
 
+class FakeManualResolve : public IManualResolve {
+public:
+    Id m_return_id = Id(0);
+    int m_call_count = 0;
+    QueryTopic m_last_topic = QueryTopic::WRITE;
+    IdSet m_last_ids;
+    virtual ManualResolveResult ManualResolve(const String&, const QueryTopic, const IdSet&, Id&, String&, String&, bool&, String&, bool, const String&) override {
+        return ManualResolve_DEFAULT; // unused - CategorizingQuery only calls DoManualResolve()
+    }
+    virtual void DoManualResolve(const String&, String, String&, const QueryTopic topic, IdSet ids, Id& id, bool, const String&) override {
+        ++m_call_count;
+        m_last_topic = topic;
+        m_last_ids = ids;
+        id = m_return_id;
+    }
+};
+
 class FakeIWAccount : public IWAccount {
 public:
     FakeIWCategorize m_categorize;
     QueryTopic m_last_merge_topic = QueryTopic::WRITE;
     IdSet m_last_merge_from;
     Id m_last_merge_to = Id(INVALID_ID);
+    Id m_return_search_id = Id(0);
+    QueryTopic m_last_search_topic = QueryTopic::WRITE;
+    String m_last_search_name;
     virtual void Merge(const QueryTopic topic, const IdSet& from, const Id to) override {
         m_last_merge_topic = topic;
         m_last_merge_from = from;
         m_last_merge_to = to;
     }
     virtual IWCategorize* GetCategorizingInterface() override { return &m_categorize; }
+    virtual Id SearchUniqueId(const QueryTopic topic, const String& name) override {
+        m_last_search_topic = topic;
+        m_last_search_name = name;
+        return m_return_search_id;
+    }
 };
 
 // CheckTransaction()/Execute() are re-declared private/protected on every concrete
@@ -195,6 +221,79 @@ TEST(CategorizingQueryTest, AutomaticCategorizationSendsClientMemoAndDescription
     EXPECT_EQ(sent[0], "ClientX");
     EXPECT_EQ(sent[1], "MemoY");
     EXPECT_EQ(sent[2], "DescZ");
+}
+
+// Mirrors AccountManager::ProcessOneTransaction's own Type->Client->Category order: a
+// transaction still missing its client (id 0, e.g. left that way at import time via the
+// "Default" button) gets the same automatic keyword resolution Import itself would have done,
+// searched against Memo/Desc since that's the only text a Transaction retains post-import (the
+// bank's raw client field never survives).
+TEST(CategorizingQueryTest, AutomaticFlagResolvesMissingClientViaMemoMatch) {
+    FakeAccount acc(Id(0), "Acc");
+    FakeIdResolve resolve;
+    WQueryResolveScope scope(&resolve);
+    FakeIWAccount account_if;
+    account_if.m_return_search_id = Id(7);
+
+    String memo = "Some Payer Ltd";
+    Transaction tr(&acc, Money(HUF, 100), 45000, Id(0), Id(0), &memo); // client 0 == missing
+
+    CategorizingQuery q;
+    q.SetFlags(CategorizingQuery::AUTOMATIC);
+    ExecuteW(q, &account_if);
+
+    EXPECT_TRUE(CheckW(q, &tr));
+    EXPECT_EQ(tr.GetClientId(), Id(7));
+    EXPECT_EQ(account_if.m_last_search_topic, QueryTopic::CLIENT);
+    EXPECT_EQ(account_if.m_last_search_name, "Some Payer Ltd");
+}
+
+// When the automatic keyword search can't find a unique match, MANUAL falls back to the same
+// manual-resolve dialog Import itself pops up for an unmatched client - AUTOMATIC alone must
+// never force a prompt (that would turn a bulk "Categorize" click into one dialog per outlier).
+TEST(CategorizingQueryTest, ManualFlagPromptsForClientWhenAutomaticMatchFails) {
+    FakeAccount acc(Id(0), "Acc");
+    FakeIdResolve resolve;
+    WQueryResolveScope scope(&resolve);
+    FakeIWAccount account_if; // m_return_search_id defaults to 0: no confident match
+    FakeManualResolve manual_resolve;
+    manual_resolve.m_return_id = Id(9);
+
+    Transaction tr(&acc, Money(HUF, 100), 45000, Id(0), Id(0));
+    tr.GetCategoryId() = Id(2); // already categorized - isolates the client-resolution step under test
+                                // from CategorizingQuery's own (separate) MANUAL fallback for category
+
+    CategorizingQuery q;
+    q.SetFlags(CategorizingQuery::AUTOMATIC | CategorizingQuery::MANUAL);
+    q.SetManualResolveIf(&manual_resolve);
+    ExecuteW(q, &account_if);
+
+    EXPECT_TRUE(CheckW(q, &tr));
+    EXPECT_EQ(tr.GetClientId(), Id(9));
+    EXPECT_EQ(manual_resolve.m_call_count, 1);
+    EXPECT_EQ(manual_resolve.m_last_topic, QueryTopic::CLIENT);
+}
+
+TEST(CategorizingQueryTest, ClientResolutionSkipsTransactionsThatAlreadyHaveAClientUnlessOverride) {
+    FakeAccount acc(Id(0), "Acc");
+    FakeIdResolve resolve;
+    WQueryResolveScope scope(&resolve);
+    FakeIWAccount account_if;
+    account_if.m_return_search_id = Id(4);
+
+    Transaction tr(&acc, Money(HUF, 100), 45000, Id(3), Id(0)); // already has a client
+
+    CategorizingQuery q;
+    q.SetFlags(CategorizingQuery::AUTOMATIC);
+    ExecuteW(q, &account_if);
+    CheckW(q, &tr);
+
+    EXPECT_EQ(tr.GetClientId(), Id(3)); // untouched
+    EXPECT_EQ(account_if.m_last_search_topic, QueryTopic::WRITE); // SearchUniqueId never called
+
+    q.SetFlags(CategorizingQuery::AUTOMATIC | CategorizingQuery::OVERRIDE);
+    CheckW(q, &tr);
+    EXPECT_EQ(tr.GetClientId(), Id(4)); // OVERRIDE re-resolves it anyway
 }
 
 }

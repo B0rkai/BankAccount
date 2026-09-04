@@ -885,6 +885,7 @@ void cMain::SetGridTabs(const std::vector<GridTabSpec>& specs, size_t default_se
 		grid->SetDefaultCellFont(GetMonoSpaceFont());
 		grid->Bind(wxEVT_GRID_CELL_CHANGED, &cMain::OnGridCellChanged, this);
 		grid->Bind(wxEVT_GRID_CELL_RIGHT_CLICK, &cMain::OnGridCellRightClick, this);
+		grid->Bind(wxEVT_GRID_CELL_LEFT_DCLICK, &cMain::OnGridCellLeftDClick, this);
 		grid->Bind(wxEVT_GRID_LABEL_LEFT_CLICK, &cMain::OnGridLabelLeftClick, this);
 		wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 		sizer->Add(grid, 1, wxEXPAND);
@@ -1145,17 +1146,24 @@ void cMain::OnGridCellChanged(wxGridEvent& evt) {
 			return;
 		}
 		QueryTopic topic = tab->entity_topic;
-		if (!m_bank_file->RenameId(topic, Id((Id::Type)id_val), value)) {
-			UIOutputText("Could not rename - see the log for the reason (e.g. that name already belongs to a different entry; use Merge for that instead).");
-		}
-		// Re-list rather than leave the cell showing whatever was typed: on success this is
-		// what List() would already show, and on failure/no-op it reverts the cell to the
-		// real current name instead of silently displaying a rename that never happened. `tab`
-		// itself is dangling after this call (UIOutputEntityTable rebuilds every tab) - fine,
-		// nothing below reads it again on this path.
-		UIOutputEntityTable(m_bank_file->GetSummary(topic), topic);
-		UpdateAccFilter();
-		UpdateStatusBar();
+		Id id((Id::Type)id_val);
+		// Deferred via CallAfter: this handler runs from inside wxGrid::SaveEditControlValue,
+		// with the cell's text editor still active on the call stack above us. Rebuilding the
+		// grid tabs here synchronously (UIOutputEntityTable -> SetGridTabs -> DeleteAllPages)
+		// would destroy that same wxGrid mid-event, tripping wx's "any pushed event handlers
+		// must have been removed" assert. Running it after control returns to the event loop
+		// avoids that re-entrancy entirely.
+		CallAfter([this, topic, id, value]() {
+			if (!m_bank_file->RenameId(topic, id, value)) {
+				UIOutputText("Could not rename - see the log for the reason (e.g. that name already belongs to a different entry; use Merge for that instead).");
+			}
+			// Re-list rather than leave the cell showing whatever was typed: on success this is
+			// what List() would already show, and on failure/no-op it reverts the cell to the
+			// real current name instead of silently displaying a rename that never happened.
+			UIOutputEntityTable(m_bank_file->GetSummary(topic), topic);
+			UpdateAccFilter();
+			UpdateStatusBar();
+		});
 		return;
 	}
 	if ((size_t)row >= tab->identities.size()) {
@@ -1176,6 +1184,65 @@ void cMain::OnGridCellChanged(wxGridEvent& evt) {
 		m_bank_file->ApplyEdit(identity, q);
 	} else {
 		return;
+	}
+	UpdateStatusBar();
+}
+
+void cMain::OnGridCellLeftDClick(wxGridEvent& evt) {
+	if (!RequireWritable()) {
+		return;
+	}
+	GridTab* tab = TabForGrid(evt.GetEventObject());
+	if (!tab || !tab->editable_transactions) {
+		evt.Skip(); // entity-listing tabs use the default double-click-to-edit-name behaviour
+		return;
+	}
+	int row = evt.GetRow();
+	int col = evt.GetCol();
+	if ((row < 0) || (col < 0) || ((size_t)row >= tab->identities.size())) {
+		return;
+	}
+	if (tab->grid->GetColLabelValue(col) != "Client") {
+		evt.Skip(); // Category/Desc still edit in-place via their own cell editor
+		return;
+	}
+	const AccountManager::TransactionIdentity& identity = tab->identities[row];
+	Id current_id = m_bank_file->GetTransactionFieldId(identity, QueryTopic::CLIENT);
+	String details;
+	int col_count = tab->grid->GetNumberCols();
+	for (int c = 0; c < col_count; ++c) {
+		if (c) {
+			details.append("  ");
+		}
+		details.append(tab->grid->GetColLabelValue(c)).append(": ").append(tab->grid->GetCellValue(row, c));
+	}
+	IdSet matches;
+	if (current_id != INVALID_ID) {
+		matches.insert(current_id);
+	}
+	Id id = current_id;
+	String create, desc, keyword;
+	bool keyword_definitive = true;
+	ManualResolveResult res = ManualResolve(details, QueryTopic::CLIENT, matches, id, create, keyword, keyword_definitive, desc, true, cStringEmpty);
+	if (res == ManualResolve_ABORT) {
+		return;
+	} else if (res & ManualResolve_NEW_CHILD) {
+		id = m_bank_file->CreateId(QueryTopic::CLIENT, create);
+	} else if (res == ManualResolve_DEFAULT) {
+		id = Id(0);
+	}
+	if (res & ManualResolve_KEYWORD) {
+		m_bank_file->AddKeyword(QueryTopic::CLIENT, id, keyword, keyword_definitive);
+	}
+	if (id != current_id) {
+		SetClientQuery q;
+		q.SetClientId(id);
+		m_bank_file->ApplyEdit(identity, q);
+		// Same reasoning as OnGridCellChanged's Category/Desc edits: refresh just the displayed
+		// cell rather than a full RenderGridTab - cheap, and matches what a category/desc edit
+		// already leaves behind (the cell showing the newly-applied value, master_table left
+		// stale until the next query/re-list).
+		tab->grid->SetCellValue(row, col, ((INameResolve*)m_bank_file.get())->GetName(QueryTopic::CLIENT, id));
 	}
 	UpdateStatusBar();
 }
@@ -2054,10 +2121,10 @@ void ControlGroupCategorize::DoInitialize(wxWindow* parent) {
 	m_controls.push_back(m_caution_chkb = new wxCheckBox(parent, wxID_ANY, "cautious mode", wxPoint(HORIZONTAL_ALIGN_3, MINOR_VERTICAL_ALIGN_3)));
 	m_controls.push_back(m_override_chkb = new wxCheckBox(parent, wxID_ANY, "override mode", wxPoint(HORIZONTAL_ALIGN_3, MINOR_VERTICAL_ALIGN_4)));
 	m_controls.push_back(m_categorize_but = new wxButton(parent, CATEGORIZE_BUTT, "Categorize", wxPoint(HORIZONTAL_ALIGN_3, MAJOR_VERTICAL_ALIGN_3), cDefaultCtrlSize));
-	m_automatic_chkb->SetToolTip("Categorization query will attempt to find categories automatically based on the matching keywords");
-	m_manual_chkb->SetToolTip("If categorization unsuccessful the manual resolver dialog pops up for the user");
-	m_caution_chkb->SetToolTip("Use with Auto mode, every match is needed to be confirmed with the manual resolver dialog");
-	m_override_chkb->SetToolTip("Process already categorized records as well");
+	m_automatic_chkb->SetToolTip("Categorization query will attempt to find categories and resolve missing clients automatically based on matching keywords (client matching looks at Memo/Desc, same as at import)");
+	m_manual_chkb->SetToolTip("If automatic categorization or client resolution is unsuccessful, the manual resolver dialog pops up for the user - same as at import");
+	m_caution_chkb->SetToolTip("Use with Auto mode, every automatic match (category or client) needs to be confirmed with the manual resolver dialog");
+	m_override_chkb->SetToolTip("Process already categorized records and records that already have a client as well");
 }
 
 void ControlGroupQuery::DoInitialize(wxWindow* parent) {

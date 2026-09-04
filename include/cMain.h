@@ -255,6 +255,12 @@ class cMain :
     void OnGridFilterTextChanged(wxCommandEvent& evt);
     void OnGridCellChanged(wxGridEvent& evt);
     void OnGridCellRightClick(wxGridEvent& evt);
+    // Double-clicking the Client cell of an editable transaction-list tab pops up the same
+    // ManualResolverDialog import uses to resolve an unmatched client, pre-selected on the
+    // transaction's current client (id 0/"no client" included) - the only way to change a
+    // transaction's client after the fact, since it's otherwise a read-only column (unlike
+    // Category/Desc, which edit in-place via the grid's own cell editor).
+    void OnGridCellLeftDClick(wxGridEvent& evt);
     void OnAddKeywordFromContextMenu(wxCommandEvent& evt);
     void OnMergeSelectedFromContextMenu(wxCommandEvent& evt);
     void PrepareQuery(Query& query);

@@ -64,6 +64,7 @@ private:
 
 	virtual void Merge(const QueryTopic topic, const IdSet& from, const Id to) override;
 	inline virtual IWCategorize* GetCategorizingInterface() override { return &m_category_system; }
+	virtual Id SearchUniqueId(const QueryTopic topic, const String& name) override;
 
 	virtual void Modified() = 0;
 	StringTable List() const;
