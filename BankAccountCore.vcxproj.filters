@@ -35,6 +35,8 @@
     <ClCompile Include="src\FavoriteQuery.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Query.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\RelativePeriod.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\ChangelogManifest.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\PendingUpdate.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\ReleaseManifest.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\SelfUpdater.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Transaction.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -76,6 +78,8 @@
     <ClInclude Include="include\Query.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\RelativePeriod.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\RefCounted.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\ChangelogManifest.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\PendingUpdate.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\ReleaseManifest.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\SelfUpdater.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Transaction.h"><Filter>Header Files</Filter></ClInclude>

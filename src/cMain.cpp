@@ -31,6 +31,9 @@
 #include "ReleaseManifest.h"
 #include "Version.h"
 #include "SelfUpdater.h"
+#include "ChangelogManifest.h"
+#include "ChangelogDialog.h"
+#include "PendingUpdate.h"
 
 static const char* DEFAULT_SAVE_LOCATION = "db\\BData.baf";
 
@@ -123,6 +126,7 @@ enum CtrIds {
 	MENU_TEST_EUR_RATES,
 	MENU_VIEW_LOG,
 	MENU_ABOUT,
+	MENU_WHATS_NEW,
 	MENU_PERIOD_THIS_MONTH,
 	MENU_PERIOD_LAST_MONTH,
 	MENU_PERIOD_THIS_QUARTER,
@@ -176,6 +180,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 #endif
 	EVT_MENU(MENU_VIEW_LOG, ShowLogViewer)
 	EVT_MENU(MENU_ABOUT, ShowAbout)
+	EVT_MENU(MENU_WHATS_NEW, ShowWhatsNew)
 	EVT_MENU(MENU_PERIOD_THIS_MONTH, PeriodShortcutSelected)
 	EVT_MENU(MENU_PERIOD_LAST_MONTH, PeriodShortcutSelected)
 	EVT_MENU(MENU_PERIOD_THIS_QUARTER, PeriodShortcutSelected)
@@ -271,7 +276,32 @@ cMain::~cMain() {
 
 void cMain::Init() {
 	DoLoad();
+	ShowChangelogIfJustUpdated();
 	CheckForUpdate();
+}
+
+void cMain::ShowChangelogIfJustUpdated() {
+	// ConsumeMarker() deletes the marker as it reads it, so this can run unconditionally on
+	// every startup and only ever act once per completed update - a failure anywhere below
+	// just means this particular "what's new" popup is silently skipped, never a retry loop.
+	std::optional<String> from_version = PendingUpdate::ConsumeMarker();
+	if (!from_version || *from_version == APP_VERSION) {
+		return;
+	}
+	DbLocationSettings settings = DbLocationSettings::Load();
+	if (settings.mode != DbLocationMode::Network) {
+		return;
+	}
+	ChangelogManifest manifest = ChangelogManifest::Load(settings.release_folder);
+	if (!manifest.valid) {
+		return;
+	}
+	std::vector<ChangelogEntry> entries = manifest.EntriesBetween(*from_version, APP_VERSION);
+	if (entries.empty()) {
+		return;
+	}
+	ChangelogDialog dlg(this, "What's New in v" + String(APP_VERSION), entries);
+	dlg.ShowModal();
 }
 
 void cMain::CheckForUpdate() {
@@ -304,6 +334,11 @@ void cMain::CheckForUpdate() {
 	// touches m_bank_file, so this is safe regardless of load state or read-only mode.
 	switch (ApplyUpdate(settings.release_folder, manifest.crc32)) {
 	case UpdateApplyResult::Started:
+		// Record what version we're updating FROM - the relaunched process is a brand-new
+		// exe with no memory of this, and ShowChangelogIfJustUpdated() needs it on the other
+		// side of the restart to know what changed. Only recorded here, once the swap is
+		// actually underway - a declined/failed update must not leave a marker behind.
+		PendingUpdate::MarkUpdating(APP_VERSION);
 		// The helper is now waiting for this process to exit - Close() runs the normal
 		// shutdown path (including the usual unsaved-changes prompt in ~cMain(), unaffected
 		// by any of this), after which the helper swaps the exe and relaunches it.
@@ -662,6 +697,10 @@ bool cMain::NewAccountDetails(const String& acc_number, String& name, String& ba
 
 void cMain::DoLoad() {
 	DbLocationSettings settings = DbLocationSettings::Load();
+	// Cached for UpdateMenu() - set here unconditionally (ahead of the Unreachable early
+	// return below) so it always reflects what this DoLoad() attempt actually resolved to,
+	// even when it bails out before m_bank_file is set.
+	m_db_location_mode = settings.mode;
 	String save_location = DEFAULT_SAVE_LOCATION;
 	m_read_only = false;
 
@@ -1624,6 +1663,7 @@ void cMain::InitMenu() {
 #endif
 
 	helpmenu->Append(MENU_ABOUT, "About BankAccount...");
+	m_whats_new_menu_item = helpmenu->Append(MENU_WHATS_NEW, "What's New...");
 
 	SetMenuBar(m_menu_bar);
 }
@@ -2096,7 +2136,29 @@ void cMain::ShowAbout(wxCommandEvent& evt) {
 		"About BankAccount", wxICON_INFORMATION | wxOK);
 }
 
+void cMain::ShowWhatsNew(wxCommandEvent& evt) {
+	evt.Skip();
+	// UpdateMenu() already disables this item outside network mode, but a menu-open race or a
+	// stale accelerator could still reach here - fail the same silent way CheckForUpdate() does.
+	DbLocationSettings settings = DbLocationSettings::Load();
+	if (settings.mode != DbLocationMode::Network) {
+		return;
+	}
+	ChangelogManifest manifest = ChangelogManifest::Load(settings.release_folder);
+	if (!manifest.valid) {
+		wxMessageBox("Could not read the changelog from the network release location. See the log for details.",
+			"What's New", wxICON_WARNING | wxOK);
+		return;
+	}
+	ChangelogDialog dlg(this, "What's New", manifest.AllEntries());
+	dlg.ShowModal();
+}
+
 void cMain::UpdateMenu(wxEvent&) {
+	// m_db_location_mode mirrors whatever DoLoad() last resolved - fires on every top-level
+	// menu click (wxEVT_MENU_OPEN), so this deliberately does NOT re-read db\location.json
+	// from disk itself; only DoLoad() (startup, or "Discard changes") does that.
+	m_whats_new_menu_item->Enable(m_db_location_mode == DbLocationMode::Network);
 	// Fires on wxEVT_MENU_OPEN, i.e. as soon as the user clicks any top-level menu - reachable
 	// even when DoLoad() left m_bank_file null (network location unreachable at startup), so
 	// this needs its own guard rather than relying on the caller to have loaded anything.

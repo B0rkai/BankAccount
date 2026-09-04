@@ -142,6 +142,7 @@
     <ClCompile Include="tests\VersionTests.cpp" />
     <ClCompile Include="tests\ReleaseManifestTests.cpp" />
     <ClCompile Include="tests\SelfUpdaterTests.cpp" />
+    <ClCompile Include="tests\ChangelogManifestTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="BankAccountCore.vcxproj">

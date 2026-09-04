@@ -12,6 +12,7 @@
 #include "ChartData.h"
 #include "NetworkLock.h"
 #include "FavoriteQuery.h"
+#include "DbLocationSettings.h"
 
 // wxButton;
 class BankAccountFile;
@@ -94,6 +95,9 @@ class cMain :
     wxMenuBar* m_menu_bar = nullptr;
     wxMenuItem* m_discard_changes_menu_item = nullptr;
     wxMenuItem* m_resetdb_menu_item = nullptr;
+    // Help -> What's New - enabled only in network mode (see UpdateMenu()), since there's no
+    // release folder to read changelog.json from in standalone mode.
+    wxMenuItem* m_whats_new_menu_item = nullptr;
 
     wxStatusBar* m_status_bar = nullptr;
 
@@ -184,6 +188,12 @@ class cMain :
     // to another session (DoLoad() sets this) - Save and every other mutating action must stay
     // disabled for as long as this is true. Always false in standalone mode.
     bool m_read_only = false;
+    // Mirrors the last DbLocationSettings::Load() DoLoad() performed - cached rather than
+    // re-read from db\location.json on demand, since the only thing that ever changes it is
+    // DoLoad() itself (startup, or an explicit "Discard changes"). UpdateMenu() consults this
+    // instead of re-loading/re-parsing the file on every single wxEVT_MENU_OPEN (i.e. every
+    // top-level menu click, not just Help).
+    DbLocationMode m_db_location_mode = DbLocationMode::Standalone;
     // Re-entrancy guard for OnGridCellChanged: repopulating the grid mid-handler (e.g. after
     // a rename, to revert/refresh the displayed value) turns out to re-fire the cell-changed
     // event for the row still mid-edit, which would otherwise recurse without end.
@@ -322,6 +332,17 @@ class cMain :
     void ShowOrRefreshChart();
     void ShowLogViewer(wxCommandEvent& evt);
     void ShowAbout(wxCommandEvent& evt);
+    // Help -> What's New: always re-fetches changelog.json fresh from the network release
+    // folder and shows the full history (ChangelogManifest::AllEntries()), independent of the
+    // installed version - disabled (see UpdateMenu()) in standalone mode, where there's no
+    // release folder to read one from.
+    void ShowWhatsNew(wxCommandEvent& evt);
+    // Called once from Init(), after DoLoad(). Consumes db\pending_update.txt (see
+    // PendingUpdate.h) if present - i.e. this process is the first launch of a version the
+    // self-updater just swapped in - and, only then, shows what changed since that recorded
+    // version via ChangelogDialog. A no-op (silently, like CheckForUpdate()) outside network
+    // mode or if the manifest/marker can't be read.
+    void ShowChangelogIfJustUpdated();
     void UpdateMenu(wxEvent&);
     void Test(wxCommandEvent& evt);
     void UpdateStatusBar();

@@ -125,6 +125,8 @@
     <ClCompile Include="src\FavoriteQuery.cpp" />
     <ClCompile Include="src\Query.cpp" />
     <ClCompile Include="src\RelativePeriod.cpp" />
+    <ClCompile Include="src\ChangelogManifest.cpp" />
+    <ClCompile Include="src\PendingUpdate.cpp" />
     <ClCompile Include="src\ReleaseManifest.cpp" />
     <ClCompile Include="src\SelfUpdater.cpp" />
     <ClCompile Include="src\Transaction.cpp" />
@@ -166,6 +168,8 @@
     <ClInclude Include="include\Query.h" />
     <ClInclude Include="include\RelativePeriod.h" />
     <ClInclude Include="include\RefCounted.h" />
+    <ClInclude Include="include\ChangelogManifest.h" />
+    <ClInclude Include="include\PendingUpdate.h" />
     <ClInclude Include="include\ReleaseManifest.h" />
     <ClInclude Include="include\SelfUpdater.h" />
     <ClInclude Include="include\Transaction.h" />

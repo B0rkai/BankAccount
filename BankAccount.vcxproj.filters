@@ -61,6 +61,9 @@
     <ClCompile Include="src\ChartDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\ChangelogDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\cApp.h">
@@ -73,6 +76,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ChartDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ChangelogDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ManualResolverDialog.h">

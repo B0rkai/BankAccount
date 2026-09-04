@@ -1,7 +1,7 @@
 # JSON file schemas
 
-Reference for every JSON file the app itself reads or writes. All three are parsed with the
-vendored `nlohmann/json` (`include/nlohmann/json.hpp` — see CLAUDE.md's "External dependencies").
+Reference for every JSON file the app itself reads or writes. All are parsed with the vendored
+`nlohmann/json` (`include/nlohmann/json.hpp` — see CLAUDE.md's "External dependencies").
 Every parser here follows the same fail-safe contract: a missing file, malformed JSON, a
 wrong-shaped root, or an unrecognized/missing value never throws or blocks startup — it logs a
 warning (`LogWarn`/`LogDebug`) and falls back to an empty/default result. Unrecognized object keys
@@ -75,6 +75,43 @@ by the update checker. Never hand-edited. Parsed by `ReleaseManifest::Parse()`
 Root must be a JSON object with both keys present as non-empty strings, or the manifest is
 `valid = false` — same effective outcome as a missing file (the update checker stays silent,
 never surfaces this as an error).
+
+## `changelog.json`
+
+Release notes, in two places sharing one shape: the git-tracked master copy at
+`docs\changelog.json` in the repo (hand-maintained — see CLAUDE.md's "Changelog" section for the
+per-commit/per-release workflow), and the published copy
+[scripts/PackageRelease.ps1](../scripts/PackageRelease.ps1) copies verbatim into the network
+release folder alongside `BankAccount.exe`/`release.json` when cutting a release. The client
+reads the published copy back via `ChangelogManifest::Parse()`
+([include/ChangelogManifest.h](../include/ChangelogManifest.h)/
+[src/ChangelogManifest.cpp](../src/ChangelogManifest.cpp)).
+
+```json
+{
+  "unreleased": [
+    "Fix rename crash during categorize"
+  ],
+  "released": [
+    { "version": "1.0.6", "date": "2026-09-04", "changes": [
+        "Preserve filter, sort and scroll position when renaming an entity",
+        "Resolve missing clients during categorize; fix rename crash"
+    ] }
+  ]
+}
+```
+
+| Key | Type | Required | Notes |
+|---|---|---|---|
+| `unreleased` | string array | no | Compact, not-yet-versioned change notes — appended to on every commit (see CLAUDE.md), consumed and cleared by `PackageRelease.ps1` when cutting a release. `ChangelogManifest` never reads this key at all; it exists only in the repo's master copy (and, transiently, in the published copy right after a release, until the next commit adds to it again). |
+| `released` | array of objects | no | One entry per shipped version, each `{version, date, changes}`. This is the only key `ChangelogManifest` parses. |
+| `released[].version` | string | yes (per entry) | e.g. `"1.0.6"` — compared via `ParseVersion()` (`Version.h`), same as `release.json`'s `version`. An entry with a missing/empty/non-string `version` is skipped individually. |
+| `released[].date` | string | no | Display-only — never parsed or validated. `PackageRelease.ps1` writes today's date as `"YYYY-MM-DD"`. |
+| `released[].changes` | string array | no | Bullet lines shown to the user. Missing/wrong-typed → an entry with no bullets, not a dropped entry. |
+
+Root must be a JSON object, or the manifest is `valid = false` — same effective outcome as a
+missing file. Within a valid root, a missing/non-array `released` just means no entries (not
+invalid) — `ChangelogManifest::EntriesBetween()`/`AllEntries()` operate only on whatever parsed.
 
 ## `db\favorite_queries.json`
 

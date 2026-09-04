@@ -152,6 +152,7 @@
   <ItemGroup>
     <ClCompile Include="src\AddKeywordDialog.cpp" />
     <ClCompile Include="src\cApp.cpp" />
+    <ClCompile Include="src\ChangelogDialog.cpp" />
     <ClCompile Include="src\ChartDialog.cpp" />
     <ClCompile Include="src\cMain.cpp">
       <!-- Works around an MSVC /GL (whole-program-optimization) internal compiler error
@@ -175,6 +176,7 @@
   <ItemGroup>
     <ClInclude Include="include\AddKeywordDialog.h" />
     <ClInclude Include="include\cApp.h" />
+    <ClInclude Include="include\ChangelogDialog.h" />
     <ClInclude Include="include\ChartDialog.h" />
     <ClInclude Include="include\cMain.h" />
     <ClInclude Include="include\ExcelExport.h" />

@@ -1,15 +1,18 @@
 <#
 .SYNOPSIS
-    Cuts a BankAccount release: bumps include\Version.h, builds Release|x64, computes the
-    built exe's CRC32, and publishes BankAccount.exe + release.json to a network release
-    folder - the counterpart to cMain::CheckForUpdate()/SelfUpdater::ApplyUpdate() on the
-    client side (see CLAUDE.md's "deploy releases through this network location" notes).
+    Cuts a BankAccount release: bumps include\Version.h, moves docs\changelog.json's
+    "unreleased" entries into a new "released" entry, builds Release|x64, computes the built
+    exe's CRC32, and publishes BankAccount.exe + release.json + changelog.json to a network
+    release folder - the counterpart to cMain::CheckForUpdate()/SelfUpdater::ApplyUpdate()/
+    cMain::ShowChangelogIfJustUpdated() on the client side (see CLAUDE.md's "deploy releases
+    through this network location" and "Changelog" notes).
 
 .DESCRIPTION
     This is the manual, human-run release process for a project with no CI/CD - run it once
     per release from a normal PowerShell prompt (not from inside a Claude Code session).
-    It does NOT touch git (no commit/tag) - review and commit the Version.h bump yourself
-    after a successful run, the same way you would review any other code change.
+    It does NOT touch git (no commit/tag) - review and commit the Version.h and
+    docs\changelog.json changes yourself after a successful run, the same way you would
+    review any other code change.
 
 .PARAMETER Version
     The new version string, e.g. "1.1.0" - must be exactly major.minor.patch (matching
@@ -50,7 +53,21 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version '$Version' is not major.minor.patch (e.g. 1.1.0) - ParseVersion() on the client requires exactly that shape."
 }
 
-# 2. Bump include\Version.h
+# 2. Validate docs\changelog.json has release notes ready to go, and hasn't already published
+# this version - refuses to proceed rather than silently overwriting existing release notes or
+# publishing a release with nothing to say. See CLAUDE.md's "Changelog" section: an "unreleased"
+# entry is expected to be appended on every commit, so by release time this should never be empty.
+$changelogPath = Join-Path $repoRoot "docs\changelog.json"
+$changelog = Get-Content $changelogPath -Raw | ConvertFrom-Json
+if (@($changelog.released | Where-Object { $_.version -eq $Version })) {
+    throw "Version '$Version' is already in docs\changelog.json's 'released' list - bump to a new version, or fix the existing entry by hand if this release hasn't actually shipped yet."
+}
+$unreleasedChanges = @($changelog.unreleased | Where-Object { $_ -ne $null })
+if ($unreleasedChanges.Count -eq 0) {
+    throw "docs\changelog.json has no 'unreleased' entries - add release notes before cutting a release."
+}
+
+# 3. Bump include\Version.h
 Write-Host "Bumping APP_VERSION to $Version in $versionHeaderPath"
 $headerContent = Get-Content $versionHeaderPath -Raw
 $pattern = 'constexpr const char\* APP_VERSION = "[^"]*";'
@@ -60,7 +77,7 @@ if ($headerContent -notmatch $pattern) {
 $newHeaderContent = $headerContent -replace $pattern, "constexpr const char* APP_VERSION = `"$Version`";"
 Set-Content -Path $versionHeaderPath -Value $newHeaderContent -NoNewline -Encoding utf8
 
-# 3. Build Release|x64 (unless skipped)
+# 4. Build Release|x64 (unless skipped)
 if (-not $SkipBuild) {
     $msbuild = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" `
         -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe
@@ -80,7 +97,7 @@ if (-not (Test-Path $exePath)) {
     throw "$exePath does not exist - build it first (omit -SkipBuild), or check -Configuration."
 }
 
-# 4. Compute the built exe's CRC32 - same algorithm as Crc32Update/Crc32Finish in
+# 5. Compute the built exe's CRC32 - same algorithm as Crc32Update/Crc32Finish in
 # include/Crc32.h (reflected IEEE 802.3 / zlib-compatible: poly 0xEDB88320, init/final XOR
 # 0xFFFFFFFF), reimplemented here in C# since this script has no access to the C++ code.
 Add-Type @"
@@ -106,7 +123,19 @@ $exeBytes = [System.IO.File]::ReadAllBytes($exePath)
 $crc32Hex = [ReleaseCrc32]::Compute($exeBytes).ToString("X8")
 Write-Host "Computed CRC32: $crc32Hex"
 
-# 5. Publish: exe + manifest into $ReleaseFolder
+# 6. Move docs\changelog.json's "unreleased" entries into a new "released" entry for
+# $Version, clear "unreleased", and write the result back to the repo file - the same "bump by
+# hand, review and commit afterwards" treatment as Version.h above.
+$newChangelogEntry = [ordered]@{
+    version = $Version
+    date    = (Get-Date -Format "yyyy-MM-dd")
+    changes = $unreleasedChanges
+}
+$changelog.released = @($changelog.released) + $newChangelogEntry
+$changelog.unreleased = @()
+$changelog | ConvertTo-Json -Depth 5 | Out-File -FilePath $changelogPath -Encoding utf8 -NoNewline
+
+# 7. Publish: exe + manifests into $ReleaseFolder
 if (-not (Test-Path $ReleaseFolder)) {
     Write-Host "Creating $ReleaseFolder"
     New-Item -ItemType Directory -Path $ReleaseFolder -Force | Out-Null
@@ -114,10 +143,12 @@ if (-not (Test-Path $ReleaseFolder)) {
 Copy-Item -Path $exePath -Destination (Join-Path $ReleaseFolder "BankAccount.exe") -Force
 $manifestPath = Join-Path $ReleaseFolder "release.json"
 [ordered]@{ version = $Version; crc32 = $crc32Hex } | ConvertTo-Json | Out-File -FilePath $manifestPath -Encoding ascii -NoNewline
+Copy-Item -Path $changelogPath -Destination (Join-Path $ReleaseFolder "changelog.json") -Force
 
 Write-Host ""
 Write-Host "Published version $Version to $ReleaseFolder"
 Write-Host "  $exePath -> $ReleaseFolder\BankAccount.exe"
 Write-Host "  $manifestPath (version=$Version, crc32=$crc32Hex)"
+Write-Host "  $changelogPath -> $ReleaseFolder\changelog.json ($($unreleasedChanges.Count) change note(s) for $Version)"
 Write-Host ""
-Write-Host "include\Version.h now reads APP_VERSION = `"$Version`" - review and commit that change."
+Write-Host "include\Version.h and docs\changelog.json now reflect $Version - review and commit those changes."
