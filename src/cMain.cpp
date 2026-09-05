@@ -339,7 +339,7 @@ void cMain::CheckForUpdate() {
 	}
 	// ApplyUpdate() only copies/verifies/hands off to the detached helper script - it never
 	// touches m_bank_file, so this is safe regardless of load state or read-only mode.
-	switch (ApplyUpdate(settings.release_folder, manifest.crc32)) {
+	switch (ApplyUpdate(settings.release_folder, manifest)) {
 	case UpdateApplyResult::Started:
 		// Record what version we're updating FROM - the relaunched process is a brand-new
 		// exe with no memory of this, and ShowChangelogIfJustUpdated() needs it on the other

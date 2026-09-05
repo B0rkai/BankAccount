@@ -174,3 +174,9 @@ as plain text at report-generation time (relative to CWD, same convention as
 If the file is missing, `LoadChartJsSource()` logs a warning and returns an empty string;
 `BuildHtmlReport()` treats that as "no charts" and still produces a valid, table-only HTML
 document rather than failing the whole report.
+
+An already-installed client only gets `resources\*` checked in at build time if it builds from
+source; one that self-updates instead gets it synced by `SelfUpdater::ApplyUpdate()`, which walks
+`release.json`'s `files` list (path + CRC32 per resource) and copies over anything missing or
+stale alongside the exe swap - see [json-file-schemas.md](json-file-schemas.md)'s `release.json`
+section.

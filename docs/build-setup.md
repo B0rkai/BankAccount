@@ -28,6 +28,11 @@ report-generation time (relative path from the app's CWD, same convention as `db
 inlines its contents verbatim into a `<script>` tag, so no `.vcxproj` changes were needed here
 either. Upgrading the vendored version means re-downloading
 `https://cdn.jsdelivr.net/npm/chart.js@<version>/dist/chart.umd.min.js` over the existing file.
+`scripts/PackageRelease.ps1` publishes everything under `resources\` to the network release
+folder and lists it (path + CRC32) in `release.json`'s `files` array, so an already-installed
+client picks up a new/changed resource via `SelfUpdater::ApplyUpdate()` on its next self-update,
+not just via a fresh build from source - see `release.json`'s schema in
+[json-file-schemas.md](json-file-schemas.md).
 
 - **wxWidgets 3.0** headers at `C:\Users\<user>\source\wxWidgets\include` (both configs).
 - **ZipLib** headers at `C:\Users\<user>\source\ziplib\Source\ZipLib`; Debug|x64 links its

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include "CommonTypes.h"
+#include "ReleaseManifest.h"
 
 // Applying an update means overwriting the exe THIS PROCESS is currently running from -
 // impossible directly (Windows keeps a running exe's file open), so this hands off to a
@@ -20,10 +21,16 @@ enum class UpdateApplyResult {
 // unlike ApplyUpdate() below.
 String BuildUpdateScript(const String& current_exe, const String& downloaded_exe, unsigned long pid);
 
-// Copies `<release_folder>\BankAccount.exe` next to the running exe, verifies its CRC32
-// against `expected_crc32` (from ReleaseManifest) before trusting it at all, and - only on a
-// match - writes and launches BuildUpdateScript()'s helper, detached. A Started result means
-// the caller must close the application immediately; the helper takes it from there. Not
-// covered by the automated test suite (real process spawn + real exe swap, same reasoning as
-// why cMain.cpp itself has no GoogleTest coverage) - verify via the run-app skill instead.
-UpdateApplyResult ApplyUpdate(const String& release_folder, uint32_t expected_crc32);
+// First syncs `manifest.files` (see ReleaseManifest.h) - any resource file missing or whose
+// local CRC32 doesn't match the manifest's is (re)copied from the release folder into the
+// directory the running exe lives in. Resources aren't locked like the running exe, so this
+// happens synchronously, right here, with no detached helper; a single file's copy/CRC
+// failure is only logged, never aborts the exe update below.
+//
+// Then copies `<release_folder>\BankAccount.exe` next to the running exe, verifies its CRC32
+// against `manifest.crc32` before trusting it at all, and - only on a match - writes and
+// launches BuildUpdateScript()'s helper, detached. A Started result means the caller must
+// close the application immediately; the helper takes it from there. Not covered by the
+// automated test suite (real process spawn + real exe/file I/O, same reasoning as why
+// cMain.cpp itself has no GoogleTest coverage) - verify via the run-app skill instead.
+UpdateApplyResult ApplyUpdate(const String& release_folder, const ReleaseManifest& manifest);

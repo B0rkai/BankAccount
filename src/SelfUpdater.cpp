@@ -27,6 +27,30 @@ namespace {
 		GetModuleFileNameA(nullptr, buf, MAX_PATH);
 		return String(buf);
 	}
+
+	// Best-effort: copies over any resource file that's missing locally or whose CRC32
+	// doesn't match the manifest, into `app_dir`. A single file's failure is logged and
+	// skipped - never lets a resource sync problem block the exe update.
+	void SyncResourceFiles(const String& release_folder, const String& app_dir,
+		const std::vector<ReleaseFileEntry>& files) {
+		for (const ReleaseFileEntry& file : files) {
+			const String local_path = JoinPath(app_dir, file.path);
+			std::optional<uint32_t> local_crc = ComputeFileCrc32(local_path);
+			if (local_crc && (*local_crc == file.crc32)) {
+				continue;
+			}
+			const String remote_path = JoinPath(release_folder, file.path);
+			std::error_code ec;
+			std::filesystem::create_directories(std::filesystem::path((std::string)local_path).parent_path(), ec);
+			std::filesystem::copy_file((std::string)remote_path, (std::string)local_path,
+				std::filesystem::copy_options::overwrite_existing, ec);
+			if (ec) {
+				LogWarn() << "Update: failed to sync resource file '" << file.path.utf8_str() << "' - " << ec.message();
+				continue;
+			}
+			LogInfo() << "Update: synced resource file '" << file.path.utf8_str() << "'";
+		}
+	}
 }
 
 String BuildUpdateScript(const String& current_exe, const String& downloaded_exe, unsigned long pid) {
@@ -54,10 +78,14 @@ String BuildUpdateScript(const String& current_exe, const String& downloaded_exe
 	return String(out.str());
 }
 
-UpdateApplyResult ApplyUpdate(const String& release_folder, uint32_t expected_crc32) {
+UpdateApplyResult ApplyUpdate(const String& release_folder, const ReleaseManifest& manifest) {
 	const String current_exe = CurrentExePath();
+	const String app_dir = String(std::filesystem::path((std::string)current_exe).parent_path().string());
+	SyncResourceFiles(release_folder, app_dir, manifest.files);
+
 	const String remote_exe = JoinPath(release_folder, "BankAccount.exe");
 	const String downloaded_exe = current_exe + ".new";
+	const uint32_t expected_crc32 = manifest.crc32;
 
 	std::error_code ec;
 	std::filesystem::copy_file((std::string)remote_exe, (std::string)downloaded_exe,

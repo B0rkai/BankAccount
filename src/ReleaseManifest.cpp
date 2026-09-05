@@ -28,6 +28,23 @@ ReleaseManifest ReleaseManifest::Parse(std::istream& in) {
 	if (j.contains("crc32") && j["crc32"].is_string()) {
 		manifest.crc32 = (uint32_t)std::strtoul(j["crc32"].get<std::string>().c_str(), nullptr, 16);
 	}
+	if (j.contains("files")) {
+		if (j["files"].is_array()) {
+			for (const auto& entry : j["files"]) {
+				if (!entry.is_object() || !entry.contains("path") || !entry["path"].is_string()
+					|| !entry.contains("crc32") || !entry["crc32"].is_string()) {
+					LogWarn() << "release.json: skipping malformed entry in \"files\"";
+					continue;
+				}
+				ReleaseFileEntry file;
+				file.path = entry["path"].get<std::string>();
+				file.crc32 = (uint32_t)std::strtoul(entry["crc32"].get<std::string>().c_str(), nullptr, 16);
+				manifest.files.push_back(file);
+			}
+		} else {
+			LogWarn() << "release.json: \"files\" is present but not an array - ignoring";
+		}
+	}
 	manifest.valid = !manifest.version.empty() && (manifest.crc32 != 0);
 	return manifest;
 }
@@ -41,7 +58,8 @@ ReleaseManifest ReleaseManifest::Load(const String& release_folder) {
 	}
 	ReleaseManifest manifest = Parse(in);
 	if (manifest.valid) {
-		LogInfo() << "Release manifest at " << path.utf8_str() << ": version " << manifest.version.utf8_str();
+		LogInfo() << "Release manifest at " << path.utf8_str() << ": version " << manifest.version.utf8_str()
+			<< ", " << manifest.files.size() << " resource file(s)";
 	} else {
 		LogWarn() << "Release manifest at " << path.utf8_str() << " is missing version/crc32 - ignoring";
 	}

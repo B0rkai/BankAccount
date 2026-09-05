@@ -2,10 +2,10 @@
 .SYNOPSIS
     Cuts a BankAccount release: bumps include\Version.h, moves docs\changelog.json's
     "unreleased" entries into a new "released" entry, builds Release|x64, computes the built
-    exe's CRC32, and publishes BankAccount.exe + release.json + changelog.json to a network
-    release folder - the counterpart to cMain::CheckForUpdate()/SelfUpdater::ApplyUpdate()/
-    cMain::ShowChangelogIfJustUpdated() on the client side (see CLAUDE.md's "deploy releases
-    through this network location" and "Changelog" notes).
+    exe's CRC32, and publishes BankAccount.exe + resources\* + release.json + changelog.json to
+    a network release folder - the counterpart to cMain::CheckForUpdate()/
+    SelfUpdater::ApplyUpdate()/cMain::ShowChangelogIfJustUpdated() on the client side (see
+    CLAUDE.md's "deploy releases through this network location" and "Changelog" notes).
 
 .DESCRIPTION
     This is the manual, human-run release process for a project with no CI/CD - run it once
@@ -147,14 +147,38 @@ if (-not (Test-Path $ReleaseFolder)) {
     New-Item -ItemType Directory -Path $ReleaseFolder -Force | Out-Null
 }
 Copy-Item -Path $exePath -Destination (Join-Path $ReleaseFolder "BankAccount.exe") -Force
+
+# 7a. Publish resources\* alongside the exe - misc files the running app reads at a CWD-relative
+# path (e.g. resources\chart.umd.min.js for HTML reports' vendored Chart.js), which an
+# already-installed client's SelfUpdater::ApplyUpdate() needs to sync on top of a plain exe swap.
+# Every file under resources\ goes in, keyed by its path relative to the repo root, so a future
+# addition there needs no change to this script.
+$resourcesDir = Join-Path $repoRoot "resources"
+$fileEntries = @()
+if (Test-Path $resourcesDir) {
+    Get-ChildItem -Path $resourcesDir -Recurse -File | ForEach-Object {
+        $relativePath = $_.FullName.Substring($repoRoot.Length + 1)
+        $destPath = Join-Path $ReleaseFolder $relativePath
+        New-Item -ItemType Directory -Force -Path (Split-Path $destPath) | Out-Null
+        Copy-Item -Path $_.FullName -Destination $destPath -Force
+        $fileBytes = [System.IO.File]::ReadAllBytes($_.FullName)
+        $fileCrcHex = [ReleaseCrc32]::Compute($fileBytes).ToString("X8")
+        $fileEntries += [ordered]@{ path = $relativePath; crc32 = $fileCrcHex }
+    }
+}
+
 $manifestPath = Join-Path $ReleaseFolder "release.json"
-[ordered]@{ version = $Version; crc32 = $crc32Hex } | ConvertTo-Json | Out-File -FilePath $manifestPath -Encoding ascii -NoNewline
+$manifest = [ordered]@{ version = $Version; crc32 = $crc32Hex }
+if ($fileEntries.Count -gt 0) {
+    $manifest.files = $fileEntries
+}
+$manifest | ConvertTo-Json -Depth 5 | Out-File -FilePath $manifestPath -Encoding ascii -NoNewline
 Copy-Item -Path $changelogPath -Destination (Join-Path $ReleaseFolder "changelog.json") -Force
 
 Write-Host ""
 Write-Host "Published version $Version to $ReleaseFolder"
 Write-Host "  $exePath -> $ReleaseFolder\BankAccount.exe"
-Write-Host "  $manifestPath (version=$Version, crc32=$crc32Hex)"
+Write-Host "  $manifestPath (version=$Version, crc32=$crc32Hex, $($fileEntries.Count) resource file(s))"
 Write-Host "  $changelogPath -> $ReleaseFolder\changelog.json ($($unreleasedChanges.Count) change note(s) for $Version)"
 Write-Host ""
 Write-Host "include\Version.h and docs\changelog.json now reflect $Version - review and commit those changes."

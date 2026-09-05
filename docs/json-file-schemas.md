@@ -63,7 +63,10 @@ by the update checker. Never hand-edited. Parsed by `ReleaseManifest::Parse()`
 ```json
 {
   "version": "1.1.0",
-  "crc32": "A1B2C3D4"
+  "crc32": "A1B2C3D4",
+  "files": [
+    { "path": "resources\\chart.umd.min.js", "crc32": "0BADF00D" }
+  ]
 }
 ```
 
@@ -71,10 +74,12 @@ by the update checker. Never hand-edited. Parsed by `ReleaseManifest::Parse()`
 |---|---|---|---|
 | `version` | string | yes | e.g. `"1.1.0"` — compared via `ParseVersion()` (`Version.h`). |
 | `crc32` | string | yes | Hex string (e.g. `"A1B2C3D4"`), case-insensitive — **not** a JSON number, matching the CRC's usual hex display. CRC32 of the published `BankAccount.exe`; a corruption/truncation check only, not a security signature. |
+| `files` | array | no | Misc resource files published alongside the exe (e.g. under `resources\`), each `{"path": "...", "crc32": "HEX"}` with `path` relative to the release folder. Absent/empty on a manifest with no resources to sync, or one published before this key existed. `SelfUpdater::ApplyUpdate()` copies over any entry that's missing locally or whose local CRC32 doesn't match, synchronously alongside the exe swap. |
 
-Root must be a JSON object with both keys present as non-empty strings, or the manifest is
+Root must be a JSON object with `version`/`crc32` present as non-empty strings, or the manifest is
 `valid = false` — same effective outcome as a missing file (the update checker stays silent,
-never surfaces this as an error).
+never surfaces this as an error). A missing/non-array `files`, or a malformed entry within it, is
+skipped (logged, not fatal) and never affects `valid`.
 
 ## `changelog.json`
 
