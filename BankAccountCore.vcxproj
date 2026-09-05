@@ -123,6 +123,9 @@
     <ClCompile Include="src\MnbExchangeRateClient.cpp" />
     <ClCompile Include="src\NetworkLock.cpp" />
     <ClCompile Include="src\FavoriteQuery.cpp" />
+    <ClCompile Include="src\FavoriteReport.cpp" />
+    <ClCompile Include="src\ChartFolding.cpp" />
+    <ClCompile Include="src\HtmlReport.cpp" />
     <ClCompile Include="src\Query.cpp" />
     <ClCompile Include="src\RelativePeriod.cpp" />
     <ClCompile Include="src\ChangelogManifest.cpp" />
@@ -142,6 +145,7 @@
     <ClInclude Include="include\Category.h" />
     <ClInclude Include="include\CategorySystem.h" />
     <ClInclude Include="include\ChartData.h" />
+    <ClInclude Include="include\ChartFolding.h" />
     <ClInclude Include="include\Client.h" />
     <ClInclude Include="include\ClientManager.h" />
     <ClInclude Include="include\CommonTypes.h" />
@@ -165,6 +169,8 @@
     <ClInclude Include="include\MnbExchangeRateClient.h" />
     <ClInclude Include="include\NetworkLock.h" />
     <ClInclude Include="include\FavoriteQuery.h" />
+    <ClInclude Include="include\FavoriteReport.h" />
+    <ClInclude Include="include\HtmlReport.h" />
     <ClInclude Include="include\Query.h" />
     <ClInclude Include="include\RelativePeriod.h" />
     <ClInclude Include="include\RefCounted.h" />

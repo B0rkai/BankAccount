@@ -207,7 +207,7 @@ TEST(QueryByNameTest, LeadingExclamationMarkInvertsTheMatch) {
     EXPECT_TRUE(Check(&q, &other));
 }
 
-TEST(QuerySumByTopicTest, ChartResultSeparatesIncomeAndExpenseAndSortsTopicsAscendingByHufSum) {
+TEST(QuerySumByTopicTest, ChartResultRoutesEachTopicByNetSumSignAndSortsAscendingByHufSum) {
     FakeAccount acc(Id(0), "Acc");
     Transaction groceries_income(&acc, Money(HUF, 1000), 45000, Id(0), Id(0));
     groceries_income.GetCategoryId() = Id(5);
@@ -232,24 +232,21 @@ TEST(QuerySumByTopicTest, ChartResultSeparatesIncomeAndExpenseAndSortsTopicsAsce
     ASSERT_TRUE(result.m_income.count(HUF));
     ASSERT_TRUE(result.m_expense.count(HUF));
 
-    // net HUF sums: Rent -2000, Groceries 600 (1000 - 400) - Rent sorts first (ascending)
+    // net HUF sums: Rent -2000 (expense bucket), Groceries 600 = 1000 - 400 (income bucket) -
+    // each topic appears on exactly one of the two charts, never both.
     const ChartData& income = result.m_income.at(HUF);
-    ASSERT_EQ(income.m_labels.size(), 2u);
-    EXPECT_EQ(income.m_labels[0], "Rent");
-    EXPECT_EQ(income.m_labels[1], "Groceries");
+    ASSERT_EQ(income.m_labels.size(), 1u);
+    EXPECT_EQ(income.m_labels[0], "Groceries");
     ASSERT_EQ(income.m_series.size(), 1u);
     EXPECT_EQ(income.m_series[0].m_name, "Sum");
-    ASSERT_EQ(income.m_series[0].m_values.size(), 2u);
-    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[0], 0.0);    // Rent had no income leg
-    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[1], 1000.0); // Groceries' income leg
+    ASSERT_EQ(income.m_series[0].m_values.size(), 1u);
+    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[0], 600.0); // net sum, not just the income leg
 
     const ChartData& expense = result.m_expense.at(HUF);
-    ASSERT_EQ(expense.m_labels.size(), 2u);
+    ASSERT_EQ(expense.m_labels.size(), 1u);
     EXPECT_EQ(expense.m_labels[0], "Rent");
-    EXPECT_EQ(expense.m_labels[1], "Groceries");
-    ASSERT_EQ(expense.m_series[0].m_values.size(), 2u);
-    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[0], 2000.0); // magnitude, not -2000
-    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[1], 400.0);
+    ASSERT_EQ(expense.m_series[0].m_values.size(), 1u);
+    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[0], 2000.0); // magnitude of the net sum, not -2000
 }
 
 TEST(QuerySumByTopicTest, ChartResultKeepsCurrenciesSeparateAndScalesByCents) {
@@ -269,23 +266,21 @@ TEST(QuerySumByTopicTest, ChartResultKeepsCurrenciesSeparateAndScalesByCents) {
     Check(&q, &rent);
 
     ChartResult result = q.GetChartResult();
-    ASSERT_EQ(result.m_income.size(), 2u); // one topic never had the other's currency, so no zero-filled entry for it
-    ASSERT_EQ(result.m_expense.size(), 2u); // both directions mirror the same currencies, even with these all-income transactions
+    ASSERT_EQ(result.m_income.size(), 2u); // both topics are net income, one per currency
+    ASSERT_EQ(result.m_expense.size(), 0u); // neither topic has a negative net sum, so nothing routes here
 
     const ChartData& eur_income = result.m_income.at(EUR);
     ASSERT_EQ(eur_income.m_labels.size(), 1u);
     EXPECT_EQ(eur_income.m_labels[0], "Travel");
     EXPECT_DOUBLE_EQ(eur_income.m_series[0].m_values[0], 100.0);
-    EXPECT_DOUBLE_EQ(result.m_expense.at(EUR).m_series[0].m_values[0], 0.0);
 
     const ChartData& huf_income = result.m_income.at(HUF);
     ASSERT_EQ(huf_income.m_labels.size(), 1u);
     EXPECT_EQ(huf_income.m_labels[0], "Rent");
     EXPECT_DOUBLE_EQ(huf_income.m_series[0].m_values[0], 5000.0);
-    EXPECT_DOUBLE_EQ(result.m_expense.at(HUF).m_series[0].m_values[0], 0.0);
 }
 
-TEST(PeriodicQueryTest, ChartResultSeparatesIncomeAndExpenseAndPadsMissingPeriodsWithZero) {
+TEST(PeriodicQueryTest, ChartResultRoutesEachTopicByNetSumSignAndPadsMissingPeriodsWithZero) {
     FakeAccount acc(Id(0), "Acc");
     uint16_t date_2020 = (uint16_t)DMYToExcelSerialDate(1, 1, 2020);
     uint16_t date_2023 = (uint16_t)DMYToExcelSerialDate(1, 1, 2023);
@@ -321,6 +316,9 @@ TEST(PeriodicQueryTest, ChartResultSeparatesIncomeAndExpenseAndPadsMissingPeriod
         return nullptr;
     };
 
+    // Groceries' net across both years is +500 (1000 - 500) - it's routed entirely to the income
+    // chart. Rent's only transaction is an expense, so it's routed entirely to the expense chart.
+    // Neither topic appears on both tabs.
     const ChartData& income = result.m_income.at(HUF);
     ASSERT_EQ(income.m_labels.size(), 4u);
     EXPECT_EQ(income.m_labels[0], "2020");
@@ -334,18 +332,12 @@ TEST(PeriodicQueryTest, ChartResultSeparatesIncomeAndExpenseAndPadsMissingPeriod
     EXPECT_DOUBLE_EQ(groceries_income->m_values[0], 1000.0);
     EXPECT_DOUBLE_EQ(groceries_income->m_values[1], 0.0);
     EXPECT_DOUBLE_EQ(groceries_income->m_values[2], 0.0);
-    EXPECT_DOUBLE_EQ(groceries_income->m_values[3], 0.0); // the 2023 leg was an expense, not income
+    EXPECT_DOUBLE_EQ(groceries_income->m_values[3], 500.0); // magnitude of the 2023 net (-500), still on the income tab overall
 
-    const ChartSeries* rent_income = find_series(income, "Rent");
-    ASSERT_NE(rent_income, nullptr);
-    EXPECT_DOUBLE_EQ(rent_income->m_values[0], 0.0); // Rent's only transaction was an expense
+    EXPECT_EQ(find_series(income, "Rent"), nullptr); // Rent never appears on the income tab
 
     const ChartData& expense = result.m_expense.at(HUF);
-    const ChartSeries* groceries_expense = find_series(expense, "Groceries");
-    ASSERT_NE(groceries_expense, nullptr);
-    ASSERT_EQ(groceries_expense->m_values.size(), 4u);
-    EXPECT_DOUBLE_EQ(groceries_expense->m_values[0], 0.0);
-    EXPECT_DOUBLE_EQ(groceries_expense->m_values[3], 500.0); // magnitude, not -500
+    EXPECT_EQ(find_series(expense, "Groceries"), nullptr); // Groceries never appears on the expense tab
 
     const ChartSeries* rent_expense = find_series(expense, "Rent");
     ASSERT_NE(rent_expense, nullptr);
@@ -396,6 +388,49 @@ TEST(PeriodicQueryTest, QuarterlyAndHalfYearlyLabelUsingBusinessAbbreviations) {
     ASSERT_EQ(htable.front().size(), 2u + 3u); // Topic + H1,H2 + TOTAL + AVERAGE
     EXPECT_EQ(htable.front()[1], "2024-H1");
     EXPECT_EQ(htable.front()[2], "2024-H2");
+}
+
+TEST(PeriodicQueryTest, TableAndChartTopicsAreSortedAscendingByTotalAmount) {
+    FakeAccount acc(Id(0), "Acc");
+    uint16_t date_2024 = (uint16_t)DMYToExcelSerialDate(15, 6, 2024);
+
+    // Rent's total (2000) < Groceries' (3000) < Salary's (9000) - deliberately not in id/insertion
+    // order, so a passing test can't be an accident of iteration order matching sort order.
+    Transaction salary(&acc, Money(HUF, 9000), date_2024, Id(0), Id(0));
+    salary.GetCategoryId() = Id(9);
+    Transaction rent(&acc, Money(HUF, 2000), date_2024, Id(0), Id(0));
+    rent.GetCategoryId() = Id(7);
+    Transaction groceries(&acc, Money(HUF, 3000), date_2024, Id(0), Id(0));
+    groceries.GetCategoryId() = Id(5);
+
+    FakeNameResolve resolve;
+    resolve.SetName(Id(9), "Salary");
+    resolve.SetName(Id(7), "Rent");
+    resolve.SetName(Id(5), "Groceries");
+    QueryResolveScope scope(&resolve);
+
+    PeriodicCategoryQuery q;
+    q.SetMode(TopicPeriodicSubQuery::YEARLY);
+    Check(&q, &salary);
+    Check(&q, &rent);
+    Check(&q, &groceries);
+
+    StringTable table = q.GetTableResult();
+    // header row, one row per topic, then a trailing TOTAL row (added whenever more than one topic
+    // is present, regardless of "show_aggregates" - see PeriodicQuery::GetTableResult()), each
+    // topic row's first cell the topic name.
+    ASSERT_EQ(table.size(), 5u);
+    EXPECT_EQ(table[1][0], "Rent");
+    EXPECT_EQ(table[2][0], "Groceries");
+    EXPECT_EQ(table[3][0], "Salary");
+    EXPECT_EQ(table[4][0], "TOTAL");
+
+    ChartResult result = q.GetChartResult();
+    const ChartData& income = result.m_income.at(HUF);
+    ASSERT_EQ(income.m_series.size(), 3u);
+    EXPECT_EQ(income.m_series[0].m_name, "Rent");
+    EXPECT_EQ(income.m_series[1].m_name, "Groceries");
+    EXPECT_EQ(income.m_series[2].m_name, "Salary");
 }
 
 }

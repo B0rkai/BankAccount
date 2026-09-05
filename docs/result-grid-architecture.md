@@ -17,7 +17,8 @@ Populated by three writer paths:
 - `UIOutputEntityTable` (one editable Name tab for List Clients/Categories/Types/Accounts).
 - `RunAndRenderQuery`, the only multi-tab producer, which assembles one `GridTabSpec` per
   `QueryElement` with a non-empty `GetTableResult()` (labelled by topic, e.g. "Category Summary"/
-  "Client (Periodic)" — see `GridTabLabelFor`) followed by a "Transactions" tab if the query also
+  "Client (Periodic)" — see `Query.h`'s `DescribeQueryElement`, shared with the HTML report's
+  section headings, see [html-reports-design.md](html-reports-design.md)) followed by a "Transactions" tab if the query also
   returned a transaction list, and lets `SetGridTabs` default-select tab 0 — always a summary/
   periodic tab when one exists, per the "show summaries by default" design goal, since the
   transaction-list tab (often much longer) is always appended last.

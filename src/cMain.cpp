@@ -5,15 +5,21 @@
 #include <algorithm>
 #include <tuple>
 #include <utility>
+#include <filesystem>
+#include <fstream>
+#include <ctime>
 
 #include "wx/wx.h"
 #include "wx/windowid.h"
+#include "wx/filename.h"
 
 #include "cMain.h"
 #include "Currency.h"
 #include "Query.h"
 #include "RelativePeriod.h"
 #include "FavoriteQuery.h"
+#include "FavoriteReport.h"
+#include "HtmlReport.h"
 #include "WQuery.h"
 #include "Transaction.h"
 #include "BankAccountFile.h"
@@ -119,6 +125,7 @@ enum CtrIds {
 	MENU_LIST_ACCOUNTS,
 	MENU_LIST_CLIENTS,
 	MENU_LIST_CATEGORIES,
+	MENU_MAKE_REPORT,
 	MENU_UPDATE_EXCHANGE_RATES,
 	MENU_TEST_MANUAL_RESOLVER,
 	MENU_TEST_NEW_ACCOUNT,
@@ -831,32 +838,6 @@ namespace {
 		return false;
 	}
 
-	// Topic2String() (CommonTypes.cpp) only covers CLIENT/CATEGORY/TYPE - it's scoped to the
-	// merge-topic combo box, which has no "Account" entry (Account has no MergeQuery) - so grid
-	// tab labels need their own topic name, covering ACCOUNT/CURRENCY too (QuerySumByTopic's
-	// generic "no specific checkbox checked" fallback reports its topic as CURRENCY).
-	String GridTabTopicName(QueryTopic topic) {
-		switch (topic) {
-		case QueryTopic::CLIENT: return "Client";
-		case QueryTopic::CATEGORY: return "Category";
-		case QueryTopic::TYPE: return "Type";
-		case QueryTopic::ACCOUNT: return "Account";
-		case QueryTopic::CURRENCY: return "Currency";
-		default: return "Summary";
-		}
-	}
-
-	// The notebook tab label for a QueryElement that produced a non-empty GetTableResult() -
-	// distinguishes a periodic breakdown (PeriodicQuery and its Category/Client/Type/Account
-	// subclasses) from a plain by-topic sum (QuerySumByTopic and its subclasses), since both
-	// report the same GetTopic().
-	String GridTabLabelFor(const QueryElement* qe) {
-		String topic = GridTabTopicName(qe->GetTopic());
-		if (dynamic_cast<const PeriodicQuery*>(qe)) {
-			return topic + " (Periodic)";
-		}
-		return topic + " Summary";
-	}
 }
 
 void cMain::FillGridWidget(wxGrid* grid, const StringTable& table) {
@@ -1593,11 +1574,13 @@ void cMain::InitMenu() {
 	m_menu_bar = new wxMenuBar();
 	wxMenu* dbmenu = new wxMenu();
 	wxMenu* querymenu = new wxMenu();
+	wxMenu* reportsmenu = new wxMenu();
 	wxMenu* periodsmenu = new wxMenu();
 	wxMenu* viewmenu = new wxMenu();
 	wxMenu* helpmenu = new wxMenu();
 	m_menu_bar->Append(dbmenu, "Database");
 	m_menu_bar->Append(querymenu, "Query");
+	m_menu_bar->Append(reportsmenu, "Reports");
 	m_menu_bar->Append(periodsmenu, "Periods");
 	m_menu_bar->Append(viewmenu, "View");
 #ifdef _DEBUG
@@ -1634,6 +1617,23 @@ void cMain::InitMenu() {
 		}
 		querymenu->AppendSubMenu(favoritesmenu, "Favorite Queries");
 	}
+	m_favorite_reports = LoadFavoriteReports();
+	if (!m_favorite_reports.empty()) {
+		wxMenu* favoritereportsmenu = new wxMenu();
+		// Same dynamic-id mechanism as the Favorite Queries submenu above - see its own comment.
+		m_favorite_report_id_base = wxWindow::NewControlId((int)m_favorite_reports.size());
+		for (size_t i = 0; i < m_favorite_reports.size(); ++i) {
+			int id = m_favorite_report_id_base + (int)i;
+			favoritereportsmenu->Append(id, m_favorite_reports[i].name);
+			favoritereportsmenu->Bind(wxEVT_MENU, &cMain::FavoriteReportSelected, this, id);
+		}
+		reportsmenu->AppendSubMenu(favoritereportsmenu, "Favorite Reports");
+		reportsmenu->AppendSeparator();
+	}
+	// Placeholder for a future "ad-hoc report from the currently shown query results" feature -
+	// deliberately unimplemented and permanently disabled, not wired to any handler (see
+	// docs/html-reports-design.md's explicitly-deferred scope).
+	reportsmenu->Append(MENU_MAKE_REPORT, "Make Report")->Enable(false);
 	periodsmenu->Append(MENU_PERIOD_THIS_MONTH, "This Month");
 	periodsmenu->Append(MENU_PERIOD_LAST_MONTH, "Last Month");
 	periodsmenu->AppendSeparator();
@@ -1802,7 +1802,7 @@ void cMain::RunAndRenderQuery(Query& q) {
 			continue;
 		}
 		GridTabSpec spec;
-		spec.label = GridTabLabelFor(qe);
+		spec.label = DescribeQueryElement(qe);
 		spec.table = qe_table;
 		spec.chart_data = qe->GetChartResult();
 		spec.chart_shape = qe->GetChartShape();
@@ -1853,6 +1853,78 @@ void cMain::FavoriteQuerySelected(wxCommandEvent& evt) {
 	std::vector<int> enabled_accounts(checked_accounts.begin(), checked_accounts.end());
 	BuildQueryFromFavorite(def, q, enabled_accounts);
 	RunAndRenderQuery(q);
+}
+
+namespace {
+	// Strips characters Windows forbids in a file name - a report name is free text (whatever
+	// the user hand-wrote as "name" in db\favorite_reports.json), not already filename-safe.
+	String SanitizeFileNameComponent(const String& name) {
+		static const wxString invalid = "\\/:*?\"<>|";
+		String result;
+		for (size_t i = 0; i < name.size(); ++i) {
+			wxChar c = name[i];
+			result += (invalid.Find(c) != wxNOT_FOUND) ? wxChar('_') : c;
+		}
+		return result;
+	}
+
+	String TimestampForFilename() {
+		time_t t = time(nullptr);
+		struct tm dt = *localtime(&t);
+		std::ostringstream ss;
+		ss << (dt.tm_year + 1900) << std::setfill('0') << std::setw(2) << (dt.tm_mon + 1) << std::setw(2) << dt.tm_mday
+			<< "_" << std::setw(2) << dt.tm_hour << std::setw(2) << dt.tm_min << std::setw(2) << dt.tm_sec;
+		return String(ss.str());
+	}
+}
+
+void cMain::FavoriteReportSelected(wxCommandEvent& evt) {
+	evt.Skip();
+	size_t index = (size_t)(evt.GetId() - m_favorite_report_id_base);
+	if (index >= m_favorite_reports.size()) {
+		return;
+	}
+	GenerateFavoriteReportByName(m_favorite_reports[index].name);
+}
+
+void cMain::GenerateFavoriteReportByName(const String& name) {
+	if (!m_bank_file) {
+		UIOutputText("First load the database");
+		return;
+	}
+	auto def_it = std::find_if(m_favorite_reports.begin(), m_favorite_reports.end(), [&name](const FavoriteReportDef& r) {
+		return r.name == name;
+	});
+	if (def_it == m_favorite_reports.end()) {
+		UIOutputText("Unknown favorite report \"" + name + "\"");
+		return;
+	}
+	const FavoriteReportDef& def = *def_it;
+	auto it = std::find_if(m_favorite_queries.begin(), m_favorite_queries.end(), [&def](const FavoriteQueryDef& q) {
+		return q.name == def.favorite_query;
+	});
+	if (it == m_favorite_queries.end()) {
+		UIOutputText("Favorite report \"" + def.name + "\" references unknown favorite query \"" + def.favorite_query + "\"");
+		return;
+	}
+	Query q;
+	wxArrayInt checked_accounts;
+	m_ctrl_grp_basic_filter.m_acc_chklb->GetCheckedItems(checked_accounts);
+	std::vector<int> enabled_accounts(checked_accounts.begin(), checked_accounts.end());
+	BuildQueryFromFavorite(*it, q, enabled_accounts);
+	std::vector<ReportSection> sections = BuildReportSections(q, *m_bank_file);
+	String html = BuildHtmlReport(def.name, sections, def.chart_kinds, def.chart_sides, LoadChartJsSource());
+
+	std::filesystem::create_directories("reports");
+	String filename = "reports\\" + SanitizeFileNameComponent(def.name) + "_" + TimestampForFilename() + ".html";
+	std::ofstream out(filename.ToStdString(), std::ofstream::binary);
+	out << html.utf8_str();
+	out.close();
+
+	wxFileName fn(filename);
+	fn.MakeAbsolute();
+	wxLaunchDefaultBrowser("file:///" + fn.GetFullPath(wxPATH_UNIX));
+	UIOutputText("Report written to " + fn.GetFullPath());
 }
 
 void cMain::MergeButtonClicked(wxCommandEvent& evt) {

@@ -163,6 +163,34 @@ non-array root discards the whole file; a non-object array entry, or an entry mi
 | `chart.side` | string | no | `"income"` \| `"expense"`. Unrecognized/unavailable falls back to the default. |
 | `chart.kind` | string | no | `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartDialog.h](../include/ChartDialog.h)). Unrecognized, or a kind that doesn't apply to the resolved chart shape, falls back to the default. |
 
+## `db\favorite_reports.json`
+
+Small, local, hand-edited file listing saved/favorite HTML reports, surfaced as a
+`Reports → Favorite Reports` submenu. Parsed by `ParseFavoriteReports()`
+([include/FavoriteReport.h](../include/FavoriteReport.h)/
+[src/FavoriteReport.cpp](../src/FavoriteReport.cpp)) - same fail-safe contract as
+`db\favorite_queries.json`: root must be a JSON **array** of objects, a non-array root discards
+the whole file, and a non-object entry (or one missing a required field) is skipped individually.
+See [html-reports-design.md](html-reports-design.md) for the feature as a whole.
+
+```json
+[
+  {
+    "name": "Monthly category report",
+    "favorite_query": "This month by category",
+    "chart_kinds": ["pie", "bar"],
+    "chart_sides": ["expense"]
+  }
+]
+```
+
+| Key | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | **yes** | Menu label, and the generated report's page heading/file name. Missing/empty/non-string skips the entire entry. |
+| `favorite_query` | string | **yes** | Must match a `name` in `db\favorite_queries.json` - resolved by exact string match at report-generation time (not at load time), so the two files can be edited independently; a report referencing a since-renamed/deleted favorite query fails gracefully with an on-screen message rather than crashing. Missing/empty skips the entire entry. |
+| `chart_kinds` | string array | no | Subset of `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartDialog.h](../include/ChartDialog.h)). Empty/omitted = tables only, no charts. A kind not valid for a given report section's data shape (e.g. `"line"` for a plain by-topic sum) is silently skipped for that section. |
+| `chart_sides` | string array | no | Subset of `"income"` \| `"expense"` - restricts which side(s) get rendered as charts, e.g. `["expense"]` for a spending-only report. Empty/omitted/all-unrecognized = no restriction (both sides rendered, same as before this key existed) - never an empty report. |
+
 ## Files intentionally out of scope
 
 `db\BankAccount.txt`/`db\BData.baf` (the actual transaction database — a custom

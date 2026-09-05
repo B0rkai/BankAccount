@@ -59,6 +59,14 @@ public:
 	inline virtual ChartShape GetChartShape() const { return ChartShape::NONE; }
 };
 
+// A human-readable label for a QueryElement that produced a non-empty GetTableResult() -
+// distinguishes a periodic breakdown (PeriodicQuery and its Category/Client/Type/Account
+// subclasses) from a plain by-topic sum (QuerySumByTopic and its subclasses), since both report
+// the same GetTopic(). Shared by cMain's result-grid tab labels (RunAndRenderQuery) and the HTML
+// report's section headings (HtmlReport.h's BuildReportSections) so both stay consistent by
+// construction rather than as two hand-maintained copies.
+String DescribeQueryElement(const QueryElement* qe);
+
 // RAII guard around QueryElement::SetResolveIf() - resets to nullptr unconditionally when the
 // guard goes out of scope, including via an exception unwinding past it (the plain set-then-
 // reset calls this replaces were not exception-safe: a throw between them left s_resolve_if
@@ -202,6 +210,9 @@ public:
 	inline int GetEndDateId() const { return m_max_date_id; }
 	std::set<CurrencyType> GetCurrencyTypes() const;
 	const TopicSubQuery* GetSubQuery(const int date_id) const;
+	// sum across every period, converted to `type` - the sort key PeriodicQuery::GetSortedSubQueries()
+	// uses to put topic rows in the same ascending-by-amount order QuerySumByTopic already uses.
+	int32_t GetTotalSumValue(CurrencyType type) const;
 private:
 	int m_min_date_id = INT_MAX;
 	int m_max_date_id = 0;
@@ -214,6 +225,9 @@ class PeriodicQuery : public QueryCurrencySum {
 	TopicPeriodicSubQuery::Mode m_mode = TopicPeriodicSubQuery::INVALID;
 	std::unordered_map<Id::Type, TopicPeriodicSubQuery> m_subqueries;
 	virtual bool CheckTransaction(const Transaction* tr) override;
+	// shared by GetTableResult() and GetChartResult() - topics sorted ascending by total HUF sum
+	// across every period, mirroring QuerySumByTopic::GetSortedSubQueries()'s convention.
+	std::vector<const TopicPeriodicSubQuery*> GetSortedSubQueries() const;
 public:
 	virtual StringTable GetTableResult() const;
 	virtual ChartResult GetChartResult() const override;

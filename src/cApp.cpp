@@ -29,5 +29,17 @@ bool cApp::OnInit() {
 	m_frame = new cMain();
 	m_frame->Show();
 	m_frame->Init();
+
+	// Dev-time instrumentation only: --make-report=<name> generates that favorite report
+	// straight from the command line (writes reports\*.html and opens it), without needing to
+	// drive the Reports menu through UI automation - lets a generated report's actual HTML/
+	// Chart.js output be inspected directly. Silently ignored if absent.
+	for (int i = 1; i < argc; ++i) {
+		String arg(argv[i]);
+		const String prefix = "--make-report=";
+		if (arg.StartsWith(prefix)) {
+			m_frame->GenerateFavoriteReportByName(arg.Mid(prefix.length()));
+		}
+	}
 	return true;
 }

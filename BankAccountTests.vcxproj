@@ -118,6 +118,8 @@
     <ClCompile Include="tests\AccountManagerTests.cpp" />
     <ClCompile Include="tests\CommonTypesTests.cpp" />
     <ClCompile Include="tests\FavoriteQueryTests.cpp" />
+    <ClCompile Include="tests\FavoriteReportTests.cpp" />
+    <ClCompile Include="tests\HtmlReportTests.cpp" />
     <ClCompile Include="tests\RelativePeriodTests.cpp" />
     <ClCompile Include="tests\Crc32Tests.cpp" />
     <ClCompile Include="tests\CurrencyTests.cpp" />

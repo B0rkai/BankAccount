@@ -28,12 +28,13 @@ public:
 using ChartDataByCurrency = std::map<CurrencyType, ChartData>;
 
 // Income and expense are kept as two separate chart datasets rather than merged into one signed
-// net - a topic's net sum is frequently negative for expense-heavy categories, which a pie slice
-// or a bar-chart axis can't represent as a meaningful magnitude, and even where it can (a
-// periodic line chart), a merged net obscures the actual income/expense trend. Both sides are
-// always non-negative magnitudes here (QueryCurrencySum::Result's m_exp is a negative
-// accumulator - see QuerySumByTopic::GetChartResult()/PeriodicQuery::GetChartResult() for where
-// it's turned into a magnitude), so no chart widget needs its own sign-correction logic.
+// net axis - a topic's net sum is frequently negative for expense-heavy categories, which a pie
+// slice or a bar-chart axis can't represent as a meaningful magnitude. Each topic is routed
+// entirely to one dataset or the other, decided by the sign of its aggregated net sum (income and
+// expense combined, not tracked/plotted separately) - see QuerySumByTopic::GetChartResult()/
+// PeriodicQuery::GetChartResult() - so the same topic never appears on both tabs. Both datasets
+// hold only non-negative magnitudes of that net sum, so no chart widget needs its own
+// sign-correction logic.
 struct ChartResult {
 	ChartDataByCurrency m_income;
 	ChartDataByCurrency m_expense;

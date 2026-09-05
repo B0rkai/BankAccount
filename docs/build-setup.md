@@ -18,6 +18,17 @@ files (`db\location.json`, `release.json` — see
 [network-db-location.md](network-db-location.md)) and favorite/saved queries
 (`db\favorite_queries.json`, also in [json-file-schemas.md](json-file-schemas.md)).
 
+A second exception, checked in for the same "single file, no build step" reason: **Chart.js**
+(MIT-licensed, [chartjs/Chart.js](https://github.com/chartjs/Chart.js), v4.4.4) at
+`resources\chart.umd.min.js` (plus its `resources\LICENSE.MIT`) — the minified UMD build, used to
+render the interactive charts in the HTML reports feature (see
+[html-reports-design.md](html-reports-design.md)). Unlike `nlohmann/json.hpp`, this isn't C++ code
+compiled into the binary — `HtmlReport.cpp`'s `LoadChartJsSource()` reads it as plain text at
+report-generation time (relative path from the app's CWD, same convention as `db\`/`log\`) and
+inlines its contents verbatim into a `<script>` tag, so no `.vcxproj` changes were needed here
+either. Upgrading the vendored version means re-downloading
+`https://cdn.jsdelivr.net/npm/chart.js@<version>/dist/chart.umd.min.js` over the existing file.
+
 - **wxWidgets 3.0** headers at `C:\Users\<user>\source\wxWidgets\include` (both configs).
 - **ZipLib** headers at `C:\Users\<user>\source\ziplib\Source\ZipLib`; Debug|x64 links its
   built libs from `..\..\ziplib\Bin\x64\Debug\*.lib` (i.e. a `ziplib` checkout next to this repo).

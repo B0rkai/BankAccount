@@ -181,6 +181,30 @@ AMOUNT/CURRENCY/CLIENT/MEMO/CATEGORY/GENERAL/WRITE):
   Relative date keywords (`"this_month"`, `"last_30_days"`, ...) are resolved by
   [include/RelativePeriod.h](include/RelativePeriod.h)'s `ResolveRelativePeriod()` — the same
   range math the "Periods" menu shortcuts use.
+- **HTML reports** ([include/FavoriteReport.h](include/FavoriteReport.h)/
+  [src/FavoriteReport.cpp](src/FavoriteReport.cpp), [include/HtmlReport.h](include/HtmlReport.h)/
+  [src/HtmlReport.cpp](src/HtmlReport.cpp), design in
+  [docs/html-reports-design.md](docs/html-reports-design.md)) turn a favorite query into a
+  self-contained, offline `.html` file — table(s) plus interactive Chart.js charts — via a
+  `Reports → Favorite Reports` menu mirroring Favorite Queries' own load-once-at-startup,
+  hand-edited-JSON mechanism (`db\favorite_reports.json`, schema in
+  [docs/json-file-schemas.md](docs/json-file-schemas.md)). `FavoriteReportDef` names an existing
+  `FavoriteQueryDef` as its data source; `BuildReportSections()` runs it and walks the resulting
+  `QueryElement`s the same way `RunAndRenderQuery`'s grid-tab loop does, and `BuildHtmlReport()`
+  renders one table-left/charts-right (stacking above the table on narrow viewports) section per
+  result, with Chart.js itself vendored at `resources\chart.umd.min.js` and inlined into the
+  output so the report has zero external references. `FavoriteReportDef::chart_sides` (JSON
+  `chart_sides`) restricts which of income/expense actually get rendered per section (e.g.
+  `["expense"]` for a spending-only report); a chart's topics/series are folded into a trailing
+  "Others" slice/series once a long tail gets small enough, via the shared, wx-GUI-free
+  `include/ChartFolding.h`/`src/ChartFolding.cpp` (`BankAccountCore`) that both `HtmlReport.cpp`
+  and the in-app `ChartDialog.cpp` use identically, though `HtmlReport.cpp` re-sorts the folded
+  result ascending by amount before rendering rather than reusing the fold's own descending
+  (largest-first) order, matching `QuerySumByTopic`/`PeriodicQuery`'s own table row order (both
+  sort ascending by total amount via their `GetSortedSubQueries()`). A `Reports → Make Report`
+  item exists as a
+  permanently-disabled placeholder for a separate, not-yet-designed feature — see the design doc's
+  "Scope of this first version".
 
 **Chart display**: `ChartDialog`/`ChartTabPanel` ([include/ChartDialog.h](include/ChartDialog.h)/
 [src/ChartDialog.cpp](src/ChartDialog.cpp)) render one query's `ChartResult` as Income/Expense

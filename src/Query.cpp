@@ -186,16 +186,20 @@ ChartResult QuerySumByTopic::GetChartResult() const {
 	ChartResult result;
 	// each topic's currencies are added independently, so a topic that never had e.g. an EUR
 	// transaction simply has no EUR data point - unlike PeriodicQuery::GetChartResult(), there's
-	// no shared axis here that needs every topic represented at every position. Both income and
-	// expense get a point for every topic+currency pair that appears at all, even when one side
-	// is zero, so the two tabs' labels/legends stay comparable.
+	// no shared axis here that needs every topic represented at every position. Each topic+
+	// currency pair is routed to exactly one of income/expense, decided by the sign of its net
+	// sum (m_sum = m_inc + m_exp, not m_inc/m_exp tracked separately) - a topic with both income
+	// and expense transactions (e.g. a category with occasional refunds) would otherwise show up
+	// on both tabs.
 	for (const TopicSubQuery* tsq : GetSortedSubQueries()) {
 		for (auto& pair : tsq->GetResults()) {
 			const CurrencyType currency = pair.first;
-			AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), pair.second.m_inc);
-			// m_exp is a negative accumulator (see QueryCurrencySum::CheckTransaction) - negate
-			// it into a spend magnitude here, once, rather than in every chart widget.
-			AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -pair.second.m_exp);
+			const int64_t net = pair.second.m_sum;
+			if (net >= 0) {
+				AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), net);
+			} else {
+				AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -net);
+			}
 		}
 	}
 	return result;
@@ -304,6 +308,31 @@ String QueryElement::GetStringResult() const {
 
 StringTable QueryElement::GetTableResult() const {
 	return StringTable(); // empty
+}
+
+namespace {
+	// Topic2String() (CommonTypes.cpp) only covers CLIENT/CATEGORY/TYPE - it's scoped to the
+	// merge-topic combo box, which has no "Account" entry (Account has no MergeQuery) - so this
+	// needs its own topic name, covering ACCOUNT/CURRENCY too (QuerySumByTopic's generic "no
+	// specific checkbox checked" fallback reports its topic as CURRENCY).
+	String DescribeQueryTopic(QueryTopic topic) {
+		switch (topic) {
+		case QueryTopic::CLIENT: return "Client";
+		case QueryTopic::CATEGORY: return "Category";
+		case QueryTopic::TYPE: return "Type";
+		case QueryTopic::ACCOUNT: return "Account";
+		case QueryTopic::CURRENCY: return "Currency";
+		default: return "Summary";
+		}
+	}
+}
+
+String DescribeQueryElement(const QueryElement* qe) {
+	String topic = DescribeQueryTopic(qe->GetTopic());
+	if (dynamic_cast<const PeriodicQuery*>(qe)) {
+		return topic + " (Periodic)";
+	}
+	return topic + " Summary";
 }
 
 bool QueryByNumber::Check(const int32_t val) const {
@@ -507,6 +536,14 @@ std::set<CurrencyType> TopicPeriodicSubQuery::GetCurrencyTypes() const {
 	return curr_vec;
 }
 
+int32_t TopicPeriodicSubQuery::GetTotalSumValue(CurrencyType type) const {
+	int32_t sum = 0;
+	for (auto& p : m_subsubqueries) {
+		sum += p.second.GetSumValue(type);
+	}
+	return sum;
+}
+
 const TopicSubQuery* TopicPeriodicSubQuery::GetSubQuery(const int date_id) const {
 	auto it = m_subsubqueries.find(date_id);
 	if (it == m_subsubqueries.end()) {
@@ -523,6 +560,19 @@ bool PeriodicQuery::CheckTransaction(const Transaction* tr) {
 		sub.SetMode(m_mode);
 	}
 	return sub.CheckTransaction(tr);
+}
+
+std::vector<const TopicPeriodicSubQuery*> PeriodicQuery::GetSortedSubQueries() const {
+	std::vector<const TopicPeriodicSubQuery*> sum_list_sorting;
+	for (auto& pair : m_subqueries) {
+		sum_list_sorting.push_back(&pair.second);
+	}
+	if (sum_list_sorting.size() > 1) {
+		std::sort(sum_list_sorting.begin(), sum_list_sorting.end(), [](const TopicPeriodicSubQuery* lhs, const TopicPeriodicSubQuery* rhs) {
+			return (lhs->GetTotalSumValue(HUF) < rhs->GetTotalSumValue(HUF));
+		});
+	}
+	return sum_list_sorting;
 }
 
 // some serious shenanigans here
@@ -549,13 +599,13 @@ StringTable PeriodicQuery::GetTableResult() const {
 	table.push_meta_back(StringTable::LEFT_ALIGNED);
 	std::vector<Money> column_totals(column_count);
 	Money grand_total;
-	for (auto& p : m_subqueries) {
+	for (const TopicPeriodicSubQuery* p : GetSortedSubQueries()) {
 		int date_id = start;
 		std::map<CurrencyType, StringVector> row_map;
 		std::map<CurrencyType, Money> row_total_map;
-		std::set<CurrencyType> currencytypes = p.second.GetCurrencyTypes();
+		std::set<CurrencyType> currencytypes = p->GetCurrencyTypes();
 		for (CurrencyType ct : currencytypes) {
-			row_map[ct].push_back(p.second.GetName());
+			row_map[ct].push_back(p->GetName());
 			// pre-seed with the row's own currency - Money's default ctor defaults to HUF, and
 			// operator+= keeps the accumulator's own currency tag while converting the other side
 			// into it, so leaving this to be default-constructed on first use would silently
@@ -563,7 +613,7 @@ StringTable PeriodicQuery::GetTableResult() const {
 			row_total_map[ct] = Money(ct, 0);
 		}
 		while (date_id <= end) {
-			const TopicSubQuery* ptr = p.second.GetSubQuery(date_id);
+			const TopicSubQuery* ptr = p->GetSubQuery(date_id);
 			if (!ptr) {
 				for (auto& r : row_map) {
 					r.second.push_back("-");
@@ -676,30 +726,40 @@ ChartResult PeriodicQuery::GetChartResult() const {
 	// unlike QuerySumByTopic::GetChartResult(), every topic shares the same period axis, so a
 	// topic with no transactions in a given period still gets an explicit 0 there rather than
 	// being skipped, keeping every series the same length as m_labels.
-	for (auto& p : m_subqueries) {
-		for (CurrencyType currency : p.second.GetCurrencyTypes()) {
-			ChartData& income_chart = result.m_income[currency];
-			ChartData& expense_chart = result.m_expense[currency];
-			income_chart.m_currency = expense_chart.m_currency = currency;
-			income_chart.m_labels = expense_chart.m_labels = labels;
-			ChartSeries& income_series = income_chart.m_series.emplace_back();
-			ChartSeries& expense_series = expense_chart.m_series.emplace_back();
-			income_series.m_name = expense_series.m_name = p.second.GetName();
+	for (const TopicPeriodicSubQuery* p : GetSortedSubQueries()) {
+		for (CurrencyType currency : p->GetCurrencyTypes()) {
+			// decide the single destination chart first, from the topic's net sum (m_inc+m_exp)
+			// across the whole period - same rule as QuerySumByTopic::GetChartResult(), applied
+			// once per series rather than per point, so a topic's trend line doesn't jump between
+			// tabs from one period to the next.
+			int64_t net_total = 0;
 			for (int date_id = start; date_id <= end; ++date_id) {
-				const TopicSubQuery* sub = p.second.GetSubQuery(date_id);
-				double income_value = 0.0;
-				double expense_value = 0.0;
+				const TopicSubQuery* sub = p->GetSubQuery(date_id);
 				if (sub) {
 					auto res_map = sub->GetResults();
 					auto it = res_map.find(currency);
 					if (it != res_map.end()) {
-						income_value = MoneyValueAsDouble(it->second.m_inc, currency);
-						// m_exp is a negative accumulator - negate into a spend magnitude
-						expense_value = MoneyValueAsDouble(-it->second.m_exp, currency);
+						net_total += it->second.m_sum;
 					}
 				}
-				income_series.m_values.push_back(income_value);
-				expense_series.m_values.push_back(expense_value);
+			}
+			ChartData& chart = (net_total >= 0 ? result.m_income : result.m_expense)[currency];
+			chart.m_currency = currency;
+			chart.m_labels = labels;
+			ChartSeries& series = chart.m_series.emplace_back();
+			series.m_name = p->GetName();
+			for (int date_id = start; date_id <= end; ++date_id) {
+				const TopicSubQuery* sub = p->GetSubQuery(date_id);
+				double value = 0.0;
+				if (sub) {
+					auto res_map = sub->GetResults();
+					auto it = res_map.find(currency);
+					if (it != res_map.end()) {
+						const int64_t net = it->second.m_sum;
+						value = MoneyValueAsDouble(net >= 0 ? net : -net, currency);
+					}
+				}
+				series.m_values.push_back(value);
 			}
 		}
 	}

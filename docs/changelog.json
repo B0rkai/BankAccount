@@ -1,6 +1,9 @@
 {
     "unreleased": [
-        "Fix What's New dialog: OK button clipped off-screen, and UTF-8 text (e.g. accented characters) rendered garbled"
+        "Fix What's New dialog: OK button clipped off-screen, and UTF-8 text (e.g. accented characters) rendered garbled",
+        "Add self-contained HTML reports (table + interactive charts) generated from favorite queries, via Reports → Favorite Reports",
+        "Fix charts: route each topic to income or expense by its net sum instead of showing it on both, and let a favorite report restrict which side(s) render via chart_sides",
+        "Fold long tails into an \"Others\" slice/series in report charts, and sort report tables/charts ascending by amount (Others always last)"
     ],
     "released": [
         {

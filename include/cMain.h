@@ -12,6 +12,7 @@
 #include "ChartData.h"
 #include "NetworkLock.h"
 #include "FavoriteQuery.h"
+#include "FavoriteReport.h"
 #include "DbLocationSettings.h"
 
 // wxButton;
@@ -178,6 +179,11 @@ class cMain :
     // item id offset it was assigned at build time (see m_favorite_query_id_base).
     std::vector<FavoriteQueryDef> m_favorite_queries;
     int m_favorite_query_id_base = wxID_ANY;
+    // Loaded once at startup (see InitMenu()) from db\favorite_reports.json - empty if the file
+    // is missing or every entry failed to parse. Indexed by FavoriteReportSelected via the menu
+    // item id offset it was assigned at build time (see m_favorite_report_id_base).
+    std::vector<FavoriteReportDef> m_favorite_reports;
+    int m_favorite_report_id_base = wxID_ANY;
     std::unique_ptr<BankAccountFile> m_bank_file;
     // Held for the whole session whenever DoLoad() resolves to network mode and this session
     // won the write lock - released automatically (by Windows, on process exit) if the process
@@ -317,6 +323,12 @@ class cMain :
     // builds and runs its Query via BuildQueryFromFavorite/RunAndRenderQuery, and applies its
     // chart preference (if any) to m_preferred_chart_side/_kind first.
     void FavoriteQuerySelected(wxCommandEvent& evt);
+    // Looks up the FavoriteReportDef behind evt's menu id (see m_favorite_report_id_base),
+    // resolves its referenced favorite query by name (out of m_favorite_queries - a mismatch
+    // logs a warning via UIOutputText rather than crashing, the two JSON files can drift
+    // independently), builds and runs that query, then writes and opens the resulting .html
+    // report - see docs/html-reports-design.md.
+    void FavoriteReportSelected(wxCommandEvent& evt);
     void MergeButtonClicked(wxCommandEvent& evt);
     void AddKeywordButtonClicked(wxCommandEvent& evt);
     void Import(wxCommandEvent& evt);
@@ -354,6 +366,12 @@ public:
     cMain();
     ~cMain();
     void Init();
+    // Shared body of FavoriteReportSelected, keyed by FavoriteReportDef::name instead of a menu
+    // id - lets cApp trigger report generation straight from a command-line switch
+    // (--make-report=<name>) for dev-time inspection of the generated .html, without needing to
+    // drive the actual Reports menu. Same fail-safe contract (UIOutputText, never a crash) as the
+    // menu path.
+    void GenerateFavoriteReportByName(const String& name);
     wxDECLARE_EVENT_TABLE();
 };
 
