@@ -197,9 +197,7 @@ StringVector ParseMultiValueString(const String& val) {
             }
             vals.emplace_back(val, prevpos, pos - prevpos);
         } while (pos != String::npos);
-        if (val.size() - prevpos) {
-            vals.emplace_back(val, prevpos, val.size() - prevpos);
-        }
+        vals.emplace_back(val, prevpos, val.size() - prevpos);
     }
     return vals;
 }
@@ -218,5 +216,23 @@ void SetToday(Today* ptr) {
         delete gToday;
     }
     gToday = ptr;
+}
+
+int CountChars(const String& text, const char c) {
+    int count = 0;
+    for (auto ch : text) {
+        if (ch == c) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+String StripTrailingChar(const String& val, char c) {
+    size_t end = val.size();
+    while (end > 0 && val[end - 1] == c) {
+        --end;
+    }
+    return val.substr(0, end);
 }
 

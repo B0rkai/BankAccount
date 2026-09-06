@@ -135,11 +135,23 @@ TEST(ParseMultiValueStringTest, MultipleValuesSplitOnSemicolon) {
     EXPECT_EQ(result[2], "c");
 }
 
-TEST(ParseMultiValueStringTest, TrailingSeparatorIsDroppedRatherThanProducingAnEmptyElement) {
+TEST(ParseMultiValueStringTest, TrailingSeparatorProducesAnEmptyTrailingElement) {
+    // A trailing separator denotes a genuinely empty last field (needed for CSV rows whose last
+    // column is empty); callers reading free-typed user input strip a trailing separator
+    // themselves via StripTrailingChar() before calling this.
     StringVector result = ParseMultiValueString("a;");
 
-    ASSERT_EQ(result.size(), 1u);
+    ASSERT_EQ(result.size(), 2u);
     EXPECT_EQ(result[0], "a");
+    EXPECT_EQ(result[1], "");
+}
+
+TEST(StripTrailingCharTest, RemovesAllTrailingOccurrences) {
+    EXPECT_EQ(StripTrailingChar("a;;", ';'), "a");
+}
+
+TEST(StripTrailingCharTest, LeavesStringWithoutTrailingOccurrenceUnchanged) {
+    EXPECT_EQ(StripTrailingChar("a;b", ';'), "a;b");
 }
 
 // Was an unconditional infinite loop: StreamString(istream&, String&)'s unquoted-mode read loop

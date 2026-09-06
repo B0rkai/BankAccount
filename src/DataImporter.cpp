@@ -1,4 +1,4 @@
-#include <fstream>
+ï»¿#include <fstream>
 #include "DataImporter.h"
 #include "IDataBase.h"
 #include "Logger.h"
@@ -68,7 +68,14 @@ class FileLineStreamReader {
 	std::ifstream _in;
 	char _buffer[1000];
 public:
-	FileLineStreamReader(const char* filename) : _in(filename), _buffer{0}	{}
+	FileLineStreamReader(const char* filename) : _in(filename), _buffer{0} {
+		char bom[3] = { 0 };
+		_in.read(bom, 3);
+		if (static_cast<unsigned char>(bom[0]) != 0xEF || static_cast<unsigned char>(bom[1]) != 0xBB || static_cast<unsigned char>(bom[2]) != 0xBF) {
+			_in.clear();
+			_in.seekg(0);
+		}
+	}
 	bool ReadLine(String& line) {
 		_in.getline(_buffer, 1000);
 		line = String::FromUTF8(_buffer);
@@ -111,6 +118,11 @@ static void CSVParser(const String& filename, StringTable& data) {
 		eof = reader.ReadLine(line);
 		if (line.empty()) {
 			break;
+		}
+		while (!eof && CountChars(line, '"') % 2) {
+			String nextline;
+			eof = reader.ReadLine(nextline);
+			line.Append(" ").Append(nextline);
 		}
 		line.Replace("&amp;", "&");
 		data.push_back(ParseMultiValueString(line));
@@ -180,9 +192,10 @@ static void ImportFromCSV(const String& filename, RawImportData& import_data) {
 		LogWarn("IMPT") << "ImportFromCSV: file too short/malformed to be an MBH Bank statement (rows=" << data.size()
 			<< ", row 0 empty=" << (data.empty() || data.front().empty() ? "yes" : "no")
 			<< ", row 4 has " << (data.size() > 4 ? data[4].size() : 0) << " column(s), need >= " << (int)MBH_Column_SIZE << ")";
+		LogInfo("IMPT") << "Please import the third (Adatok azonnali utalasokhoz) CSV format from MBH.";
 		return;
 	}
-	if (data.front().front().Contains(L"Számlatörténet")) {
+	if (data.front().front() == L"SzÃ¡mlatÃ¶rtÃ©net") {
 		import_data.bank_name = "MBH Bank";
 		import_data.account_number = data[4][MBH_Column_Szamla];
 		import_data.currency = MakeCurrency(data[4][MBH_Column_Devizanem])->Type();
@@ -203,7 +216,7 @@ static void ImportFromXML(const String& filename, RawImportData& import_data) {
 			<< ", record 1 has " << (data.size() > 1 ? data[1].size() : 0) << " field(s), need >= " << (int)Granit_Column_SIZE << ")";
 		return;
 	}
-	import_data.bank_name = "Gránit Bank";
+	import_data.bank_name = "GrÃ¡nit Bank";
 	import_data.account_number = data[1][Granit_Column_ACCOUNT_NUMBER]; 
 	import_data.currency = MakeCurrency(data[1][Granit_Column_CURRENCY])->Type();
 	LogInfo("IMPT") << "ImportFromXML: recognized as Granit Bank export for account '" << import_data.account_number.utf8_str() << "'";

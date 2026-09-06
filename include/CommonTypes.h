@@ -200,3 +200,6 @@ public:
 
 Today* GetToday();
 void SetToday(Today* ptr);
+
+int CountChars(const String& text, const char c);
+String StripTrailingChar(const String& val, char c);

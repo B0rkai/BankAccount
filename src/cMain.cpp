@@ -470,7 +470,7 @@ void cMain::Preview(CtrIds ctrl_id) {
 		UIOutputText(g_previews);
 		return;
 	}
-	StringVector vec = ParseMultiValueString(value);
+	StringVector vec = ParseMultiValueString(StripTrailingChar(value, ';'));
 	String topic_str = m_ctrl_grp_utility.m_topic_combo->GetValue();
 	INameResolve* resolve = m_bank_file.get();
 	IdSet ids;
@@ -1474,7 +1474,7 @@ void cMain::PrepareQuery(Query& q) {
 	}
 	if (!client_filter_value.empty()) {
 		QueryClient* qcli = new QueryClient;
-		StringVector vec = ParseMultiValueString(client_filter_value);
+		StringVector vec = ParseMultiValueString(StripTrailingChar(client_filter_value, ';'));
 		for (const String& v : vec) {
 			qcli->AddName(v.c_str());
 		}
@@ -1482,7 +1482,7 @@ void cMain::PrepareQuery(Query& q) {
 	}
 	if (!category_filter_value.empty()) {
 		QueryCategory* qcat = new QueryCategory;
-		StringVector vec = ParseMultiValueString(category_filter_value);
+		StringVector vec = ParseMultiValueString(StripTrailingChar(category_filter_value, ';'));
 		for (const String& v : vec) {
 			qcat->AddName(v.c_str());
 		}
@@ -1490,7 +1490,7 @@ void cMain::PrepareQuery(Query& q) {
 	}
 	if (!type_filter_value.empty()) {
 		QueryType* qtyp = new QueryType;
-		StringVector vec = ParseMultiValueString(type_filter_value);
+		StringVector vec = ParseMultiValueString(StripTrailingChar(type_filter_value, ';'));
 		for (const String& v : vec) {
 			qtyp->AddName(v.c_str());
 		}
@@ -1956,7 +1956,7 @@ void cMain::MergeButtonClicked(wxCommandEvent& evt) {
 		to = *tos.begin();
 	}
 	try {
-		StringVector froms_str = ParseMultiValueString(merge_from);
+		StringVector froms_str = ParseMultiValueString(StripTrailingChar(merge_from, ';'));
 		for (const String& from_str : froms_str) {
 			if (!from_str.IsNumber()) {
 				LogError() << "Merge Query aborted! Merge from by name is not yet supported";
