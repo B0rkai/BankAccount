@@ -332,6 +332,12 @@ class cMain :
     void MergeButtonClicked(wxCommandEvent& evt);
     void AddKeywordButtonClicked(wxCommandEvent& evt);
     void Import(wxCommandEvent& evt);
+    // Manual repair tool (Database menu) for an account whose tail has ended up out of date
+    // order (breaks Import()'s PrepareImport() insertion-point search) - see
+    // AccountManager::PruneLastTransactions()'s comment for the full story. Picks an account and
+    // a count via PruneTransactionsDialog, previews exactly what that would remove in the result
+    // grid, then asks for a final confirmation before actually deleting anything.
+    void PruneTransactions(wxCommandEvent& evt);
     void UpdateExchangeRates(wxCommandEvent& evt);
     void ExportToExcel(wxCommandEvent& evt);
     void ShowChartClicked(wxCommandEvent& evt);

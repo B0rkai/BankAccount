@@ -130,6 +130,16 @@ Transaction& Account::GetTransactionAt(size_t index) {
 	return m_transactions.at(index);
 }
 
+size_t Account::PruneLastTransactions(size_t count) {
+	count = std::min(count, m_transactions.size());
+	// Same as PrepareImport()'s own pop_back() above - the pruned entries' memo/description
+	// strings are left behind in m_memos/m_descriptions rather than tracked down and erased,
+	// since nothing else in this class ever needs the reverse (Transaction -> list iterator)
+	// mapping that would take.
+	m_transactions.erase(m_transactions.end() - count, m_transactions.end());
+	return count;
+}
+
 void Account::Sort() {
 	// TODO solve it
 	std::sort(m_transactions.begin(), m_transactions.end(), [](const Transaction& t1, const Transaction& t2) {

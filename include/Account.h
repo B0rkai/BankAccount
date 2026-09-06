@@ -57,6 +57,12 @@ public:
 	size_t IndexOf(const Transaction* tr) const;
 	Transaction& GetTransactionAt(size_t index);
 
+	// Manual repair tool: removes the last `count` transactions (clamped to Size()). Needed when
+	// a prior import/edit has left the tail of this account out of date order, which breaks
+	// PrepareImport()'s "walk back from the end while its date is >= the new import's start date"
+	// assumption. Returns the number actually removed.
+	size_t PruneLastTransactions(size_t count);
+
 	void Sort();
 
 	// Named StreamOut/StreamIn rather than two overloaded Stream() methods - a std::stringstream

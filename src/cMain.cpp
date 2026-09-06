@@ -31,6 +31,7 @@
 #include "MnbExchangeRateClient.h"
 #include "Journal.h"
 #include "AddKeywordDialog.h"
+#include "PruneTransactionsDialog.h"
 #include "GuiHelpers.h"
 #include "ChartDialog.h"
 #include "DbLocationSettings.h"
@@ -118,6 +119,7 @@ enum CtrIds {
 	TOPIC_SELECTOR_COMBO_CTRL,
 	MENU_DEBUG_SAVE,
 	MENU_IMPORT,
+	MENU_PRUNE_TRANSACTIONS,
 	MENU_LOAD,
 	MENU_EXTRACT,
 	MENU_SAVE,
@@ -170,6 +172,7 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_TEXT(ADD_KEYWORD_TEXT_CTRL, IdChanged)
 	EVT_MENU(MENU_LOAD, LoadFile)
 	EVT_MENU(MENU_IMPORT, Import)
+	EVT_MENU(MENU_PRUNE_TRANSACTIONS, PruneTransactions)
 	EVT_MENU(MENU_EXTRACT, LoadFile)
 	EVT_MENU(MENU_SAVE, SaveFile)
 	EVT_MENU(MENU_DEBUG_SAVE, SaveFile)
@@ -1590,6 +1593,9 @@ void cMain::InitMenu() {
 	m_menu_bar->Append(helpmenu, "Help");
 	m_discard_changes_menu_item = dbmenu->Append(MENU_LOAD, "Discard changes");
 	dbmenu->Append(MENU_IMPORT, "Import from file");
+	dbmenu->AppendSeparator();
+	dbmenu->Append(MENU_PRUNE_TRANSACTIONS, "Prune Last Transactions...");
+	dbmenu->AppendSeparator();
 	dbmenu->Append(MENU_SAVE, "Save file");
 #ifdef _DEBUG
 	dbmenu->Append(MENU_DEBUG_SAVE, "Save file uncompressed");
@@ -2108,6 +2114,48 @@ void cMain::Import(wxCommandEvent& evt) {
 		m_status_bar->SetStatusText(error);
 	}
 	UpdateAccFilter();
+	UpdateStatusBar();
+}
+
+void cMain::PruneTransactions(wxCommandEvent& evt) {
+	evt.Skip();
+	if (!RequireWritable()) {
+		return;
+	}
+	StringVector acc_names;
+	m_bank_file->ListOfAccNames(acc_names);
+	if (acc_names.empty()) {
+		UIOutputText("No accounts to prune.");
+		return;
+	}
+	PruneTransactionsDialog dlg(this, wxArrayString(acc_names.size(), acc_names.data()));
+	if (dlg.ShowModal() != 0) {
+		return;
+	}
+	size_t count = dlg.GetCount();
+	if (!count) {
+		UIOutputText("Enter a positive number of transactions to prune.");
+		return;
+	}
+	int idx = dlg.GetAccountIndex();
+	Id account_id((Id::Type)idx);
+	const String& acc_name = acc_names[idx];
+	StringTable preview = m_bank_file->PreviewLastTransactions(account_id, count);
+	if (preview.size() <= 1) { // header row only
+		UIOutputText("'" + acc_name + "' has no transactions to prune.");
+		return;
+	}
+	UIOutputTable(preview);
+	UpdateStatusBar();
+	String confirm_msg = "Permanently remove the ";
+	confirm_msg << (unsigned long)(preview.size() - 1) << " transaction(s) shown above from '" << acc_name
+		<< "'? This cannot be undone (short of not saving).";
+	if (wxMessageBox(confirm_msg, wxT("Confirm Prune"), wxICON_QUESTION | wxYES_NO) != wxYES) {
+		UIOutputText("Prune cancelled.");
+		return;
+	}
+	size_t removed = m_bank_file->PruneLastTransactions(account_id, count);
+	UIOutputText(wxString::Format("Pruned %zu transaction(s) from '%s'. Remember to Save.", removed, acc_name));
 	UpdateStatusBar();
 }
 

@@ -139,6 +139,19 @@ public:
 	};
 	ImportResult Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if);
 
+	// Preview for PruneLastTransactions() below - the last `count` (clamped) transactions of an
+	// account, formatted the same way Import()'s own preview table is.
+	StringTable PreviewLastTransactions(Id account_id, size_t count) const;
+	// Manual repair tool: removes the last `count` (clamped to the account's size) transactions.
+	// Needed when a prior import/edit has left the tail of an account out of date order, which
+	// breaks Account::PrepareImport()'s "walk back from the end while its date is >= the new
+	// import's start date" assumption and leaves Import() unable to find where new data should
+	// start. Not journaled (see Journal.h's fixed Append*() set - there is no "transaction
+	// removed" entry) and does not save - like any other edit, the caller must Save explicitly
+	// afterwards, and a crash before that simply loses the prune, same as any other unsaved edit.
+	// Returns the number of transactions actually removed.
+	size_t PruneLastTransactions(Id account_id, size_t count);
+
 	StringTable MakeQuery(Query& query) const;
 	StringTable MakeQuery(WQuery& query);
 

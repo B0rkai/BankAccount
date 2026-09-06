@@ -171,6 +171,7 @@
     <ClCompile Include="src\LogViewerPanel.cpp" />
     <ClCompile Include="src\ManualResolverDialog.cpp" />
     <ClCompile Include="src\NewAccountDetailsDialog.cpp" />
+    <ClCompile Include="src\PruneTransactionsDialog.cpp" />
     <ClCompile Include="src\RunWithProgress.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -185,6 +186,7 @@
     <ClInclude Include="include\LogViewerPanel.h" />
     <ClInclude Include="include\ManualResolverDialog.h" />
     <ClInclude Include="include\NewAccountDetailsDialog.h" />
+    <ClInclude Include="include\PruneTransactionsDialog.h" />
     <ClInclude Include="include\RunWithProgress.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>

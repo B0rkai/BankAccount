@@ -843,6 +843,22 @@ AccountManager::ImportResult AccountManager::Import(const String& filename, IMan
 	return ImportResult{ table, last_transactions }; // list-init copy-constructs both members; PtrVector's const m_owner blocks assignment
 }
 
+StringTable AccountManager::PreviewLastTransactions(Id account_id, size_t count) const {
+	const Account* acc = m_accounts.at(account_id);
+	count = std::min(count, acc->Size());
+	return FormatResultTable(acc->GetLastRecords((unsigned int)count));
+}
+
+size_t AccountManager::PruneLastTransactions(Id account_id, size_t count) {
+	Account* acc = m_accounts.at(account_id);
+	size_t removed = acc->PruneLastTransactions(count);
+	if (removed) {
+		Modified();
+		m_logger.LogInfo() << "Pruned " << removed << " transaction(s) from the end of account '" << acc->GetName().utf8_str() << "'";
+	}
+	return removed;
+}
+
 StringTable AccountManager::FormatResultTable(const PtrVector<const Transaction>& res) const {
 	StringTable table;
 	table.push_back({"Account", "Date", "Type", "Amount", "Client", "Memo", "Desc", "Category"});
