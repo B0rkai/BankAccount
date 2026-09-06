@@ -1,6 +1,7 @@
 #include <fstream>
 #include "DataImporter.h"
 #include "IDataBase.h"
+#include "Logger.h"
 
 enum SupportedBankFormats {
 	Granit_Bank_xml = 1,
@@ -174,36 +175,56 @@ static void ImportFromCSV(const String& filename, RawImportData& import_data) {
 	StringTable data;
 	CSVParser(filename, data);
 	import_data.currency = HUF;
+	LogInfo("IMPT") << "ImportFromCSV: parsed " << data.size() << " row(s) from '" << filename.utf8_str() << "'";
 	if ((data.size() < 5) || data.front().empty() || (data[4].size() < MBH_Column_SIZE)) {
+		LogWarn("IMPT") << "ImportFromCSV: file too short/malformed to be an MBH Bank statement (rows=" << data.size()
+			<< ", row 0 empty=" << (data.empty() || data.front().empty() ? "yes" : "no")
+			<< ", row 4 has " << (data.size() > 4 ? data[4].size() : 0) << " column(s), need >= " << (int)MBH_Column_SIZE << ")";
 		return;
 	}
 	if (data.front().front().Contains(L"Számlatörténet")) {
 		import_data.bank_name = "MBH Bank";
 		import_data.account_number = data[4][MBH_Column_Szamla];
 		import_data.currency = MakeCurrency(data[4][MBH_Column_Devizanem])->Type();
+		LogInfo("IMPT") << "ImportFromCSV: recognized as MBH Bank statement for account '" << import_data.account_number.utf8_str() << "'";
 		ExtractData(data, import_data, MBH_Bank_csv);
+	} else {
+		LogWarn("IMPT") << "ImportFromCSV: header sentinel not found in first cell ('" << data.front().front().utf8_str()
+			<< "') - not recognized as an MBH Bank statement";
 	}
 }
 
 static void ImportFromXML(const String& filename, RawImportData& import_data) {
 	StringTable data;
 	XMLParser(filename, data);
+	LogInfo("IMPT") << "ImportFromXML: parsed " << data.size() << " <Data...> record(s) from '" << filename.utf8_str() << "'";
 	if ((data.size() < 2) || (data[1].size() < Granit_Column_SIZE)) {
+		LogWarn("IMPT") << "ImportFromXML: file too short/malformed to be a Granit Bank export (records=" << data.size()
+			<< ", record 1 has " << (data.size() > 1 ? data[1].size() : 0) << " field(s), need >= " << (int)Granit_Column_SIZE << ")";
 		return;
 	}
 	import_data.bank_name = "Gránit Bank";
 	import_data.account_number = data[1][Granit_Column_ACCOUNT_NUMBER]; 
 	import_data.currency = MakeCurrency(data[1][Granit_Column_CURRENCY])->Type();
+	LogInfo("IMPT") << "ImportFromXML: recognized as Granit Bank export for account '" << import_data.account_number.utf8_str() << "'";
 	ExtractData(data, import_data, Granit_Bank_xml);
 }
 
 void ImportFromFile(const String& filename, RawImportData& import_data) {
 	if (filename.EndsWith(".xml")) {
+		LogInfo("IMPT") << "Import: '" << filename.utf8_str() << "' recognized by extension as .xml (Granit Bank format)";
 		ImportFromXML(filename, import_data);
 	} else if (filename.EndsWith(".csv")) {
+		LogInfo("IMPT") << "Import: '" << filename.utf8_str() << "' recognized by extension as .csv (MBH Bank format)";
 		ImportFromCSV(filename, import_data);
 	} else {
-		// Not supported
+		LogWarn("IMPT") << "Import: '" << filename.utf8_str() << "' has an unsupported extension - only .xml and .csv are recognized";
+		return;
 	}
-
+	if (import_data.data.empty()) {
+		LogWarn("IMPT") << "Import: no transactions extracted from '" << filename.utf8_str() << "' - see the preceding IMPT log line(s) for why detection failed";
+	} else {
+		LogInfo("IMPT") << "Import: extracted " << import_data.data.size() << " transaction(s) for account '" << import_data.account_number.utf8_str()
+			<< "' (" << import_data.bank_name.utf8_str() << ")";
+	}
 }

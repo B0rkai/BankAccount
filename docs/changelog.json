@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-                       "Add Database → Prune Last Transactions..., a manual repair tool to remove an account's last N transactions with a preview and confirmation, for when a bad import/edit leaves the tail out of date order and breaks import's insertion-point search"
+                       "Add logging around import file-format detection and stored-data alignment (PrepareImport), so a failed/empty import is now traceable in the log instead of silent"
                    ],
     "released":  [
                      {
@@ -26,6 +26,13 @@
                          "date":  "2026-09-06",
                          "changes":  [
                                          "Render HTML report tables as interactive Grid.js grids (sortable, searchable, paginated) instead of plain tables, with tighter row spacing and fixes for a permanent stray scrollbar and mangled chart-title text"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.2",
+                         "date":  "2026-09-06",
+                         "changes":  [
+                                         "Add Database → Prune Last Transactions..., a manual repair tool to remove an account\u0027s last N transactions with a preview and confirmation, for when a bad import/edit leaves the tail out of date order and breaks import\u0027s insertion-point search"
                                      ]
                      }
                  ]

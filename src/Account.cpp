@@ -16,19 +16,31 @@ bool Account::CheckAccNumber(const String& other) {
 
 bool Account::PrepareImport(const uint16_t date) {
 	if (m_transactions.empty()) {
+		m_logger.LogInfo() << "PrepareImport: '" << GetName().utf8_str() << "' has no stored transactions yet, importing from " << DateAsString(date).utf8_str() << " as-is";
 		return true;
 	}
 	const uint16_t last_date = GetLastRecord()->GetDate();
+	m_logger.LogInfo() << "PrepareImport: '" << GetName().utf8_str() << "' last stored date is " << DateAsString(last_date).utf8_str()
+		<< ", new import's first date is " << DateAsString(date).utf8_str();
 	if (last_date < date) {
+		m_logger.LogWarn() << "PrepareImport: gap between stored data and import (" << DateAsString(last_date).utf8_str() << " < "
+			<< DateAsString(date).utf8_str() << ") - aborting, nothing will be imported for '" << GetName().utf8_str() << "'";
 		return false; // gap
 	} else { // delete old data on the start day, because export has higher chance to be whole
 		if ((last_date - date) > 1) { // WTF
+			m_logger.LogWarn() << "PrepareImport: overlap between stored data and import is " << (last_date - date)
+				<< " day(s) (last stored " << DateAsString(last_date).utf8_str() << ", import starts " << DateAsString(date).utf8_str()
+				<< ") - more than the 1-day overlap this expects, aborting for '" << GetName().utf8_str() << "'";
 			//m_logger.LogError() << "Import Aborted! Please import data what has 5 or less days overlap with already loaded data! (last record date on " << GetFullName().utf8_str() << " is " << GetDateFormat(GetLastRecord()->GetDate()) << ")";
 			return false;
 		}
+		size_t popped = 0;
 		do {
 			m_transactions.pop_back();
+			++popped;
 		} while (GetLastRecord()->GetDate() >= date);
+		m_logger.LogInfo() << "PrepareImport: dropped " << popped << " stored transaction(s) on/after " << DateAsString(date).utf8_str()
+			<< " from '" << GetName().utf8_str() << "' to re-import them fresh";
 		return true;
 	}
 }

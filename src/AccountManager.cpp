@@ -38,9 +38,12 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Stri
 	size_t size = m_accounts.size();
 	for (int i = 0; i < size; ++i) {
 		if (m_accounts[i]->CheckAccNumber(account_number)) {
+			m_logger.LogInfo() << "Import: account number '" << account_number.utf8_str() << "' matched existing account '"
+				<< m_accounts[i]->GetName().utf8_str() << "' (#" << i << ")";
 			return i;
 		}
 	}
+	m_logger.LogInfo() << "Import: account number '" << account_number.utf8_str() << "' did not match any existing account - a new one will be offered";
 	if (size + 1 == INVALID_ID) {
 		// BAD
 		throw "too many accounts";
@@ -800,9 +803,11 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 
 AccountManager::ImportResult AccountManager::Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if) {
 	m_new_transactions = 0;
+	m_logger.LogInfo() << "Import: starting import of '" << filename.utf8_str() << "'";
 	RawImportData import_data;
 	ImportFromFile(filename, import_data);
 	if (import_data.data.empty()) {
+		m_logger.LogWarn() << "Import: aborting, nothing extracted from '" << filename.utf8_str() << "'";
 		return {};
 	}
 	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.bank_name, import_data.currency, newaccount_if);
@@ -838,7 +843,12 @@ AccountManager::ImportResult AccountManager::Import(const String& filename, IMan
 	// dialog instead of blocking the UI thread synchronously as part of this call.
 	auto last_transactions = acc->GetLastRecords(m_new_transactions);
 	StringTable table = FormatResultTable(last_transactions);
-	m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName().utf8_str();
+	if (m_new_transactions == 0) {
+		m_logger.LogWarn() << "Import of '" << filename.utf8_str() << "' finished with 0 new records for '" << acc->GetName().utf8_str()
+			<< "' - see the preceding IMPT/PrepareImport log lines for why";
+	} else {
+		m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName().utf8_str();
+	}
 	m_new_transactions = 0;
 	return ImportResult{ table, last_transactions }; // list-init copy-constructs both members; PtrVector's const m_owner blocks assignment
 }
