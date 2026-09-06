@@ -1913,7 +1913,7 @@ void cMain::GenerateFavoriteReportByName(const String& name) {
 	std::vector<int> enabled_accounts(checked_accounts.begin(), checked_accounts.end());
 	BuildQueryFromFavorite(*it, q, enabled_accounts);
 	std::vector<ReportSection> sections = BuildReportSections(q, *m_bank_file);
-	String html = BuildHtmlReport(def.name, sections, def.chart_kinds, def.chart_sides, LoadChartJsSource());
+	String html = BuildHtmlReport(def.name, sections, def.chart_kinds, def.chart_sides, LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss());
 
 	std::filesystem::create_directories("reports");
 	String filename = "reports\\" + SanitizeFileNameComponent(def.name) + "_" + TimestampForFilename() + ".html";

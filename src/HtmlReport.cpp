@@ -37,17 +37,31 @@ std::vector<ReportSection> BuildReportSections(Query& q, const AccountManager& m
 
 namespace {
 	const char* CHARTJS_PATH = "resources\\chart.umd.min.js";
+	const char* GRIDJS_JS_PATH = "resources\\gridjs.umd.js";
+	const char* GRIDJS_CSS_PATH = "resources\\gridjs.mermaid.min.css";
+
+	String LoadTextFile(const char* path, const char* what) {
+		std::ifstream in(path, std::ios::binary);
+		if (!in.is_open()) {
+			LogWarn() << "Could not open " << path << " - " << what;
+			return cStringEmpty;
+		}
+		std::ostringstream ss;
+		ss << in.rdbuf();
+		return String(ss.str());
+	}
 }
 
 String LoadChartJsSource() {
-	std::ifstream in(CHARTJS_PATH, std::ios::binary);
-	if (!in.is_open()) {
-		LogWarn() << "Could not open " << CHARTJS_PATH << " - report(s) will show tables only, no charts";
-		return cStringEmpty;
-	}
-	std::ostringstream ss;
-	ss << in.rdbuf();
-	return String(ss.str());
+	return LoadTextFile(CHARTJS_PATH, "report(s) will show tables only, no charts");
+}
+
+String LoadGridJsSource() {
+	return LoadTextFile(GRIDJS_JS_PATH, "report(s) will show plain static tables, not interactive grids");
+}
+
+String LoadGridJsCss() {
+	return LoadTextFile(GRIDJS_CSS_PATH, "report(s) will show plain static tables, not interactive grids");
 }
 
 namespace {
@@ -239,6 +253,63 @@ namespace {
 		return config;
 	}
 
+	// A cell's raw text (a bank transaction memo, a hand-entered category/client name, ...) is
+	// untrusted free text that ends up dumped into a JSON literal inside a <script> block. JSON
+	// escaping alone doesn't stop it from containing the literal sequence "</script>", which would
+	// close the block early and let the rest be interpreted as markup - so every "</" is rewritten
+	// to the JSON-legal "<\/" (a valid escape for the same "/" character) after dump(), which can
+	// never appear as a literal "</" again regardless of what the source text contained.
+	std::string EscapeForScriptEmbedding(const std::string& json_text) {
+		std::string out;
+		out.reserve(json_text.size());
+		for (size_t i = 0; i < json_text.size(); ++i) {
+			if ((json_text[i] == '<') && (i + 1 < json_text.size()) && (json_text[i + 1] == '/')) {
+				out += "<\\/";
+				++i;
+			} else {
+				out += json_text[i];
+			}
+		}
+		return out;
+	}
+
+	// Grid.js config for one section's table: sortable columns, a search box, and pagination -
+	// column data stays as the already-formatted strings the static <table> path also renders, so
+	// dates/amounts/currency symbols look identical either way. RIGHT_ALIGNED columns get the same
+	// "num" CSS class the static table uses, applied via Grid.js's per-column `attributes` to both
+	// header and body cells, plus a "numeric" flag the trailing <script> block (see
+	// BuildHtmlReport) uses to attach a numeric `sort.compare` - Grid.js can't derive that itself
+	// since the column data is display text, not a number.
+	nlohmann::json BuildGridJsConfig(const StringTable& table) {
+		nlohmann::json config;
+		config["sort"] = true;
+		config["search"] = true;
+		config["pagination"]["limit"] = cGRID_PAGINATION_LIMIT;
+		nlohmann::json columns = nlohmann::json::array();
+		nlohmann::json data = nlohmann::json::array();
+		if (!table.empty()) {
+			for (size_t c = 0; c < table.front().size(); ++c) {
+				nlohmann::json col;
+				col["name"] = Utf8(table[0][c]);
+				if (table.GetMetaData(c) == StringTable::RIGHT_ALIGNED) {
+					col["attributes"]["className"] = "num";
+					col["numeric"] = true;
+				}
+				columns.push_back(col);
+			}
+			for (size_t r = 1; r < table.size(); ++r) {
+				nlohmann::json row = nlohmann::json::array();
+				for (size_t c = 0; c < table[r].size(); ++c) {
+					row.push_back(Utf8(table[r][c]));
+				}
+				data.push_back(row);
+			}
+		}
+		config["columns"] = columns;
+		config["data"] = data;
+		return config;
+	}
+
 	void AppendTableHtml(std::ostringstream& out, const StringTable& table) {
 		out << "<table>\n<thead><tr>";
 		if (table.empty()) {
@@ -283,7 +354,10 @@ namespace {
 			for (const auto& currency_pair : *side.data) {
 				const ChartData& data = currency_pair.second;
 				String currency_name = MakeCurrency(currency_pair.first)->GetShortName();
-				String title = String(side.label) + " (" + currency_name + ") — " + KindDisplayName(kind);
+				// wxString::FromUTF8, not a raw literal: a bare "—" narrow-char literal gets decoded via
+				// the current locale/ANSI codepage by wxString's implicit const-char* constructor,
+				// mangling it into "â€"" in the rendered HTML.
+				String title = String(side.label) + " (" + currency_name + ") " + wxString::FromUTF8("\xE2\x80\x94") + " " + KindDisplayName(kind);
 				nlohmann::json config;
 				if (IsSliceKind(kind)) {
 					StringVector labels;
@@ -324,32 +398,72 @@ namespace {
 	}
 }
 
-String BuildHtmlReport(const String& title, const std::vector<ReportSection>& sections, const std::vector<String>& chart_kinds, const std::vector<String>& chart_sides, const String& chartjs_source) {
+String BuildHtmlReport(const String& title, const std::vector<ReportSection>& sections, const std::vector<String>& chart_kinds, const std::vector<String>& chart_sides, const String& chartjs_source, const String& gridjs_source, const String& gridjs_css) {
 	std::ostringstream out;
 	out << "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n";
-	out << "<title>" << EscapeHtml(title) << "</title>\n<style>\n";
-	out << "body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #222; }\n";
+	out << "<title>" << EscapeHtml(title) << "</title>\n";
+	bool has_gridjs = !gridjs_source.empty();
+	if (has_gridjs && !gridjs_css.empty()) {
+		out << "<style>\n" << Utf8(gridjs_css) << "\n</style>\n";
+	}
+	out << "<style>\n";
+	out << "body { font-family: Segoe UI, Arial, sans-serif; font-size: " << cREPORT_FONT_SIZE_PX << "px; margin: " << cREPORT_BODY_MARGIN_PX << "px; color: #222; }\n";
 	out << "h1 { margin-bottom: 8px; }\n";
 	out << "h2 { margin-top: 0; }\n";
-	out << ".report-section { display: flex; flex-direction: row; gap: 24px; margin-bottom: 40px; }\n";
-	out << ".report-table, .report-charts { flex: 1 1 45%; min-width: 280px; }\n";
-	out << ".report-charts { display: flex; flex-direction: column; gap: 24px; }\n";
+	out << ".report-section { display: flex; flex-direction: row; gap: " << cREPORT_SECTION_GAP_PX << "px; margin-bottom: " << cREPORT_SECTION_MARGIN_BOTTOM_PX << "px; }\n";
+	out << ".report-table { flex: 1 1 " << cREPORT_TABLE_FLEX_BASIS_PCT << "%; min-width: " << cREPORT_MIN_COLUMN_WIDTH_PX << "px; }\n";
+	out << ".report-charts { flex: 1 1 " << cREPORT_CHARTS_FLEX_BASIS_PCT << "%; min-width: " << cREPORT_MIN_COLUMN_WIDTH_PX << "px; display: flex; flex-direction: column; gap: " << cREPORT_SECTION_GAP_PX << "px; }\n";
+	// Any overflow scrolls horizontally within the table's own column rather than wrapping cell
+	// text onto multiple lines or growing wider than the flex column (which would push into/overlap
+	// the charts column) - applies to both the plain <table> fallback and the Grid.js grid, whose
+	// own .gridjs-wrapper already scrolls internally so this outer rule is a no-op there.
+	out << ".table-scroll { overflow-x: auto; }\n";
 	out << "table { border-collapse: collapse; width: 100%; }\n";
-	out << "th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; }\n";
+	out << "th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; white-space: nowrap; }\n";
 	out << "th { background: #f0f0f0; }\n";
-	out << ".num { text-align: right; }\n";
+	// Plain ".num { text-align: right; }" loses to gridjs.mermaid.min.css's own
+	// "table.gridjs-table { text-align: left; ... }" (an element+class selector, which beats a
+	// class-only selector on specificity regardless of which <style> block loads later) - the
+	// "table.gridjs-table td.num"/"th.num" forms below match that specificity to force the
+	// override on the Grid.js path; the plain "td.num"/"th.num" forms cover the static-<table>
+	// fallback path, which has no such competing rule. A monospace font makes same-width digits
+	// line up in a column even though right-aligned rows have differing digit counts, unlike the
+	// mixed-width main body font.
+	out << "td.num, th.num, table.gridjs-table td.num, table.gridjs-table th.num { text-align: right; font-family: Consolas, 'Courier New', monospace; }\n";
+	out << ".gridjs-td { white-space: nowrap; }\n"; // gridjs.mermaid.min.css allows wrapping by default
+	// gridjs.mermaid.min.css's own default theme padding (12px/24px, 14px/24px) is roomier than this
+	// report needs. Its actual rules are "td.gridjs-td{...padding:12px 24px}"/"th.gridjs-th{...
+	// padding:14px 24px}" - element+class selectors (specificity 0,1,1) - so a class-only
+	// ".gridjs-td, .gridjs-th" override (0,1,1 vs 0,1,0) loses regardless of source order, same trap
+	// as the ".num" override above; matching the element+class form here is what makes it win.
+	out << "td.gridjs-td, th.gridjs-th { padding: " << cREPORT_GRID_CELL_PADDING_V_PX << "px " << cREPORT_GRID_CELL_PADDING_H_PX << "px; }\n";
+	// gridjs.mermaid.min.css's ".gridjs-container{padding:2px}" is content-box, so the root Grid.js
+	// div (which JS sizes to width:100% via an inline style) renders 4px wider than its parent
+	// regardless of column count - tripping our own ".table-scroll{overflow-x:auto}" wrapper into
+	// always showing a horizontal scrollbar. border-box makes the padding count inward instead.
+	out << ".gridjs-container { box-sizing: border-box; }\n";
 	out << "canvas { max-width: 100%; }\n";
-	out << "@media (max-width: 900px) { .report-section { flex-direction: column-reverse; } }\n";
+	out << "@media (max-width: " << cREPORT_STACK_BREAKPOINT_PX << "px) { .report-section { flex-direction: column-reverse; } }\n";
 	out << "</style>\n</head>\n<body>\n";
 	out << "<h1>" << EscapeHtml(title) << "</h1>\n";
 
 	std::vector<std::pair<std::string, nlohmann::json>> configs;
+	std::vector<std::pair<std::string, nlohmann::json>> table_configs;
 	int next_id = 0;
+	int next_table_id = 0;
 	bool has_charts = !chartjs_source.empty();
 	std::function<bool(const String&)> side_allowed = BuildSideFilter(chart_sides);
 	for (const ReportSection& section : sections) {
 		out << "<div class=\"report-section\">\n<div class=\"report-table\">\n<h2>" << EscapeHtml(section.heading) << "</h2>\n";
-		AppendTableHtml(out, section.table);
+		if (has_gridjs) {
+			std::string container_id = "table" + std::to_string(next_table_id++);
+			out << "<div class=\"table-scroll\"><div id=\"" << container_id << "\"></div></div>\n";
+			table_configs.emplace_back(container_id, BuildGridJsConfig(section.table));
+		} else {
+			out << "<div class=\"table-scroll\">\n";
+			AppendTableHtml(out, section.table);
+			out << "</div>\n";
+		}
 		out << "</div>\n";
 		std::ostringstream canvases;
 		if (has_charts && (section.chart_shape != ChartShape::NONE)) {
@@ -368,7 +482,29 @@ String BuildHtmlReport(const String& title, const std::vector<ReportSection>& se
 		out << "<script>\n" << Utf8(chartjs_source) << "\n</script>\n";
 		out << "<script>\n";
 		for (const auto& entry : configs) {
-			out << "new Chart(document.getElementById('" << entry.first << "'), " << entry.second.dump() << ");\n";
+			out << "new Chart(document.getElementById('" << entry.first << "'), " << EscapeForScriptEmbedding(entry.second.dump()) << ");\n";
+		}
+		out << "</script>\n";
+	}
+	if (has_gridjs) {
+		out << "<script>\n" << Utf8(gridjs_source) << "\n</script>\n";
+		out << "<script>\n";
+		// Every column's data is display text (see BuildGridJsConfig), so Grid.js's default sort is
+		// lexicographic - fine for names/dates, wrong for amounts ("2" would sort after "10"). This
+		// currency's own decimal separator is always '.' (Currency.cpp), only the thousands-grouping
+		// character varies (',' or '\''), so stripping every non-digit/non-'.'/non-'-' character
+		// recovers a comparable number for columns flagged "numeric" below - applied via a real JS
+		// function attached after the config is parsed, not spliced into the JSON itself.
+		out << "function gridjsNumericCompare(a, b) {\n";
+		out << "  function num(v) { var n = parseFloat(String(v).replace(/[^0-9.-]/g, '')); return isNaN(n) ? 0 : n; }\n";
+		out << "  return num(a) - num(b);\n";
+		out << "}\n";
+		for (const auto& entry : table_configs) {
+			out << "(function() {\n";
+			out << "  var cfg = " << EscapeForScriptEmbedding(entry.second.dump()) << ";\n";
+			out << "  cfg.columns.forEach(function(col) { if (col.numeric) { col.sort = { compare: gridjsNumericCompare }; } });\n";
+			out << "  new gridjs.Grid(cfg).render(document.getElementById('" << entry.first << "'));\n";
+			out << "})();\n";
 		}
 		out << "</script>\n";
 	}

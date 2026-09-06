@@ -102,15 +102,117 @@ chart:
 
 ```css
 .report-section { display: flex; flex-direction: row; gap: 24px; margin-bottom: 40px; }
-.report-table, .report-charts { flex: 1 1 45%; min-width: 280px; }
-.report-charts { display: flex; flex-direction: column; gap: 24px; }
-@media (max-width: 900px) { .report-section { flex-direction: column-reverse; } }
+.report-table { flex: 1 1 60%; min-width: 280px; }
+.report-charts { flex: 1 1 35%; min-width: 280px; display: flex; flex-direction: column; gap: 24px; }
+@media (max-width: 1920px) { .report-section { flex-direction: column-reverse; } }
 ```
 
 `row` (the default, wide-viewport case) keeps the table-then-charts DOM order as visual
 left-then-right. `column-reverse` (narrow viewport) flips the *visual* order of the same two
 children without needing separate markup for each layout, so charts end up stacked above the
 table exactly as asked, purely via one media query - no layout JS.
+
+This CSS is built as plain string literals in `BuildHtmlReport()` (`src/HtmlReport.cpp`), but
+every value that's actually worth tuning is pulled out into a named `constexpr int` in
+`include/HtmlReport.h`, next to `cGRID_PAGINATION_LIMIT` - so tuning any of these is a one-line
+header edit, not a hunt through string-building code:
+
+- **Side-by-side vs. stacked threshold**: `cREPORT_STACK_BREAKPOINT_PX` (1920) - raise it to
+  switch to stacked layout at a wider viewport, lower it to keep side-by-side longer.
+- **Column proportions**: `cREPORT_TABLE_FLEX_BASIS_PCT` (60) / `cREPORT_CHARTS_FLEX_BASIS_PCT`
+  (35) - table gets more room than the charts column, leaving room for the gap; make them equal
+  for a 50/50-ish split.
+- **Minimum column width before wrapping**: `cREPORT_MIN_COLUMN_WIDTH_PX` (280) - the point at
+  which a column refuses to shrink further and instead lets the flex container overflow/wrap.
+- **Gap between the table/chart columns, and between stacked charts within `.report-charts`**:
+  `cREPORT_SECTION_GAP_PX` (24), shared by both rules.
+- **Vertical spacing between report sections**: `cREPORT_SECTION_MARGIN_BOTTOM_PX` (40).
+- **Outer page margin**: `cREPORT_BODY_MARGIN_PX` (24).
+- **Body font size**: `cREPORT_FONT_SIZE_PX` (13) - shrinks all text uniformly, headings included
+  (they use relative `em` sizing), and also shrinks the Grid.js grid's own cell text, since
+  `gridjs.mermaid.min.css` sets `.gridjs-td`/`.gridjs-th`'s padding but not their font-size, so
+  they inherit this value from `body`. Grid.js's own search-box/pagination-bar chrome isn't scaled
+  by this and would need separate CSS overrides to shrink further.
+- **Grid.js cell padding**: `cREPORT_GRID_CELL_PADDING_V_PX` (6) / `cREPORT_GRID_CELL_PADDING_H_PX`
+  (12) - overrides `gridjs.mermaid.min.css`'s own roomier default. Its actual rules are
+  `td.gridjs-td{...padding:12px 24px}`/`th.gridjs-th{...padding:14px 24px}` - element+class
+  selectors (specificity 0,1,1) - so the override must be written the same way
+  (`td.gridjs-td, th.gridjs-th { padding: ...; }`), not as plain `.gridjs-td, .gridjs-th`
+  (specificity 0,1,0): a lower-specificity selector loses regardless of source order, same trap as
+  the `.num` override above.
+- **Rows per page in the Grid.js table**: `cGRID_PAGINATION_LIMIT` (20) in `include/HtmlReport.h`,
+  used from `BuildGridJsConfig()` (`HtmlReport.cpp`) - not CSS, but the other obvious
+  "make the table denser/looser" knob.
+
+## Interactive tables (Grid.js) instead of plain `<table>`
+
+Each section's table renders as an interactive [Grid.js](https://gridjs.io) grid (sortable
+columns, a search box, pagination at `cGRID_PAGINATION_LIMIT` rows/page) rather than a static
+`<table>`, given via `BuildHtmlReport()`'s `gridjs_source`/`gridjs_css` parameters
+(`LoadGridJsSource()`/`LoadGridJsCss()`, same CWD-relative vendoring convention as
+`chartjs_source` - see "Grid.js vendoring" below). Passing empty strings for both (the default)
+falls back to the original plain `<table>` rendering instead - the same "asset missing → degrade
+gracefully, never fail the report" contract `chartjs_source` already has. `BuildGridJsConfig()`
+(`HtmlReport.cpp`) turns a `StringTable` into a Grid.js config: one column per header cell (a
+`RIGHT_ALIGNED` column keeps its `.num` CSS class via Grid.js's per-column `attributes`, applied
+to both header and body cells, plus a `numeric: true` flag), one row of already-formatted cell
+strings per data row - the
+same display strings the static `<table>` path renders, so dates/amounts/currency symbols look
+identical either way. Column data being display text means Grid.js's default sort would be
+lexicographic on that text, not numeric (wrong for amount columns - `"2"` would sort after
+`"10"`) - fixed in `BuildHtmlReport()`'s trailing `<script>` block rather than in the JSON config
+itself (JSON can't carry a function literal): a shared `gridjsNumericCompare()` strips every
+character except digits, `.` and `-` from a cell's display text via
+`replace(/[^0-9.-]/g, '')` and `parseFloat()`s what's left, which is a safe recovery specifically
+*because* this app's currency formatting (`Currency.cpp`) always uses `.` as the decimal
+separator - only the thousands-grouping character varies (`,` for EUR/USD/GBP/CHF, `'` for HUF)
+and both get stripped along with the currency symbol and sign spacing. Each Grid.js config is
+parsed into a real JS object (`var cfg = <json>;`), then every column flagged `numeric` gets
+`col.sort = { compare: gridjsNumericCompare }` attached before `new gridjs.Grid(cfg)` - so the
+JSON payload itself stays inert data and the actual function object is real code emitted once,
+not string-spliced per report.
+
+Both the plain-`<table>` and Grid.js paths render inside a `.table-scroll` wrapper
+(`overflow-x: auto`), and every cell gets `white-space: nowrap` (Grid.js's own default theme
+allows wrapping, overridden here) - a row's full content always shows on one line, scrolling
+horizontally within the table's own column instead of wrapping or growing wider than the flex
+column and overlapping the charts column next to it. For the Grid.js path this is *not* actually a
+no-op the way it looks: `gridjs.mermaid.min.css`'s `.gridjs-container` (the root div Grid.js
+renders into, sized to `width: 100%` via an inline style) has `padding: 2px` in `content-box`
+sizing, so it renders 4px wider than its parent regardless of column count or content width -
+confirmed with a headless-Edge probe comparing `getBoundingClientRect().width` against the
+parent's `clientWidth`. Left alone, that permanent 4px overflow trips `.table-scroll`'s own
+`overflow-x: auto` into showing a horizontal scrollbar on every Grid.js table, even ones whose
+columns comfortably fit - `.gridjs-container { box-sizing: border-box; }` (in `HtmlReport.cpp`'s
+CSS block) makes the padding count inward instead, so the scrollbar only appears when a table's
+columns are genuinely too wide to fit (many month columns in a periodic report, say), which is
+when `.gridjs-wrapper`'s own internal scrolling takes over as intended.
+
+A plain `.num { text-align: right; }` rule is not enough to right-align amount cells on the
+Grid.js path: `gridjs.mermaid.min.css` itself ships `table.gridjs-table { text-align: left; ... }`,
+an element+class selector, which beats a class-only selector on CSS specificity regardless of
+which `<style>` block is later in the document - so the app's own rule has to match that
+specificity to win: `td.num, th.num, table.gridjs-table td.num, table.gridjs-table th.num { ... }`
+(the plain `td.num`/`th.num` forms cover the static-`<table>` fallback path, which has no such
+competing rule to out-specify). That same rule also sets a monospace font
+(`Consolas, 'Courier New', monospace`) on amount cells only, so same-width digits line up in a
+column despite rows having differing digit counts - not needed for the mixed-width main body font
+used everywhere else.
+
+Cell text (a bank transaction memo, a hand-entered category/client name, ...) is untrusted free
+text that ends up inside a JSON literal in a `<script>` block; `EscapeForScriptEmbedding()`
+(`HtmlReport.cpp`) rewrites every `</` in the dumped JSON to the JSON-legal `<\/` after
+`nlohmann::json::dump()`, so a cell that happened to contain the literal text `</script>` can
+never close the block early - applied to both the Grid.js table configs and the pre-existing
+Chart.js chart configs.
+
+## Grid.js vendoring
+
+`resources\gridjs.umd.js` (UMD bundle) and `resources\gridjs.mermaid.min.css` (its default theme)
+are the official builds, checked in with a pinned version and their MIT license
+(`resources\LICENSE-gridjs.MIT`) - see [build-setup.md](build-setup.md). Same fallback contract as
+Chart.js: a missing file logs a warning and `LoadGridJsSource()`/`LoadGridJsCss()` return an empty
+string, which `BuildHtmlReport()` treats as "render plain tables" rather than failing the report.
 
 ## Which chart kinds apply to which section
 

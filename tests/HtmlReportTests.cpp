@@ -335,6 +335,32 @@ TEST(BuildHtmlReportTest, UnrecognizedChartSidesValueIsIgnoredNotTreatedAsExclus
     EXPECT_NE(html.Find("Income ("), wxNOT_FOUND);
 }
 
+TEST(BuildHtmlReportTest, EmptyGridJsSourceRendersPlainStaticTable) {
+    String html = BuildHtmlReport("My Report", OneTopicSumSection(), {}, {}, cStringEmpty, cStringEmpty, cStringEmpty);
+    EXPECT_NE(html.Find("<table>"), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("gridjs.Grid"), wxNOT_FOUND);
+}
+
+TEST(BuildHtmlReportTest, NonEmptyGridJsSourceRendersInteractiveGridInsteadOfPlainTable) {
+    String pagination_limit = "\"limit\":";
+    pagination_limit.append(std::to_string(cGRID_PAGINATION_LIMIT));
+    String html = BuildHtmlReport("My Report", OneTopicSumSection(), {}, {}, cStringEmpty, "/* fake gridjs */", cStringEmpty);
+    EXPECT_EQ(html.Find("<table>"), wxNOT_FOUND); // no static-table fallback once gridjs_source is provided
+    EXPECT_NE(html.Find("gridjs.Grid"), wxNOT_FOUND);
+    EXPECT_NE(html.Find("/* fake gridjs */"), wxNOT_FOUND);
+    EXPECT_NE(html.Find("Groceries"), wxNOT_FOUND); // cell text present in the JSON handed to Grid.js
+    EXPECT_NE(html.Find("\"className\":\"num\""), wxNOT_FOUND); // RIGHT_ALIGNED column keeps its alignment class
+    EXPECT_NE(html.Find(pagination_limit), wxNOT_FOUND); // pagination enabled
+}
+
+TEST(BuildHtmlReportTest, GridJsCssInlinedOnlyWhenBothGridJsSourceAndCssAreProvided) {
+    String with_css = BuildHtmlReport("My Report", OneTopicSumSection(), {}, {}, cStringEmpty, "/* fake gridjs */", "/* fake gridjs css */");
+    EXPECT_NE(with_css.Find("/* fake gridjs css */"), wxNOT_FOUND);
+
+    String without_css = BuildHtmlReport("My Report", OneTopicSumSection(), {}, {}, cStringEmpty, "/* fake gridjs */", cStringEmpty);
+    EXPECT_EQ(without_css.Find("/* fake gridjs css */"), wxNOT_FOUND);
+}
+
 // --- BuildReportSections: needs a real AccountManager+Query, same ApplyRecoveryFile fixture
 // pattern as tests/AccountManagerTests.cpp (see that file's own comment on why).
 

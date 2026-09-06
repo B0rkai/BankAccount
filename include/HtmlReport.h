@@ -6,6 +6,25 @@
 class Query;
 class AccountManager;
 
+constexpr int cGRID_PAGINATION_LIMIT = 25;
+
+// HTML report layout tuning - see docs/html-reports-design.md's "Layout" section for what each
+// knob does; all are plugged into the CSS built in BuildHtmlReport() (HtmlReport.cpp).
+constexpr int cREPORT_FONT_SIZE_PX = 13;             // body font-size - also shrinks the Grid.js
+                                                      // cells, which inherit it (gridjs.mermaid.min.css
+                                                      // sets their padding but not their font-size)
+constexpr int cREPORT_BODY_MARGIN_PX = 24;           // outer page margin
+constexpr int cREPORT_SECTION_GAP_PX = 50;           // table<->charts gap, and gap between stacked charts
+constexpr int cREPORT_SECTION_MARGIN_BOTTOM_PX = 40; // vertical spacing between report sections
+constexpr int cREPORT_TABLE_FLEX_BASIS_PCT = 60;     // .report-table column width share
+constexpr int cREPORT_CHARTS_FLEX_BASIS_PCT = 35;    // .report-charts column width share
+constexpr int cREPORT_MIN_COLUMN_WIDTH_PX = 280;     // width at which a column stops shrinking further
+constexpr int cREPORT_STACK_BREAKPOINT_PX = 1920;    // viewport width below which columns stack
+constexpr int cREPORT_GRID_CELL_PADDING_V_PX = 6;    // .gridjs-td/.gridjs-th vertical padding, overriding
+                                                      // gridjs.mermaid.min.css's own 12px/14px default
+constexpr int cREPORT_GRID_CELL_PADDING_H_PX = 12;   // .gridjs-td/.gridjs-th horizontal padding, overriding
+                                                      // gridjs.mermaid.min.css's own 24px default
+
 // GUI-agnostic HTML+Chart.js report generation - see docs/html-reports-design.md. Consumed by
 // cMain's "Favorite Reports" menu (FavoriteReport.h's FavoriteReportDef), but has no wx GUI
 // dependency itself beyond String, so it's exercised directly by GoogleTest (see
@@ -33,6 +52,13 @@ std::vector<ReportSection> BuildReportSections(Query& q, const AccountManager& m
 // tables and no <script>/charts rather than failing outright.
 String LoadChartJsSource();
 
+// resources\gridjs.umd.js / resources\gridjs.mermaid.min.css - same vendoring/CWD-relative
+// convention as LoadChartJsSource(), for the interactive (sortable/searchable/paginated) table
+// rendering. A missing file logs a warning and returns an empty string; BuildHtmlReport() then
+// falls back to a plain static <table> per section instead of failing.
+String LoadGridJsSource();
+String LoadGridJsCss();
+
 // Builds one self-contained HTML document: `title` as the page heading, one section per
 // `sections` entry (a table, plus - for each of `chart_kinds` that's valid for that section's
 // ChartShape, for each income/expense side allowed by `chart_sides` and present in the data, for
@@ -50,5 +76,8 @@ String LoadChartJsSource();
 // unrecognized values, means no restriction (both sides rendered, the pre-existing default) -
 // never an empty report. `chartjs_source` (see LoadChartJsSource()) is inlined verbatim into one
 // <script> block so the output file has zero external references; passing an empty string omits
-// chart rendering entirely (tables only).
-String BuildHtmlReport(const String& title, const std::vector<ReportSection>& sections, const std::vector<String>& chart_kinds, const std::vector<String>& chart_sides, const String& chartjs_source);
+// chart rendering entirely (tables only). `gridjs_source`/`gridjs_css` (see LoadGridJsSource()/
+// LoadGridJsCss()) are likewise inlined verbatim and, when non-empty, make every section's table
+// render as an interactive Grid.js grid (sortable columns, a search box, pagination) instead of a
+// plain <table> - passing empty strings (the default) keeps the original static-table rendering.
+String BuildHtmlReport(const String& title, const std::vector<ReportSection>& sections, const std::vector<String>& chart_kinds, const std::vector<String>& chart_sides, const String& chartjs_source, const String& gridjs_source = cStringEmpty, const String& gridjs_css = cStringEmpty);

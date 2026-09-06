@@ -34,6 +34,18 @@ client picks up a new/changed resource via `SelfUpdater::ApplyUpdate()` on its n
 not just via a fresh build from source - see `release.json`'s schema in
 [json-file-schemas.md](json-file-schemas.md).
 
+Same pattern, third exception: **Grid.js** (MIT-licensed,
+[grid-js/gridjs](https://github.com/grid-js/gridjs), v6.2.0) at `resources\gridjs.umd.js` (UMD
+bundle) plus `resources\gridjs.mermaid.min.css` (its default "mermaid" theme) and
+`resources\LICENSE-gridjs.MIT` — renders each HTML report table as an interactive, sortable/
+searchable/paginated grid instead of a plain `<table>` (see
+[html-reports-design.md](html-reports-design.md)). `HtmlReport.cpp`'s `LoadGridJsSource()`/
+`LoadGridJsCss()` read both as plain text at report-generation time, the same CWD-relative
+convention as `LoadChartJsSource()`; `BuildHtmlReport()` inlines both verbatim (CSS in a `<style>`,
+JS in a `<script>`) so the report stays fully offline. Upgrading the vendored version means
+re-downloading `https://cdn.jsdelivr.net/npm/gridjs@<version>/dist/gridjs.umd.js` and
+`.../dist/theme/mermaid.min.css` over the existing files.
+
 - **wxWidgets 3.0** headers at `C:\Users\<user>\source\wxWidgets\include` (both configs).
 - **ZipLib** headers at `C:\Users\<user>\source\ziplib\Source\ZipLib`; Debug|x64 links its
   built libs from `..\..\ziplib\Bin\x64\Debug\*.lib` (i.e. a `ziplib` checkout next to this repo).
