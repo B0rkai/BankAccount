@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-                       "Add debug logging of each imported row's raw CSV/XML fields alongside its parsed date/type/amount/client/memo"
+
                    ],
     "released":  [
                      {
@@ -54,6 +54,13 @@
                          "date":  "2026-09-07",
                          "changes":  [
                                          "CSV parsing fixes"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.6",
+                         "date":  "2026-09-07",
+                         "changes":  [
+                                         "Add debug logging of each imported row\u0027s raw CSV/XML fields alongside its parsed date/type/amount/client/memo"
                                      ]
                      }
                  ]
