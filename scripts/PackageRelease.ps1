@@ -17,7 +17,8 @@
 .PARAMETER Version
     The new version string, e.g. "1.1.0" - must be exactly major.minor.patch (matching
     ParseVersion() in include/Version.cpp), or the client's update check will silently
-    never recognize it as parseable.
+    never recognize it as parseable. Optional - if omitted, the patch number of the current
+    include\Version.h APP_VERSION is incremented by one (e.g. 1.1.6 -> 1.1.7).
 
 .PARAMETER ReleaseFolder
     The network folder to publish into (e.g. \\server\bankaccount\release) - matches
@@ -34,9 +35,13 @@
 
 .EXAMPLE
     .\scripts\PackageRelease.ps1 -Version 1.1.0 -ReleaseFolder \\myserver\bankaccount\release
+
+.EXAMPLE
+    .\scripts\PackageRelease.ps1 -ReleaseFolder \\myserver\bankaccount\release
+    # Omits -Version: auto-bumps the current include\Version.h patch number (e.g. 1.1.6 -> 1.1.7).
 #>
 param(
-    [Parameter(Mandatory)][string]$Version,
+    [string]$Version,
     [Parameter(Mandatory)][string]$ReleaseFolder,
     [string]$Configuration = "Release",
     [switch]$SkipBuild
@@ -49,6 +54,16 @@ $exePath = Join-Path $repoRoot "x64\$Configuration\BankAccount.exe"
 
 # 1. Validate the version string - same shape ParseVersion() (include/Version.cpp) accepts,
 # so a typo here can't silently publish a manifest the client will never recognize as newer.
+# If omitted, auto-bump the patch number of the current APP_VERSION in include\Version.h
+# (e.g. 1.1.6 -> 1.1.7) instead of requiring the caller to compute it by hand.
+if (-not $Version) {
+    $currentHeaderContent = Get-Content $versionHeaderPath -Raw
+    if ($currentHeaderContent -notmatch 'constexpr const char\* APP_VERSION = "(\d+)\.(\d+)\.(\d+)";') {
+        throw "Could not find a parseable constexpr const char* APP_VERSION = ""major.minor.patch""; line in $versionHeaderPath to auto-bump - pass -Version explicitly."
+    }
+    $Version = "{0}.{1}.{2}" -f [int]$Matches[1], [int]$Matches[2], ([int]$Matches[3] + 1)
+    Write-Host "No -Version given - auto-bumping current APP_VERSION $($Matches[1]).$($Matches[2]).$($Matches[3]) -> $Version"
+}
 if ($Version -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version '$Version' is not major.minor.patch (e.g. 1.1.0) - ParseVersion() on the client requires exactly that shape."
 }
