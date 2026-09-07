@@ -144,6 +144,14 @@ void ExtractData(const StringTable& data, RawImportData& import_data, const Supp
 	size_t size = data.size();
 	for (auto rit = data.crbegin(); rit != data.crend(); rit++) {
 		RawTransactionData& raw = import_data.data.emplace_back();
+		std::ostringstream raw_row;
+		for (size_t i = 0; i < rit->size(); i++) {
+			if (i) {
+				raw_row << "|";
+			}
+			raw_row << (*rit)[i].utf8_str();
+		}
+		LogDebug("IMPT") << "ExtractData: row " << cnt << " raw=[" << raw_row.str() << "]";
 		switch (bank) {
 		case MBH_Bank_csv:
 			if ((*rit)[MBH_Column_Tranzakciodatuma].empty()) {
@@ -177,6 +185,10 @@ void ExtractData(const StringTable& data, RawImportData& import_data, const Supp
 		default:
 			return; // wtf?
 		}
+		LogDebug("IMPT") << "ExtractData: row " << cnt << " -> date=" << DateAsString(raw.date).utf8_str()
+			<< ", type='" << raw.type.utf8_str() << "', amount=" << raw.amount.PrettyPrint().utf8_str()
+			<< ", client='" << raw.client.utf8_str() << "', client_acc='" << raw.client_account_number.utf8_str()
+			<< "', memo='" << raw.memo.utf8_str() << "'";
 		if (++cnt == (size - bank)) {
 			break;
 		}

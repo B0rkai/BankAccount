@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-
+                       "Add debug logging of each imported row's raw CSV/XML fields alongside its parsed date/type/amount/client/memo"
                    ],
     "released":  [
                      {
