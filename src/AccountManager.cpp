@@ -742,6 +742,28 @@ static String PrepareTransactionDetails(const RawTransactionData& data, const St
 	return details;
 }
 
+IdSet AccountManager::CategoriesUsedByClient(const Id client_id, Id& most_frequent) const {
+	std::vector<Id> categories;
+	for (Account* acc : m_accounts) {
+		acc->AppendCategoriesForClient(client_id, categories);
+	}
+	std::unordered_map<Id::Type, unsigned> counts;
+	for (const Id& cat : categories) {
+		++counts[(Id::Type)cat];
+	}
+	IdSet result;
+	most_frequent = Id(INVALID_ID);
+	unsigned best_count = 0;
+	for (const auto& [cat_id, count] : counts) {
+		result.emplace(cat_id);
+		if (count > best_count) {
+			best_count = count;
+			most_frequent = Id(cat_id);
+		}
+	}
+	return result;
+}
+
 Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTopic topic, const String& name, IManualResolve* resolve_if, bool optional) {
 	IdSet ids = SearchIds(topic, name, false);
 	Id id(INVALID_ID);
@@ -791,8 +813,17 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 			cat = m_category_system.Categorize(StringVector{m_ttype_man.GetName(ttype), client_name});
 		}
 		if ((Id::Type)cat == 0) {
-			// popup manual categorization dialog
-			resolve_if->DoManualResolve(PrepareTransactionDetails(data, client_name), cStringEmpty, data.desc, QueryTopic::CATEGORY, IdSet(), cat, true);
+			// popup manual categorization dialog, pre-populated with this client's own past
+			// categories (if any) as fast one-click choices, the most-used one pre-selected
+			IdSet client_categories;
+			if ((Id::Type)client != 0) {
+				Id most_frequent(INVALID_ID);
+				client_categories = CategoriesUsedByClient(client, most_frequent);
+				if (!client_categories.empty()) {
+					cat = most_frequent;
+				}
+			}
+			resolve_if->DoManualResolve(PrepareTransactionDetails(data, client_name), cStringEmpty, data.desc, QueryTopic::CATEGORY, client_categories, cat, true);
 		}
 	} else {
 		cat = (Id::Type)m_category_system.GetId(data.cat);

@@ -57,6 +57,12 @@ public:
 	size_t IndexOf(const Transaction* tr) const;
 	Transaction& GetTransactionAt(size_t index);
 
+	// Appends this account's own transaction history for client_id: one category id per matching
+	// transaction (duplicates included), so a caller tallying frequency across every account (see
+	// AccountManager::CategoriesUsedByClient) sees each account's contribution weighted by how
+	// often it actually recorded that client.
+	void AppendCategoriesForClient(Id client_id, std::vector<Id>& out) const;
+
 	// Manual repair tool: removes the last `count` transactions (clamped to Size()). Needed when
 	// a prior import/edit has left the tail of this account out of date order, which breaks
 	// PrepareImport()'s "walk back from the end while its date is >= the new import's start date"

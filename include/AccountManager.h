@@ -133,6 +133,13 @@ public:
 
 	String GetClientInfoOfName(const String& name);
 
+	// Distinct categories used across every transaction recorded so far for client_id, across
+	// every account - offered as one-click ManualResolve selection choices so a repeat client
+	// with an established categorization history doesn't need a full category search each time.
+	// most_frequent receives whichever of those was used most often (INVALID_ID if client_id has
+	// no prior transactions), pre-selected in the dialog.
+	IdSet CategoriesUsedByClient(const Id client_id, Id& most_frequent) const;
+
 	struct ImportResult {
 		StringTable table;
 		PtrVector<const Transaction> transactions; // the newly imported transactions, for grid editing

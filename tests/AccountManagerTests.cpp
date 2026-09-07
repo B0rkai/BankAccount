@@ -183,6 +183,42 @@ AccountManager::TransactionIdentity BuildOneTransactionFixture(TestAccountManage
     return mgr.Identify(result.transactions.front());
 }
 
+TEST(CategoriesUsedByClientTest, ReturnsDistinctCategoriesWithTheMostUsedOnePreselected) {
+    NullJournal journal;
+    TestAccountManager mgr(journal);
+    const char* content =
+        "ACCOUNT\t0\t1177337704983110\tTest Acc\tOTP\tHUF\n"
+        "CLIENT\t1\tAlice\n"
+        "CATEGORY\t1\tGroceries\n"
+        "CATEGORY\t2\tUtilities\n"
+        "TYPE\t0\tPurchase\n"
+        "TRANSACTION\t0\t45000\t0\t-1000\t1\t1\n"
+        "TRANSACTION\t0\t45001\t0\t-2000\t1\t1\n"
+        "TRANSACTION\t0\t45002\t0\t-3000\t1\t2\n";
+    TempRecoveryFile file("test_categoriesusedbyclient_fixture.tmp", content);
+    AccountManager::RecoveryResult result = mgr.ApplyRecoveryFile(file.Path(), true);
+    ASSERT_TRUE(result.success);
+
+    Id most_frequent(INVALID_ID);
+    IdSet categories = mgr.CategoriesUsedByClient(Id(1), most_frequent);
+
+    EXPECT_EQ(categories, IdSet({Id(1), Id(2)}));
+    EXPECT_EQ(most_frequent, Id(1)); // Groceries used twice, Utilities once
+}
+
+TEST(CategoriesUsedByClientTest, ReturnsEmptyAndInvalidMostFrequentForAClientWithNoHistory) {
+    NullJournal journal;
+    TestAccountManager mgr(journal);
+    BuildOneTransactionFixture(mgr);
+    Id unrelated_client = mgr.CreateId(QueryTopic::CLIENT, "Someone Else");
+
+    Id most_frequent(Id(0));
+    IdSet categories = mgr.CategoriesUsedByClient(unrelated_client, most_frequent);
+
+    EXPECT_TRUE(categories.empty());
+    EXPECT_EQ(most_frequent, Id(INVALID_ID));
+}
+
 TEST(MakeQueryTest, ReadOnlyQueryClientFilterFindsTheMatchingTransaction) {
     NullJournal journal;
     TestAccountManager mgr(journal);

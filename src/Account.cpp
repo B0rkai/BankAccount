@@ -142,6 +142,14 @@ Transaction& Account::GetTransactionAt(size_t index) {
 	return m_transactions.at(index);
 }
 
+void Account::AppendCategoriesForClient(Id client_id, std::vector<Id>& out) const {
+	for (const Transaction& tr : m_transactions) {
+		if (tr.GetClientId() == client_id) {
+			out.push_back(tr.GetCategoryId());
+		}
+	}
+}
+
 size_t Account::PruneLastTransactions(size_t count) {
 	count = std::min(count, m_transactions.size());
 	// Same as PrepareImport()'s own pop_back() above - the pruned entries' memo/description

@@ -82,6 +82,34 @@ TEST(AccountTest, AddTransactionWithCategoryIdSetsCategory) {
     EXPECT_EQ(acc.GetLastRecord()->GetCategoryId(), Id(9));
 }
 
+TEST(AccountTest, AppendCategoriesForClientOnlyCollectsThatClientsCategoriesWithDuplicates) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45000, Id(1), -1000, Id(2), "", Id(9));  // client 2, category 9
+    acc.AddTransaction(45001, Id(1), -2000, Id(2), "", Id(9));  // client 2, category 9 again
+    acc.AddTransaction(45002, Id(1), -3000, Id(2), "", Id(7));  // client 2, category 7
+    acc.AddTransaction(45003, Id(1), -4000, Id(3), "", Id(5));  // different client
+
+    std::vector<Id> out;
+    acc.AppendCategoriesForClient(Id(2), out);
+
+    ASSERT_EQ(out.size(), 3u);
+    EXPECT_EQ(out[0], Id(9));
+    EXPECT_EQ(out[1], Id(9));
+    EXPECT_EQ(out[2], Id(7));
+}
+
+TEST(AccountTest, AppendCategoriesForClientLeavesOutUntouchedWhenNoTransactionMatches) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45000, Id(1), -1000, Id(2), "", Id(9));
+
+    std::vector<Id> out;
+    acc.AppendCategoriesForClient(Id(99), out);
+
+    EXPECT_TRUE(out.empty());
+}
+
 TEST(AccountTest, GetFirstAndLastRecordAreNullWhenEmpty) {
     NullJournal journal;
     Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
