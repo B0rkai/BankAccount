@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-
+                       "Support MBH Bank's expanded CSV export column layout (7 additional columns before Kiegeszitoinformacio)"
                    ],
     "released":  [
                      {

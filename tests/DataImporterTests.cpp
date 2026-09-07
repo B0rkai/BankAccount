@@ -55,9 +55,9 @@ const String kMbhHeader = L"Sz\u00E1mlat\u00F6rt\u00E9net";
 // so tests can't reference it directly, but the row layout is part of the file format this test
 // exercises, and BuildValidMbhRow() above documents the full column-by-column mapping.
 constexpr size_t kMbhColumnKozlemeny = 10;       // Kozlemeny (memo)
-constexpr size_t kMbhColumnTranzakciohelye = 22; // Tranzakciohelye (client name)
+constexpr size_t kMbhColumnTranzakciohelye = 29; // Tranzakciohelye (client name)
 
-// One valid MBH_Column_* - shaped transaction row, matching ImportColumnsMBH's 24 columns
+// One valid MBH_Column_* - shaped transaction row, matching ImportColumnsMBH's 31 columns
 // (src/DataImporter.cpp) exactly - returned as a vector (rather than a hand-typed string) so
 // individual tests can override one field without the column count silently drifting from
 // MBH_Column_SIZE.
@@ -82,13 +82,20 @@ std::vector<String> BuildValidMbhRow() {
         "",                 // 16 Bankkoltseg3
         "",                 // 17 Bankkoltseg4
         "",                 // 18 Bankkoltseg5
-        "",                 // 19 Kiegeszitoinformacio
-        "",                 // 20 Megbizasazonositoja
-        "",                 // 21 SWIFTreferenciaszam
-        "Test Shop",        // 22 Tranzakciohelye (client name, since column 6 is empty)
-        "2024.03.14",       // 23 Konyvelesidatum (booking date - only used if 11 is empty)
+        "",                 // 19 Ugyfelazonosito
+        "",                 // 20 KedvezmenyezettTranzakcioazonositoja
+        "",                 // 21 SzamlaAzonosito
+        "",                 // 22 TorzsvasarloAzonosito
+        "",                 // 23 KereskedoiEszkozAzonosito
+        "",                 // 24 NavEllenorzoKod
+        "",                 // 25 BoltAzonosito
+        "",                 // 26 Kiegeszitoinformacio
+        "",                 // 27 Megbizasazonositoja
+        "",                 // 28 SWIFTreferenciaszam
+        "Test Shop",        // 29 Tranzakciohelye (client name, since column 6 is empty)
+        "2024.03.14",       // 30 Konyvelesidatum (booking date - only used if 11 is empty)
     };
-    EXPECT_EQ(row.size(), 24u); // == MBH_Column_SIZE - ASSERT_EQ can't be used here: it expands
+    EXPECT_EQ(row.size(), 31u); // == MBH_Column_SIZE - ASSERT_EQ can't be used here: it expands
                                  // to a `return;`, which doesn't typecheck in a function
                                  // returning a vector.
     return row;
