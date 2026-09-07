@@ -146,6 +146,80 @@ TEST(ParseMultiValueStringTest, TrailingSeparatorProducesAnEmptyTrailingElement)
     EXPECT_EQ(result[1], "");
 }
 
+TEST(ParseMultiValueStringTest, AQuotedFieldHasItsWrappingQuotesStrippedButProtectsAnEmbeddedSeparator) {
+    // A field is only ever treated as quoted if its very first character is '"' - that opening
+    // quote, and the '"' that closes it, are CSV-generator syntax, not part of the value, so
+    // neither survives into the parsed field. Between them, though, a ';' is ordinary field
+    // content rather than a column boundary.
+    StringVector result = ParseMultiValueString("\"a;b\";c");
+
+    ASSERT_EQ(result.size(), 2u);
+    EXPECT_EQ(result[0], "a;b");
+    EXPECT_EQ(result[1], "c");
+}
+
+TEST(ParseMultiValueStringTest, AQuoteThatDoesNotOpenAtTheStartOfAFieldIsKeptLiteralAndUnescaped) {
+    // Only a '"' at the very start of a field opens CSV quoting. A '"' anywhere else in an
+    // otherwise-unquoted field is just ordinary content - it isn't stripped, and it doesn't
+    // protect a later ';'.
+    StringVector result = ParseMultiValueString("a\"b;c");
+
+    ASSERT_EQ(result.size(), 2u);
+    EXPECT_EQ(result[0], "a\"b");
+    EXPECT_EQ(result[1], "c");
+}
+
+TEST(ParseMultiValueStringTest, AnUnterminatedQuoteProtectsEverythingToTheEndOfTheString) {
+    // A field-opening '"' that's never closed leaves the "inside quotes" flag set for the rest of
+    // the value, so every later ';' - even ones with no relation to the stray quote - stops being
+    // treated as a separator. This is why DataImporter.cpp's ImportFromCSV column-count check
+    // (data[4].size() < MBH_Column_SIZE) is what catches a row with an unterminated quote: it
+    // collapses down to far fewer fields than expected, rather than silently misaligning columns.
+    StringVector result = ParseMultiValueString("a;\"b;c;d");
+
+    ASSERT_EQ(result.size(), 2u);
+    EXPECT_EQ(result[0], "a");
+    EXPECT_EQ(result[1], "b;c;d"); // opening quote consumed as syntax even though it never closes
+}
+
+TEST(ParseMultiValueStringTest, DoubledQuotesInsideAQuotedFieldCollapseToASingleLiteralQuote) {
+    // Standard CSV escaping: a '""' pair encountered while already inside a quoted field is a
+    // literal '"' in the content, not a closing quote followed by a new one - it does not close
+    // the field, and only one '"' survives into the parsed value. The field's own wrapping quotes
+    // are still stripped as usual.
+    StringVector result = ParseMultiValueString("\"a\"\"b\";c");
+
+    ASSERT_EQ(result.size(), 2u);
+    EXPECT_EQ(result[0], "a\"b");
+    EXPECT_EQ(result[1], "c");
+}
+
+TEST(ParseMultiValueStringTest, DoubledQuotesStillProtectAnEmbeddedSeparator) {
+    // The ';' between the two doubled-quote pairs must stay part of the field content, proving
+    // the doubled-quote handling doesn't accidentally close/reopen the "inside quotes" state.
+    StringVector result = ParseMultiValueString("\"a\"\";\"\"b\";c");
+
+    ASSERT_EQ(result.size(), 2u);
+    EXPECT_EQ(result[0], "a\";\"b");
+    EXPECT_EQ(result[1], "c");
+}
+
+TEST(CountCharsTest, CountsOccurrencesOfTheGivenCharacter) {
+    // This is the primitive CSVParser (DataImporter.cpp) runs on each accumulated line to decide
+    // whether a quoted field is still open (an odd running count) and needs the next physical
+    // line appended.
+    EXPECT_EQ(CountChars("a;b;c", ';'), 2);
+    EXPECT_EQ(CountChars("\"quoted\"", '"'), 2);
+}
+
+TEST(CountCharsTest, ReturnsZeroWhenTheCharacterIsAbsent) {
+    EXPECT_EQ(CountChars("abc", '"'), 0);
+}
+
+TEST(CountCharsTest, ReturnsZeroForAnEmptyString) {
+    EXPECT_EQ(CountChars("", '"'), 0);
+}
+
 TEST(StripTrailingCharTest, RemovesAllTrailingOccurrences) {
     EXPECT_EQ(StripTrailingChar("a;;", ';'), "a");
 }

@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-                       "Fix MBH Bank CSV import broken by a source-encoding bug (missing UTF-8 BOM corrupted the header-sentinel literal) and by an unstripped UTF-8 BOM on the bank's own export files; also handle multi-line quoted CSV fields and preserve genuinely-empty trailing fields when splitting semicolon-separated values"
+
                    ],
     "released":  [
                      {
@@ -40,6 +40,13 @@
                          "date":  "2026-09-06",
                          "changes":  [
                                          "Add logging around import file-format detection and stored-data alignment (PrepareImport), so a failed/empty import is now traceable in the log instead of silent"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.4",
+                         "date":  "2026-09-06",
+                         "changes":  [
+                                         "Fix MBH Bank CSV import broken by a source-encoding bug (missing UTF-8 BOM corrupted the header-sentinel literal) and by an unstripped UTF-8 BOM on the bank\u0027s own export files; also handle multi-line quoted CSV fields and preserve genuinely-empty trailing fields when splitting semicolon-separated values"
                                      ]
                      }
                  ]

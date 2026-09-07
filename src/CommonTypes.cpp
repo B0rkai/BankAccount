@@ -183,22 +183,46 @@ void StringTable::insert_meta(const std::initializer_list<MetaData>& list) {
 
 StringVector ParseMultiValueString(const String& val) {
     StringVector vals;
-    size_t pos = val.find(';');
-    if (pos == String::npos) {
-        vals.emplace_back(val.c_str());
-    } else {
-        size_t prevpos = 0;
-        vals.emplace_back(val, prevpos, pos - prevpos);
-        do {
-            prevpos = pos + 1;
-            pos = val.find(';', prevpos);
-            if (pos == String::npos) {
-                break;
+    String current;
+    bool in_quotes = false;
+    bool at_field_start = true;
+    const size_t len = val.size();
+    for (size_t i = 0; i < len; ++i) {
+        const wxUniChar c = val[i];
+        if (in_quotes) {
+            if (c == '"') {
+                if ((i + 1 < len) && (val[i + 1] == '"')) {
+                    // A doubled quote inside a quoted field is the standard CSV escape for one
+                    // literal '"' in the content.
+                    current += '"';
+                    ++i;
+                } else {
+                    // The field's closing quote - a CSV-generator artifact, not part of the value.
+                    in_quotes = false;
+                }
+            } else {
+                current += c;
             }
-            vals.emplace_back(val, prevpos, pos - prevpos);
-        } while (pos != String::npos);
-        vals.emplace_back(val, prevpos, val.size() - prevpos);
+            continue;
+        }
+        if (at_field_start && (c == '"')) {
+            // The field's opening quote - likewise not part of the value. Only the very first
+            // character of a field can open it; a '"' appearing later in an unquoted field is
+            // just literal content (CSV escaping only applies to fields that open with a quote).
+            in_quotes = true;
+            at_field_start = false;
+            continue;
+        }
+        at_field_start = false;
+        if (c == ';') {
+            vals.push_back(current);
+            current.clear();
+            at_field_start = true;
+        } else {
+            current += c;
+        }
     }
+    vals.push_back(current);
     return vals;
 }
 
