@@ -3,6 +3,7 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include "wx/datetime.h"
 
 
 const char* cCharArrEmpty = "";
@@ -242,6 +243,22 @@ void SetToday(Today* ptr) {
     gToday = ptr;
 }
 
+namespace {
+    class RealToday : public Today {
+        virtual String GetAsString() override {
+            return DateAsString(GetInExcelFormat());
+        }
+        virtual uint16_t GetInExcelFormat() override {
+            const wxDateTime d = wxDateTime::Today();
+            return (uint16_t)DMYToExcelSerialDate(d.GetDay(), d.GetMonth() + 1, d.GetYear());
+        }
+    };
+}
+
+void SetRealToday() {
+    SetToday(new RealToday);
+}
+
 int CountChars(const String& text, const char c) {
     int count = 0;
     for (auto ch : text) {
@@ -258,5 +275,24 @@ String StripTrailingChar(const String& val, char c) {
         --end;
     }
     return val.substr(0, end);
+}
+
+String SanitizeFileNameComponent(const String& name) {
+    static const wxString invalid = "\\/:*?\"<>|";
+    String result;
+    for (size_t i = 0; i < name.size(); ++i) {
+        wxChar c = name[i];
+        result += (invalid.Find(c) != wxNOT_FOUND) ? wxChar('_') : c;
+    }
+    return result;
+}
+
+String TimestampForFilename() {
+    time_t t = time(nullptr);
+    struct tm dt = *localtime(&t);
+    std::ostringstream ss;
+    ss << (dt.tm_year + 1900) << std::setfill('0') << std::setw(2) << (dt.tm_mon + 1) << std::setw(2) << dt.tm_mday
+        << "_" << std::setw(2) << dt.tm_hour << std::setw(2) << dt.tm_min << std::setw(2) << dt.tm_sec;
+    return String(ss.str());
 }
 

@@ -1,7 +1,6 @@
 {
     "unreleased":  [
-                       "Support MBH Bank's expanded CSV export column layout (7 additional columns before Kiegeszitoinformacio)",
-                       "Manual category resolve now offers the client's own previously-used categories as selection choices, with the most-used one pre-selected"
+                       "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)"
                    ],
     "released":  [
                      {
@@ -62,6 +61,14 @@
                          "date":  "2026-09-07",
                          "changes":  [
                                          "Add debug logging of each imported row\u0027s raw CSV/XML fields alongside its parsed date/type/amount/client/memo"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.7",
+                         "date":  "2026-09-08",
+                         "changes":  [
+                                         "Support MBH Bank\u0027s expanded CSV export column layout (7 additional columns before Kiegeszitoinformacio)",
+                                         "Manual category resolve now offers the client\u0027s own previously-used categories as selection choices, with the most-used one pre-selected"
                                      ]
                      }
                  ]

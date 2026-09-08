@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BankAccountCore", "BankAcco
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BankAccountTests", "BankAccountTests.vcxproj", "{BC2DC4DB-0042-4731-98D8-BF3646BB4485}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BankAccountCli", "BankAccountCli.vcxproj", "{B4C36391-F09C-4CA7-9938-A6F838F9205D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -41,6 +43,14 @@ Global
 		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Release|x64.Build.0 = Release|x64
 		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Release|x86.ActiveCfg = Release|Win32
 		{BC2DC4DB-0042-4731-98D8-BF3646BB4485}.Release|x86.Build.0 = Release|Win32
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Debug|x64.ActiveCfg = Debug|x64
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Debug|x64.Build.0 = Debug|x64
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Debug|x86.ActiveCfg = Debug|Win32
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Debug|x86.Build.0 = Debug|Win32
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Release|x64.ActiveCfg = Release|x64
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Release|x64.Build.0 = Release|x64
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Release|x86.ActiveCfg = Release|Win32
+		{B4C36391-F09C-4CA7-9938-A6F838F9205D}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

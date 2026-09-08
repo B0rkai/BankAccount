@@ -5,7 +5,11 @@
     exe's CRC32, and publishes BankAccount.exe + resources\* + release.json + changelog.json to
     a network release folder - the counterpart to cMain::CheckForUpdate()/
     SelfUpdater::ApplyUpdate()/cMain::ShowChangelogIfJustUpdated() on the client side (see
-    CLAUDE.md's "deploy releases through this network location" and "Changelog" notes).
+    CLAUDE.md's "deploy releases through this network location" and "Changelog" notes). Also
+    builds and publishes BankAccountCli.exe (the headless favorite-report generator) alongside
+    it, purely as a convenience copy for whoever runs it from the release share - it is
+    deliberately left out of release.json's "files" manifest, so SelfUpdater::ApplyUpdate() on
+    already-installed GUI clients never looks at it and has no reason to.
 
 .DESCRIPTION
     This is the manual, human-run release process for a project with no CI/CD - run it once
@@ -51,6 +55,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $versionHeaderPath = Join-Path $repoRoot "include\Version.h"
 $exePath = Join-Path $repoRoot "x64\$Configuration\BankAccount.exe"
+$cliExePath = Join-Path $repoRoot "x64\$Configuration\BankAccountCli.exe"
 
 # 1. Validate the version string - same shape ParseVersion() (include/Version.cpp) accepts,
 # so a typo here can't silently publish a manifest the client will never recognize as newer.
@@ -107,12 +112,20 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) {
         throw "Build failed (exit code $LASTEXITCODE) - Version.h has already been bumped to $Version on disk; fix the build and re-run, or revert the header manually if you're abandoning this release."
     }
+    Write-Host "Building BankAccountCli $Configuration|x64 via $msbuild"
+    & $msbuild (Join-Path $repoRoot "BankAccountCli.vcxproj") "/p:Configuration=$Configuration" "/p:Platform=x64" /m /nologo /v:minimal
+    if ($LASTEXITCODE -ne 0) {
+        throw "BankAccountCli build failed (exit code $LASTEXITCODE) - Version.h has already been bumped to $Version on disk; fix the build and re-run, or revert the header manually if you're abandoning this release."
+    }
 } else {
-    Write-Host "Skipping build (-SkipBuild) - using whatever is already at $exePath"
+    Write-Host "Skipping build (-SkipBuild) - using whatever is already at $exePath / $cliExePath"
 }
 
 if (-not (Test-Path $exePath)) {
     throw "$exePath does not exist - build it first (omit -SkipBuild), or check -Configuration."
+}
+if (-not (Test-Path $cliExePath)) {
+    throw "$cliExePath does not exist - build it first (omit -SkipBuild), or check -Configuration."
 }
 
 # 5. Compute the built exe's CRC32 - same algorithm as Crc32Update/Crc32Finish in
@@ -163,6 +176,12 @@ if (-not (Test-Path $ReleaseFolder)) {
 }
 Copy-Item -Path $exePath -Destination (Join-Path $ReleaseFolder "BankAccount.exe") -Force
 
+# 7a-cli. Copy BankAccountCli.exe alongside it - a plain file copy, not part of release.json's
+# "files" manifest, since it's not something SelfUpdater::ApplyUpdate() ever needs to sync onto
+# an already-installed GUI client; whoever wants to run scheduled reports just picks it up from
+# the release share directly.
+Copy-Item -Path $cliExePath -Destination (Join-Path $ReleaseFolder "BankAccountCli.exe") -Force
+
 # 7a. Publish resources\* alongside the exe - misc files the running app reads at a CWD-relative
 # path (e.g. resources\chart.umd.min.js for HTML reports' vendored Chart.js), which an
 # already-installed client's SelfUpdater::ApplyUpdate() needs to sync on top of a plain exe swap.
@@ -193,6 +212,7 @@ Copy-Item -Path $changelogPath -Destination (Join-Path $ReleaseFolder "changelog
 Write-Host ""
 Write-Host "Published version $Version to $ReleaseFolder"
 Write-Host "  $exePath -> $ReleaseFolder\BankAccount.exe"
+Write-Host "  $cliExePath -> $ReleaseFolder\BankAccountCli.exe (not in release.json - clients ignore it)"
 Write-Host "  $manifestPath (version=$Version, crc32=$crc32Hex, $($fileEntries.Count) resource file(s))"
 Write-Host "  $changelogPath -> $ReleaseFolder\changelog.json ($($unreleasedChanges.Count) change note(s) for $Version)"
 Write-Host ""

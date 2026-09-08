@@ -207,19 +207,9 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_CTX_MERGE_SELECTED, OnMergeSelectedFromContextMenu)
 wxEND_EVENT_TABLE()
 
-class wxToday : public Today {
-	virtual String GetAsString() override {
-		return DateAsString(GetInExcelFormat());
-	}
-	virtual uint16_t GetInExcelFormat() override {
-		const wxDateTime d = wxDateTime::Today();
-		return (uint16_t)DMYToExcelSerialDate(d.GetDay(), d.GetMonth() + 1, d.GetYear());
-	}
-};
-
 cMain::cMain()
 : wxFrame(nullptr, wxID_ANY, AppTitle(), wxPoint(100, 100), wxSize(1126, 730)) {
-	SetToday(new wxToday);
+	SetRealToday();
 	SetMinSize(wxSize(1126, 430));
 	InitMenu();
 	m_main_panel = new wxPanel(this, wxID_ANY, wxPoint(0,0), GetSize());
@@ -1859,29 +1849,6 @@ void cMain::FavoriteQuerySelected(wxCommandEvent& evt) {
 	std::vector<int> enabled_accounts(checked_accounts.begin(), checked_accounts.end());
 	BuildQueryFromFavorite(def, q, enabled_accounts);
 	RunAndRenderQuery(q);
-}
-
-namespace {
-	// Strips characters Windows forbids in a file name - a report name is free text (whatever
-	// the user hand-wrote as "name" in db\favorite_reports.json), not already filename-safe.
-	String SanitizeFileNameComponent(const String& name) {
-		static const wxString invalid = "\\/:*?\"<>|";
-		String result;
-		for (size_t i = 0; i < name.size(); ++i) {
-			wxChar c = name[i];
-			result += (invalid.Find(c) != wxNOT_FOUND) ? wxChar('_') : c;
-		}
-		return result;
-	}
-
-	String TimestampForFilename() {
-		time_t t = time(nullptr);
-		struct tm dt = *localtime(&t);
-		std::ostringstream ss;
-		ss << (dt.tm_year + 1900) << std::setfill('0') << std::setw(2) << (dt.tm_mon + 1) << std::setw(2) << dt.tm_mday
-			<< "_" << std::setw(2) << dt.tm_hour << std::setw(2) << dt.tm_min << std::setw(2) << dt.tm_sec;
-		return String(ss.str());
-	}
 }
 
 void cMain::FavoriteReportSelected(wxCommandEvent& evt) {
