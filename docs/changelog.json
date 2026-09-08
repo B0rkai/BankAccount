@@ -1,7 +1,6 @@
 {
     "unreleased":  [
-                       "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)",
-                       "Auto-recall a transaction's prior categorization when re-import or manual pruning removes it and a later import brings back the same date/amount/client, instead of asking again; fix a crash in PrepareImport when re-importing pops an account's entire transaction history"
+
                    ],
     "released":  [
                      {
@@ -70,6 +69,14 @@
                          "changes":  [
                                          "Support MBH Bank\u0027s expanded CSV export column layout (7 additional columns before Kiegeszitoinformacio)",
                                          "Manual category resolve now offers the client\u0027s own previously-used categories as selection choices, with the most-used one pre-selected"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.8",
+                         "date":  "2026-09-08",
+                         "changes":  [
+                                         "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)",
+                                         "Auto-recall a transaction\u0027s prior categorization when re-import or manual pruning removes it and a later import brings back the same date/amount/client, instead of asking again; fix a crash in PrepareImport when re-importing pops an account\u0027s entire transaction history"
                                      ]
                      }
                  ]
