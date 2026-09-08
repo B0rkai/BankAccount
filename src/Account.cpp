@@ -36,9 +36,10 @@ bool Account::PrepareImport(const uint16_t date) {
 		}
 		size_t popped = 0;
 		do {
+			StashCategorization(m_transactions.back());
 			m_transactions.pop_back();
 			++popped;
-		} while (GetLastRecord()->GetDate() >= date);
+		} while (!m_transactions.empty() && GetLastRecord()->GetDate() >= date);
 		m_logger.LogInfo() << "PrepareImport: dropped " << popped << " stored transaction(s) on/after " << DateAsString(date).utf8_str()
 			<< " from '" << GetName().utf8_str() << "' to re-import them fresh";
 		return true;
@@ -156,8 +157,30 @@ size_t Account::PruneLastTransactions(size_t count) {
 	// strings are left behind in m_memos/m_descriptions rather than tracked down and erased,
 	// since nothing else in this class ever needs the reverse (Transaction -> list iterator)
 	// mapping that would take.
+	for (auto it = m_transactions.end() - count; it != m_transactions.end(); ++it) {
+		StashCategorization(*it);
+	}
 	m_transactions.erase(m_transactions.end() - count, m_transactions.end());
 	return count;
+}
+
+void Account::StashCategorization(const Transaction& tr) {
+	if (tr.GetCategoryId() == Id(UNCATEGORIZED)) {
+		return; // nothing worth recognizing later
+	}
+	m_pruned_categorizations.push_back({ tr.GetDate(), tr.GetAmount(), tr.GetClientId(), tr.GetCategoryId() });
+}
+
+bool Account::RecallCategorization(uint16_t date, int32_t amount, Id client_id, Id& category_id) {
+	auto it = std::find_if(m_pruned_categorizations.begin(), m_pruned_categorizations.end(), [&](const PrunedCategorization& p) {
+		return p.date == date && p.amount == amount && p.client_id == client_id;
+	});
+	if (it == m_pruned_categorizations.end()) {
+		return false;
+	}
+	category_id = it->category_id;
+	m_pruned_categorizations.erase(it);
+	return true;
 }
 
 void Account::Sort() {

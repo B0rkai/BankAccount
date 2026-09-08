@@ -19,18 +19,30 @@ class Query;
 class WQuery;
 
 class Account : public IAccount, public NumberedType, public NamedType {
+	// A removed-but-recognizable transaction, stashed by PrepareImport()'s re-import pop-back and
+	// by PruneLastTransactions() so a freshly (re-)imported transaction that matches on
+	// date+amount+client can be auto-categorized instead of asked about again - for a given
+	// client, the same amount on the same day is always the same category.
+	struct PrunedCategorization {
+		uint16_t date;
+		int32_t amount;
+		Id client_id;
+		Id category_id;
+	};
 	std::unique_ptr<const AccountNumber> m_acc_number;
 	bool m_open = true;
 	Currency* m_curr;
 	std::vector<Transaction> m_transactions;
 	std::list<String> m_memos;
 	std::list<String> m_descriptions;
+	std::vector<PrunedCategorization> m_pruned_categorizations;
 	Logger& m_logger;
 	IJournal& m_journal;
 	bool RunQuery(Query& query, const Transaction* tr) const;
 	virtual const String& GetAccName() const override;
 	virtual String* AddDescription(const String& str) override;
 	inline virtual Id GetId() const override { return NumberedType::GetId(); }
+	void StashCategorization(const Transaction& tr);
 public:
 	Account(const Id::Type id, const String& acc_number, const String& acc_name, const CurrencyType curr, IJournal& journal);
 
@@ -68,6 +80,13 @@ public:
 	// PrepareImport()'s "walk back from the end while its date is >= the new import's start date"
 	// assumption. Returns the number actually removed.
 	size_t PruneLastTransactions(size_t count);
+
+	// Looks up a category stashed by StashCategorization() (via PrepareImport()'s pop-back or
+	// PruneLastTransactions()) for a transaction matching date+amount+client_id, consuming it if
+	// found - the entry is a one-time recognition, not a standing rule. In-memory only, cleared on
+	// reload, so this only ever fires for a removal and its re-import happening within the same
+	// running session. Returns true (and sets category_id) if a match was found.
+	bool RecallCategorization(uint16_t date, int32_t amount, Id client_id, Id& category_id);
 
 	void Sort();
 

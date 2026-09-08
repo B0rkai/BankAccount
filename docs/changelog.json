@@ -1,6 +1,7 @@
 {
     "unreleased":  [
-                       "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)"
+                       "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)",
+                       "Auto-recall a transaction's prior categorization when re-import or manual pruning removes it and a later import brings back the same date/amount/client, instead of asking again; fix a crash in PrepareImport when re-importing pops an account's entire transaction history"
                    ],
     "released":  [
                      {

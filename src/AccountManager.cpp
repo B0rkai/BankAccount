@@ -808,11 +808,18 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 	// Category
 	Id cat = Id(0);
 	if (data.cat.empty()) {
-		cat = m_category_system.Categorize({data.type, data.client, data.memo});
-		if ((Id::Type)cat == 0) {
+		// A transaction popped by PrepareImport()'s re-import overlap or by PruneLastTransactions()
+		// and now reappearing with the same date+amount+client is, by definition, the same
+		// transaction being re-categorized the same way - reapply it directly rather than asking
+		// again (or risking the keyword-based Categorize() below guessing differently).
+		bool recalled = acc->RecallCategorization(data.date, data.amount, client, cat);
+		if (!recalled) {
+			cat = m_category_system.Categorize({data.type, data.client, data.memo});
+		}
+		if (!recalled && (Id::Type)cat == 0) {
 			cat = m_category_system.Categorize(StringVector{m_ttype_man.GetName(ttype), client_name});
 		}
-		if ((Id::Type)cat == 0) {
+		if (!recalled && (Id::Type)cat == 0) {
 			// popup manual categorization dialog, pre-populated with this client's own past
 			// categories (if any) as fast one-click choices, the most-used one pre-selected
 			IdSet client_categories;

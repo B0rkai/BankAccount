@@ -216,6 +216,79 @@ TEST(AccountTest, PrepareImportPopsOverlappingRecordsOnSmallOverlap) {
     EXPECT_EQ(acc.GetLastRecord()->GetDate(), 45000);
 }
 
+TEST(AccountTest, PrepareImportPoppingTheEntireHistoryDoesNotCrash) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45001, Id(1), 200, Id(0), ""); // only record, and it's on the import's start date
+
+    // Popping the overlap empties m_transactions entirely - GetLastRecord() then returns nullptr,
+    // which the pop loop's own continuation check must not dereference.
+    EXPECT_TRUE(acc.PrepareImport(45001));
+    EXPECT_EQ(acc.Size(), 0u);
+}
+
+TEST(AccountTest, PrepareImportStashesPoppedCategorizationsForRecall) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45000, Id(1), 100, Id(0), "");
+    acc.AddTransaction(45001, Id(1), 200, Id(7), "", Id(3)); // categorized: client 7, cat 3
+
+    EXPECT_TRUE(acc.PrepareImport(45001)); // pops the 45001 record, stashing its categorization
+
+    Id recalled(INVALID_ID);
+    EXPECT_TRUE(acc.RecallCategorization(45001, 200, Id(7), recalled));
+    EXPECT_EQ(recalled, Id(3));
+}
+
+TEST(AccountTest, RecallCategorizationConsumesTheEntryOnce) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45000, Id(1), 100, Id(0), "");
+    acc.AddTransaction(45001, Id(1), 200, Id(7), "", Id(3));
+    acc.PrepareImport(45001);
+
+    Id recalled(INVALID_ID);
+    EXPECT_TRUE(acc.RecallCategorization(45001, 200, Id(7), recalled));
+    EXPECT_FALSE(acc.RecallCategorization(45001, 200, Id(7), recalled)); // already consumed
+}
+
+TEST(AccountTest, RecallCategorizationRequiresDateAmountAndClientToAllMatch) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45000, Id(1), 100, Id(0), "");
+    acc.AddTransaction(45001, Id(1), 200, Id(7), "", Id(3));
+    acc.PrepareImport(45001);
+
+    Id recalled(INVALID_ID);
+    EXPECT_FALSE(acc.RecallCategorization(45001, 201, Id(7), recalled)); // wrong amount
+    EXPECT_FALSE(acc.RecallCategorization(45001, 200, Id(8), recalled)); // wrong client
+    EXPECT_FALSE(acc.RecallCategorization(45000, 200, Id(7), recalled)); // wrong date
+}
+
+TEST(AccountTest, PrepareImportDoesNotStashUncategorizedTransactions) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45000, Id(1), 100, Id(0), "");
+    acc.AddTransaction(45001, Id(1), 200, Id(7), ""); // no category id given, defaults to UNCATEGORIZED
+    acc.PrepareImport(45001);
+
+    Id recalled(INVALID_ID);
+    EXPECT_FALSE(acc.RecallCategorization(45001, 200, Id(7), recalled));
+}
+
+TEST(AccountTest, PruneLastTransactionsStashesCategorizationsForRecall) {
+    NullJournal journal;
+    Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
+    acc.AddTransaction(45000, Id(1), 100, Id(0), "");
+    acc.AddTransaction(45001, Id(1), 200, Id(7), "", Id(3));
+
+    EXPECT_EQ(acc.PruneLastTransactions(1), 1u);
+
+    Id recalled(INVALID_ID);
+    EXPECT_TRUE(acc.RecallCategorization(45001, 200, Id(7), recalled));
+    EXPECT_EQ(recalled, Id(3));
+}
+
 TEST(AccountTest, MakeQueryReadOnlyWithNoFilterElementsReturnsEveryTransaction) {
     NullJournal journal;
     Account acc(0, VALID_ACC_NUM, "Test Account", HUF, journal);
