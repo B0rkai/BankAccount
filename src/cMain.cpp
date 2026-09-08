@@ -25,6 +25,8 @@
 #include "BankAccountFile.h"
 #include "ManualResolverDialog.h"
 #include "NewAccountDetailsDialog.h"
+#include "StoreQueryDialog.h"
+#include "StoreReportDialog.h"
 #include "LogViewerFrame.h"
 #include "RunWithProgress.h"
 #include "ExcelExport.h"
@@ -127,6 +129,8 @@ enum CtrIds {
 	MENU_LIST_ACCOUNTS,
 	MENU_LIST_CLIENTS,
 	MENU_LIST_CATEGORIES,
+	MENU_STORE_QUERY,
+	MENU_STORE_REPORT,
 	MENU_MAKE_REPORT,
 	MENU_UPDATE_EXCHANGE_RATES,
 	MENU_TEST_MANUAL_RESOLVER,
@@ -180,6 +184,8 @@ wxBEGIN_EVENT_TABLE(cMain, wxFrame)
 	EVT_MENU(MENU_LIST_ACCOUNTS, List)
 	EVT_MENU(MENU_LIST_CLIENTS, List)
 	EVT_MENU(MENU_LIST_CATEGORIES, List)
+	EVT_MENU(MENU_STORE_QUERY, OnStoreQuery)
+	EVT_MENU(MENU_STORE_REPORT, OnStoreReport)
 	EVT_MENU(MENU_UPDATE_EXCHANGE_RATES, UpdateExchangeRates)
 	EVT_MENU(MENU_TEST_MANUAL_RESOLVER, Test)
 	EVT_MENU(MENU_TEST_NEW_ACCOUNT, Test)
@@ -216,7 +222,7 @@ cMain::cMain()
 	m_main_panel->SetBackgroundColour(wxColour(200, 200, 200));
 	InitControls();
 
-	m_info_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "Standby", wxPoint(20, 170), wxSize(1325, 60), wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+	m_info_textctrl = new wxTextCtrl(m_main_panel, wxID_ANY, "Standby", wxPoint(20, 170), wxSize(680, 60), wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
 	m_info_textctrl->SetFont(GetMonoSpaceFont());
 
 	new wxStaticText(m_main_panel, wxID_ANY, "Filter:", wxPoint(20, 240));
@@ -507,8 +513,10 @@ void cMain::TopicChanged(wxCommandEvent& evt) {
 }
 
 void cMain::DateFilterToggle(wxCommandEvent& evt) {
-	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Show(m_ctrl_grp_basic_filter.m_use_date_filter_chkb->GetValue());
-	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Show(m_ctrl_grp_basic_filter.m_use_date_filter_chkb->GetValue());
+	bool on = m_ctrl_grp_basic_filter.m_use_date_filter_chkb->GetValue();
+	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Show(on);
+	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Show(on);
+	m_ctrl_grp_basic_filter.RefreshRelativeDateOverlays();
 	evt.Skip();
 }
 
@@ -526,16 +534,16 @@ void cMain::PeriodShortcutSelected(wxCommandEvent& evt) {
 	int today_day, today_month, year;
 	ExcelSerialDateToDMY(GetToday()->GetInExcelFormat(), today_day, today_month, year);
 	wxDateTime from, to;
-	String keyword;
+	String keyword, label;
 	switch (evt.GetId()) {
-	case MENU_PERIOD_THIS_MONTH:   keyword = "this_month";   break;
-	case MENU_PERIOD_LAST_MONTH:   keyword = "last_month";   break;
-	case MENU_PERIOD_THIS_QUARTER: keyword = "this_quarter"; break;
-	case MENU_PERIOD_LAST_QUARTER: keyword = "last_quarter"; break;
-	case MENU_PERIOD_THIS_HALF:    keyword = "this_half";    break;
-	case MENU_PERIOD_LAST_HALF:    keyword = "last_half";    break;
-	case MENU_PERIOD_THIS_YEAR:    keyword = "this_year";    break;
-	case MENU_PERIOD_LAST_YEAR:    keyword = "last_year";    break;
+	case MENU_PERIOD_THIS_MONTH:   keyword = "this_month";   label = "This Month";   break;
+	case MENU_PERIOD_LAST_MONTH:   keyword = "last_month";   label = "Last Month";   break;
+	case MENU_PERIOD_THIS_QUARTER: keyword = "this_quarter"; label = "This Quarter"; break;
+	case MENU_PERIOD_LAST_QUARTER: keyword = "last_quarter"; label = "Last Quarter"; break;
+	case MENU_PERIOD_THIS_HALF:    keyword = "this_half";    label = "This Half";    break;
+	case MENU_PERIOD_LAST_HALF:    keyword = "last_half";    label = "Last Half";    break;
+	case MENU_PERIOD_THIS_YEAR:    keyword = "this_year";    label = "This Year";    break;
+	case MENU_PERIOD_LAST_YEAR:    keyword = "last_year";    label = "Last Year";    break;
 	// The remaining "earlier year" shortcuts are dynamic full-calendar-year buttons (their
 	// labels are literal years, see InitMenu()) rather than a fixed semantic keyword worth
 	// exposing to favorite-query JSON, so these stay computed directly instead of going through
@@ -564,6 +572,80 @@ void cMain::PeriodShortcutSelected(wxCommandEvent& evt) {
 	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->SetDate(to);
 	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Show(true);
 	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Show(true);
+	// SetDate() above may itself fire wxEVT_CALENDAR_SEL_CHANGED (platform-dependent), which would
+	// otherwise clear this right back out via CalendarManuallyChanged - setting it last makes the
+	// end state correct either way.
+	if (!keyword.empty()) {
+		m_ctrl_grp_basic_filter.SetActiveRelativePeriod(keyword, label);
+	} else {
+		m_ctrl_grp_basic_filter.ClearActiveRelativePeriod();
+	}
+}
+
+void cMain::CalendarManuallyChanged(wxCalendarEvent& evt) {
+	evt.Skip();
+	m_ctrl_grp_basic_filter.ClearActiveRelativePeriod();
+	bool is_from = (evt.GetEventObject() == m_ctrl_grp_basic_filter.m_date_from_calendarctrl);
+	m_ctrl_grp_basic_filter.ClearActiveRelativeDate(is_from);
+}
+
+namespace {
+	// RelativePeriod.h's single-date keywords (see ResolveRelativeDate()), paired with the label
+	// shown both in this right-click menu and (prefixed "Active: ") as the calendar's indicator.
+	const std::pair<String, String> cRelativeDateOptions[] = {
+		{"today", "Today"},
+		{"start_of_this_month", "Start of This Month"},
+		{"end_of_last_month", "End of Last Month"},
+		{"start_of_this_quarter", "Start of This Quarter"},
+		{"end_of_last_quarter", "End of Last Quarter"},
+		{"start_of_this_half", "Start of This Half"},
+		{"end_of_last_half", "End of Last Half"},
+		{"start_of_this_year", "Start of This Year"},
+		{"end_of_last_year", "End of Last Year"},
+	};
+	constexpr int cRelativeDateOptionCount = sizeof(cRelativeDateOptions) / sizeof(cRelativeDateOptions[0]);
+}
+
+void cMain::ShowRelativeDateMenu(wxContextMenuEvent& evt) {
+	wxCalendarCtrl* calendar = dynamic_cast<wxCalendarCtrl*>(evt.GetEventObject());
+	if (!calendar) {
+		evt.Skip();
+		return;
+	}
+	bool is_from = (calendar == m_ctrl_grp_basic_filter.m_date_from_calendarctrl);
+
+	wxMenu menu;
+	int id_base = wxWindow::NewControlId(cRelativeDateOptionCount);
+	for (int i = 0; i < cRelativeDateOptionCount; ++i) {
+		menu.Append(id_base + i, "Set to " + cRelativeDateOptions[i].second);
+	}
+	menu.Bind(wxEVT_MENU, [this, calendar, is_from, id_base](wxCommandEvent& menu_evt) {
+		int idx = menu_evt.GetId() - id_base;
+		if ((idx < 0) || (idx >= cRelativeDateOptionCount)) {
+			return;
+		}
+		const String& keyword = cRelativeDateOptions[idx].first;
+		const String& label = cRelativeDateOptions[idx].second;
+		uint16_t excel_date;
+		if (!ResolveRelativeDate(keyword, excel_date)) {
+			return;
+		}
+		calendar->SetDate(ExcelDateToWx(excel_date));
+		m_ctrl_grp_basic_filter.m_use_date_filter_chkb->SetValue(true);
+		m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Show(true);
+		m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Show(true);
+		// SetDate() above may itself fire wxEVT_CALENDAR_SEL_CHANGED (platform-dependent), which
+		// would otherwise clear this right back out via CalendarManuallyChanged - setting it last
+		// makes the end state correct either way, same reasoning as PeriodShortcutSelected.
+		m_ctrl_grp_basic_filter.SetActiveRelativeDate(is_from, keyword, String(is_from ? "From: " : "To: ") + label);
+	});
+
+	wxPoint pos = evt.GetPosition();
+	if (pos == wxDefaultPosition) {
+		calendar->PopupMenu(&menu, wxPoint(5, 5));
+	} else {
+		calendar->PopupMenu(&menu, calendar->ScreenToClient(pos));
+	}
 }
 
 bool cMain::RequireWritable() {
@@ -1563,11 +1645,135 @@ void cMain::PrepareQuery(Query& q) {
 	}
 }
 
+FavoriteQueryDef cMain::BuildFavoriteFromUI() const {
+	FavoriteQueryDef def;
+
+	wxArrayInt checked;
+	m_ctrl_grp_basic_filter.m_acc_chklb->GetCheckedItems(checked);
+	if ((size_t)checked.size() != m_ctrl_grp_basic_filter.m_acc_chklb->GetCount()) {
+		for (int idx : checked) {
+			def.accounts.push_back(m_ctrl_grp_basic_filter.m_acc_chklb->GetString(idx));
+		}
+	}
+	if (!m_ctrl_grp_basic_filter.m_client_filter_textctrl->IsEmpty()) {
+		def.clients = ParseMultiValueString(StripTrailingChar(m_ctrl_grp_basic_filter.m_client_filter_textctrl->GetValue(), ';'));
+	}
+	if (!m_ctrl_grp_basic_filter.m_category_filter_textctrl->IsEmpty()) {
+		def.categories = ParseMultiValueString(StripTrailingChar(m_ctrl_grp_basic_filter.m_category_filter_textctrl->GetValue(), ';'));
+	}
+	if (!m_ctrl_grp_basic_filter.m_type_filter_textctrl->IsEmpty()) {
+		def.types = ParseMultiValueString(StripTrailingChar(m_ctrl_grp_basic_filter.m_type_filter_textctrl->GetValue(), ';'));
+	}
+	if (m_ctrl_grp_basic_filter.m_use_date_filter_chkb->GetValue()) {
+		if (!m_ctrl_grp_basic_filter.m_active_relative_period.empty()) {
+			// The calendar controls still reflect a Periods-menu shortcut (this_month etc.) that
+			// hasn't been overridden by manually picking a date since - store the keyword itself
+			// so the favorite keeps resolving against "today" every time it's run, instead of
+			// freezing in the range that happened to be current right now.
+			def.date_mode = FavoriteQueryDef::DateMode::RELATIVE_KEYWORD;
+			def.relative_period = m_ctrl_grp_basic_filter.m_active_relative_period;
+		} else {
+			// FIXED_RANGE also covers a pair of independent per-side relative dates (e.g. a fixed
+			// "from" alongside a "to" that's always "today") - BuildQueryFromFavorite already
+			// tries each of date_from/date_to as a RelativePeriod.h keyword before falling back to
+			// an ISO date, so writing the keyword straight through here is enough; no separate
+			// DateMode is needed for this combination.
+			def.date_mode = FavoriteQueryDef::DateMode::FIXED_RANGE;
+			def.date_from = !m_ctrl_grp_basic_filter.m_active_relative_date_from.empty()
+				? m_ctrl_grp_basic_filter.m_active_relative_date_from
+				: m_ctrl_grp_basic_filter.m_date_from_calendarctrl->GetDate().Format("%Y-%m-%d");
+			def.date_to = !m_ctrl_grp_basic_filter.m_active_relative_date_to.empty()
+				? m_ctrl_grp_basic_filter.m_active_relative_date_to
+				: m_ctrl_grp_basic_filter.m_date_to_calendarctrl->GetDate().Format("%Y-%m-%d");
+		}
+	}
+
+	if (m_ctrl_grp_query.m_category_sum_chkb->GetValue()) def.aggregate_by.push_back("category");
+	if (m_ctrl_grp_query.m_client_sum_chkb->GetValue()) def.aggregate_by.push_back("client");
+	if (m_ctrl_grp_query.m_type_sum_chkb->GetValue()) def.aggregate_by.push_back("type");
+	if (m_ctrl_grp_query.m_acc_sum_chkb->GetValue()) def.aggregate_by.push_back("account");
+
+	String period = m_ctrl_grp_query.m_period_combo->GetValue();
+	if (period.IsSameAs("Yearly")) def.period = "yearly";
+	else if (period.IsSameAs("Half Year")) def.period = "half_yearly";
+	else if (period.IsSameAs("Quarter")) def.period = "quarterly";
+	else if (period.IsSameAs("Monthly")) def.period = "monthly";
+	else if (period.IsSameAs("Daily")) def.period = "daily";
+	else def.period = "none";
+
+	def.show_list = m_ctrl_grp_query.m_show_list_chkb->GetValue();
+	return def;
+}
+
+wxMenu* cMain::BuildQueryMenu() {
+	wxMenu* querymenu = new wxMenu();
+	querymenu->Append(MENU_LIST_ACCOUNTS, "List Accounts");
+	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
+	querymenu->Append(MENU_LIST_CLIENTS, "List Clients");
+	querymenu->Append(MENU_LIST_CATEGORIES, "List Categories");
+	querymenu->AppendSeparator();
+	querymenu->Append(MENU_STORE_QUERY, "Store Query...");
+	m_favorite_queries = LoadFavoriteQueries();
+	if (!m_favorite_queries.empty()) {
+		querymenu->AppendSeparator();
+		wxMenu* favoritesmenu = new wxMenu();
+		// Dynamic ids (rather than the compile-time MENU_* enum the rest of this menu bar uses) -
+		// there's no fixed count of favorites to give a name to at compile time. NewControlId(n)
+		// reserves a contiguous block, so a favorite's index is just its id offset from the base
+		// (see FavoriteQuerySelected) - one Bind() per item, since a dynamic id can't go in the
+		// static EVT_MENU() event table below.
+		m_favorite_query_id_base = wxWindow::NewControlId((int)m_favorite_queries.size());
+		for (size_t i = 0; i < m_favorite_queries.size(); ++i) {
+			int id = m_favorite_query_id_base + (int)i;
+			favoritesmenu->Append(id, m_favorite_queries[i].name);
+			favoritesmenu->Bind(wxEVT_MENU, &cMain::FavoriteQuerySelected, this, id);
+		}
+		querymenu->AppendSubMenu(favoritesmenu, "Favorite Queries");
+	}
+	return querymenu;
+}
+
+wxMenu* cMain::BuildReportsMenu() {
+	wxMenu* reportsmenu = new wxMenu();
+	reportsmenu->Append(MENU_STORE_REPORT, "Store Report...");
+	reportsmenu->AppendSeparator();
+	m_favorite_reports = LoadFavoriteReports();
+	if (!m_favorite_reports.empty()) {
+		wxMenu* favoritereportsmenu = new wxMenu();
+		// Same dynamic-id mechanism as the Favorite Queries submenu above - see its own comment.
+		m_favorite_report_id_base = wxWindow::NewControlId((int)m_favorite_reports.size());
+		for (size_t i = 0; i < m_favorite_reports.size(); ++i) {
+			int id = m_favorite_report_id_base + (int)i;
+			favoritereportsmenu->Append(id, m_favorite_reports[i].name);
+			favoritereportsmenu->Bind(wxEVT_MENU, &cMain::FavoriteReportSelected, this, id);
+		}
+		reportsmenu->AppendSubMenu(favoritereportsmenu, "Favorite Reports");
+		reportsmenu->AppendSeparator();
+	}
+	// Placeholder for a future "ad-hoc report from the currently shown query results" feature -
+	// deliberately unimplemented and permanently disabled, not wired to any handler (see
+	// docs/html-reports-design.md's explicitly-deferred scope).
+	reportsmenu->Append(MENU_MAKE_REPORT, "Make Report")->Enable(false);
+	return reportsmenu;
+}
+
+void cMain::RebuildFavoritesMenus() {
+	int query_pos = m_menu_bar->FindMenu("Query");
+	int reports_pos = m_menu_bar->FindMenu("Reports");
+	if ((query_pos == wxNOT_FOUND) || (reports_pos == wxNOT_FOUND)) {
+		return; // should never happen - both are always appended by InitMenu()
+	}
+	wxMenu* old_query_menu = m_menu_bar->Replace((size_t)query_pos, BuildQueryMenu(), "Query");
+	delete old_query_menu;
+	wxMenu* old_reports_menu = m_menu_bar->Replace((size_t)reports_pos, BuildReportsMenu(), "Reports");
+	delete old_reports_menu;
+}
+
 void cMain::InitMenu() {
 	m_menu_bar = new wxMenuBar();
 	wxMenu* dbmenu = new wxMenu();
-	wxMenu* querymenu = new wxMenu();
-	wxMenu* reportsmenu = new wxMenu();
+	wxMenu* querymenu = BuildQueryMenu();
+	wxMenu* reportsmenu = BuildReportsMenu();
 	wxMenu* periodsmenu = new wxMenu();
 	wxMenu* viewmenu = new wxMenu();
 	wxMenu* helpmenu = new wxMenu();
@@ -1592,44 +1798,6 @@ void cMain::InitMenu() {
 	dbmenu->Append(MENU_EXTRACT, "Extract save file");
 #endif
 	dbmenu->Append(MENU_UPDATE_EXCHANGE_RATES, "Update Exchange Rates");
-	querymenu->Append(MENU_LIST_ACCOUNTS, "List Accounts");
-	querymenu->Append(MENU_LIST_TYPES, "List Transaction Types");
-	querymenu->Append(MENU_LIST_CLIENTS, "List Clients");
-	querymenu->Append(MENU_LIST_CATEGORIES, "List Categories");
-	m_favorite_queries = LoadFavoriteQueries();
-	if (!m_favorite_queries.empty()) {
-		querymenu->AppendSeparator();
-		wxMenu* favoritesmenu = new wxMenu();
-		// Dynamic ids (rather than the compile-time MENU_* enum the rest of this menu bar uses) -
-		// there's no fixed count of favorites to give a name to at compile time. NewControlId(n)
-		// reserves a contiguous block, so a favorite's index is just its id offset from the base
-		// (see FavoriteQuerySelected) - one Bind() per item, since a dynamic id can't go in the
-		// static EVT_MENU() event table below.
-		m_favorite_query_id_base = wxWindow::NewControlId((int)m_favorite_queries.size());
-		for (size_t i = 0; i < m_favorite_queries.size(); ++i) {
-			int id = m_favorite_query_id_base + (int)i;
-			favoritesmenu->Append(id, m_favorite_queries[i].name);
-			favoritesmenu->Bind(wxEVT_MENU, &cMain::FavoriteQuerySelected, this, id);
-		}
-		querymenu->AppendSubMenu(favoritesmenu, "Favorite Queries");
-	}
-	m_favorite_reports = LoadFavoriteReports();
-	if (!m_favorite_reports.empty()) {
-		wxMenu* favoritereportsmenu = new wxMenu();
-		// Same dynamic-id mechanism as the Favorite Queries submenu above - see its own comment.
-		m_favorite_report_id_base = wxWindow::NewControlId((int)m_favorite_reports.size());
-		for (size_t i = 0; i < m_favorite_reports.size(); ++i) {
-			int id = m_favorite_report_id_base + (int)i;
-			favoritereportsmenu->Append(id, m_favorite_reports[i].name);
-			favoritereportsmenu->Bind(wxEVT_MENU, &cMain::FavoriteReportSelected, this, id);
-		}
-		reportsmenu->AppendSubMenu(favoritereportsmenu, "Favorite Reports");
-		reportsmenu->AppendSeparator();
-	}
-	// Placeholder for a future "ad-hoc report from the currently shown query results" feature -
-	// deliberately unimplemented and permanently disabled, not wired to any handler (see
-	// docs/html-reports-design.md's explicitly-deferred scope).
-	reportsmenu->Append(MENU_MAKE_REPORT, "Make Report")->Enable(false);
 	periodsmenu->Append(MENU_PERIOD_THIS_MONTH, "This Month");
 	periodsmenu->Append(MENU_PERIOD_LAST_MONTH, "Last Month");
 	periodsmenu->AppendSeparator();
@@ -1689,6 +1857,12 @@ constexpr int MINOR_VERTICAL_ALIGN_4 = MINOR_VERTICAL_ALIGN_3 + 20;
 constexpr int MINOR_VERTICAL_ALIGN_5 = MINOR_VERTICAL_ALIGN_4 + 20;
 constexpr int MINOR_VERTICAL_ALIGN_6 = MINOR_VERTICAL_ALIGN_5 + 20;
 
+// Reserved strip directly above each date-filter calendar for its relative-date overlay label
+// (ControlGroupBasicFilter::m_relative_overlay_from/_to) - tall enough for one line of text plus a
+// small gap, so the label never touches the calendar's own month-header row beneath it.
+constexpr int RELATIVE_OVERLAY_HEIGHT = 16;
+constexpr int RELATIVE_OVERLAY_OFFSET = RELATIVE_OVERLAY_HEIGHT + 4;
+
 const wxSize cDefaultCtrlSize(110, 25);
 
 enum Mode {
@@ -1705,6 +1879,10 @@ void cMain::InitControls() {
 	m_mode_selector_listb->SetSelection(0);
 
 	m_ctrl_grp_basic_filter.Initialize(m_main_panel);
+	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Bind(wxEVT_CALENDAR_SEL_CHANGED, &cMain::CalendarManuallyChanged, this);
+	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Bind(wxEVT_CALENDAR_SEL_CHANGED, &cMain::CalendarManuallyChanged, this);
+	m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Bind(wxEVT_CONTEXT_MENU, &cMain::ShowRelativeDateMenu, this);
+	m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Bind(wxEVT_CONTEXT_MENU, &cMain::ShowRelativeDateMenu, this);
 	m_ctrl_grp_query.Initialize(m_main_panel);
 	m_ctrl_grp_categorize.Initialize(m_main_panel);
 	m_ctrl_grp_utility.Initialize(m_main_panel);
@@ -1718,9 +1896,9 @@ void cMain::InitControls() {
 
 void cMain::SizeUpdate(wxSizeEvent& evt) {
 	evt.Skip();
-	if (m_info_textctrl) {
+	/*if (m_info_textctrl) {
 		m_info_textctrl->SetSize(evt.GetSize().GetWidth() - 55, 60);
-	}
+	}*/
 	if (m_result_notebook) {
 		m_result_notebook->SetSize(evt.GetSize() - wxSize(55, 360));
 	}
@@ -1748,6 +1926,8 @@ void cMain::ModeSelection(wxCommandEvent& evt) {
 		m_ctrl_grp_basic_filter.m_use_date_filter_chkb->SetPosition(wxPoint(HORIZONTAL_ALIGN_4, MINOR_VERTICAL_ALIGN_4));
 		m_ctrl_grp_basic_filter.m_date_from_calendarctrl->SetPosition(wxPoint(HORIZONTAL_ALIGN_5, MINOR_VERTICAL_ALIGN_1));
 		m_ctrl_grp_basic_filter.m_date_to_calendarctrl->SetPosition(wxPoint(HORIZONTAL_ALIGN_6, MINOR_VERTICAL_ALIGN_1));
+		m_ctrl_grp_basic_filter.m_relative_overlay_from->SetPosition(wxPoint(HORIZONTAL_ALIGN_5, MINOR_VERTICAL_ALIGN_1 - RELATIVE_OVERLAY_OFFSET));
+		m_ctrl_grp_basic_filter.m_relative_overlay_to->SetPosition(wxPoint(HORIZONTAL_ALIGN_6, MINOR_VERTICAL_ALIGN_1 - RELATIVE_OVERLAY_OFFSET));
 		m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Refresh();
 		m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Refresh();
 		break;
@@ -1759,6 +1939,8 @@ void cMain::ModeSelection(wxCommandEvent& evt) {
 		m_ctrl_grp_basic_filter.m_use_date_filter_chkb->SetPosition(wxPoint(HORIZONTAL_ALIGN_3, MINOR_VERTICAL_ALIGN_5));
 		m_ctrl_grp_basic_filter.m_date_from_calendarctrl->SetPosition(wxPoint(HORIZONTAL_ALIGN_4, MINOR_VERTICAL_ALIGN_1));
 		m_ctrl_grp_basic_filter.m_date_to_calendarctrl->SetPosition(wxPoint(HORIZONTAL_ALIGN_5A, MINOR_VERTICAL_ALIGN_1));
+		m_ctrl_grp_basic_filter.m_relative_overlay_from->SetPosition(wxPoint(HORIZONTAL_ALIGN_4, MINOR_VERTICAL_ALIGN_1 - RELATIVE_OVERLAY_OFFSET));
+		m_ctrl_grp_basic_filter.m_relative_overlay_to->SetPosition(wxPoint(HORIZONTAL_ALIGN_5A, MINOR_VERTICAL_ALIGN_1 - RELATIVE_OVERLAY_OFFSET));
 		m_ctrl_grp_basic_filter.m_date_from_calendarctrl->Refresh();
 		m_ctrl_grp_basic_filter.m_date_to_calendarctrl->Refresh();
 		break;
@@ -1858,6 +2040,76 @@ void cMain::FavoriteReportSelected(wxCommandEvent& evt) {
 		return;
 	}
 	GenerateFavoriteReportByName(m_favorite_reports[index].name);
+}
+
+void cMain::OnStoreQuery(wxCommandEvent& evt) {
+	evt.Skip();
+	FavoriteQueryDef def = BuildFavoriteFromUI();
+	bool show_chart_controls = m_ctrl_grp_query.m_show_chart_auto_chkb->GetValue();
+	String name, chart_side, chart_kind;
+	StoreQueryDialog dlg(this, show_chart_controls, name, chart_side, chart_kind);
+	if (dlg.ShowModal() != 0) {
+		return;
+	}
+	def.name = name;
+	def.chart_side = chart_side;
+	def.chart_kind = chart_kind;
+
+	auto favorites = LoadFavoriteQueries();
+	auto it = std::find_if(favorites.begin(), favorites.end(), [&def](const FavoriteQueryDef& existing) {
+		return existing.name == def.name;
+	});
+	if (it != favorites.end()) {
+		if (wxMessageBox("A favorite query named \"" + def.name + "\" already exists. Overwrite it?",
+			"Confirm overwrite", wxICON_QUESTION | wxYES_NO) != wxYES) {
+			return;
+		}
+		*it = def;
+	} else {
+		favorites.push_back(def);
+	}
+	SaveFavoriteQueries(favorites);
+	RebuildFavoritesMenus();
+	UIOutputText("Saved favorite query \"" + def.name + "\"");
+}
+
+void cMain::OnStoreReport(wxCommandEvent& evt) {
+	evt.Skip();
+	auto query_favorites = LoadFavoriteQueries();
+	if (query_favorites.empty()) {
+		wxMessageBox("Store a favorite query first (Query -> Store Query...) before storing a report.",
+			"No favorite queries yet", wxICON_INFORMATION);
+		return;
+	}
+	String name, favorite_query;
+	std::vector<String> chart_sides, chart_kinds;
+	StoreReportDialog dlg(this, query_favorites, name, favorite_query, chart_sides, chart_kinds);
+	if (dlg.ShowModal() != 0) {
+		return;
+	}
+
+	FavoriteReportDef def;
+	def.name = name;
+	def.favorite_query = favorite_query;
+	def.chart_sides = chart_sides;
+	def.chart_kinds = chart_kinds;
+
+	auto reports = LoadFavoriteReports();
+	auto it = std::find_if(reports.begin(), reports.end(), [&def](const FavoriteReportDef& existing) {
+		return existing.name == def.name;
+	});
+	if (it != reports.end()) {
+		if (wxMessageBox("A favorite report named \"" + def.name + "\" already exists. Overwrite it?",
+			"Confirm overwrite", wxICON_QUESTION | wxYES_NO) != wxYES) {
+			return;
+		}
+		*it = def;
+	} else {
+		reports.push_back(def);
+	}
+	SaveFavoriteReports(reports);
+	RebuildFavoritesMenus();
+	UIOutputText("Saved favorite report \"" + def.name + "\"");
 }
 
 void cMain::GenerateFavoriteReportByName(const String& name) {
@@ -2339,14 +2591,94 @@ void ControlGroupBasicFilter::DoInitialize(wxWindow* parent) {
 
 	m_controls.push_back(m_use_date_filter_chkb = new wxCheckBox(parent, CHKBX_DATE_FILTER, "date filter", wxPoint(HORIZONTAL_ALIGN_4, MINOR_VERTICAL_ALIGN_4)));
 
-	m_controls.push_back(m_date_from_calendarctrl = new wxCalendarCtrl(parent, wxID_ANY, wxDefaultDateTime, wxPoint(HORIZONTAL_ALIGN_5, MINOR_VERTICAL_ALIGN_1)));
-	m_controls.push_back(m_date_to_calendarctrl = new wxCalendarCtrl(parent, wxID_ANY, wxDefaultDateTime, wxPoint(HORIZONTAL_ALIGN_6, MINOR_VERTICAL_ALIGN_1)));
+	m_controls.push_back(m_date_from_calendarctrl = new wxCalendarCtrl(parent, wxID_ANY, wxDefaultDateTime, wxPoint(HORIZONTAL_ALIGN_5, MAJOR_VERTICAL_ALIGN_1)));
+	m_controls.push_back(m_date_to_calendarctrl = new wxCalendarCtrl(parent, wxID_ANY, wxDefaultDateTime, wxPoint(HORIZONTAL_ALIGN_6, MAJOR_VERTICAL_ALIGN_1)));
 	m_date_from_calendarctrl->Show(false);
 	m_date_to_calendarctrl->Show(false);
+
+	// Sits in the reserved strip directly above its calendar (RELATIVE_OVERLAY_HEIGHT/_OFFSET) -
+	// not covering the control itself, which read as an odd blank gray box - RefreshRelativeDateOverlays()
+	// shows this alongside disabling (graying out) the calendar whenever that side is under
+	// relative-date control, and ModeSelection() repositions both together whenever the layout
+	// switches.
+	long overlay_style = wxALIGN_CENTER | wxST_NO_AUTORESIZE;
+	wxPoint from_pos = m_date_from_calendarctrl->GetPosition();
+	wxPoint to_pos = m_date_to_calendarctrl->GetPosition();
+	wxSize overlay_from_size(m_date_from_calendarctrl->GetSize().GetWidth(), RELATIVE_OVERLAY_HEIGHT);
+	wxSize overlay_to_size(m_date_to_calendarctrl->GetSize().GetWidth(), RELATIVE_OVERLAY_HEIGHT);
+	m_controls.push_back(m_relative_overlay_from = new wxStaticText(parent, wxID_ANY, wxEmptyString,
+		wxPoint(from_pos.x, from_pos.y - RELATIVE_OVERLAY_OFFSET), overlay_from_size, overlay_style));
+	m_controls.push_back(m_relative_overlay_to = new wxStaticText(parent, wxID_ANY, wxEmptyString,
+		wxPoint(to_pos.x, to_pos.y - RELATIVE_OVERLAY_OFFSET), overlay_to_size, overlay_style));
+	m_relative_overlay_from->Show(false);
+	m_relative_overlay_to->Show(false);
 }
 
 void ControlGroupBasicFilter::Show() {
 	ControlGroup::Show();
 	m_date_from_calendarctrl->Show(m_use_date_filter_chkb->GetValue());
 	m_date_to_calendarctrl->Show(m_use_date_filter_chkb->GetValue());
+	RefreshRelativeDateOverlays();
+}
+
+void ControlGroupBasicFilter::SetActiveRelativePeriod(const String& keyword, const String& display_label) {
+	m_active_relative_period = keyword;
+	m_active_relative_period_label = display_label;
+	// A whole named period governs both sides at once - any per-side relative date set
+	// independently before this no longer applies.
+	m_active_relative_date_from.clear();
+	m_active_relative_date_from_label.clear();
+	m_active_relative_date_to.clear();
+	m_active_relative_date_to_label.clear();
+	RefreshRelativeDateOverlays();
+}
+
+void ControlGroupBasicFilter::ClearActiveRelativePeriod() {
+	m_active_relative_period.clear();
+	m_active_relative_period_label.clear();
+	RefreshRelativeDateOverlays();
+}
+
+void ControlGroupBasicFilter::SetActiveRelativeDate(bool is_from, const String& keyword, const String& display_label) {
+	// Setting either side individually breaks the "this is one named period" guarantee, even if
+	// the other side happens to still match it.
+	m_active_relative_period.clear();
+	m_active_relative_period_label.clear();
+	if (is_from) {
+		m_active_relative_date_from = keyword;
+		m_active_relative_date_from_label = display_label;
+	} else {
+		m_active_relative_date_to = keyword;
+		m_active_relative_date_to_label = display_label;
+	}
+	RefreshRelativeDateOverlays();
+}
+
+void ControlGroupBasicFilter::ClearActiveRelativeDate(bool is_from) {
+	if (is_from) {
+		m_active_relative_date_from.clear();
+		m_active_relative_date_from_label.clear();
+	} else {
+		m_active_relative_date_to.clear();
+		m_active_relative_date_to_label.clear();
+	}
+	RefreshRelativeDateOverlays();
+}
+
+void ControlGroupBasicFilter::RefreshRelativeDateOverlays() {
+	bool date_filter_on = m_use_date_filter_chkb->GetValue();
+	// A whole active period governs both sides identically; otherwise each side goes by its own
+	// per-side relative date, if any.
+	String from_text = !m_active_relative_period.empty() ? m_active_relative_period_label : m_active_relative_date_from_label;
+	String to_text = !m_active_relative_period.empty() ? m_active_relative_period_label : m_active_relative_date_to_label;
+	bool from_active = date_filter_on && !from_text.empty();
+	bool to_active = date_filter_on && !to_text.empty();
+
+	//m_date_from_calendarctrl->Enable(!from_active);
+	m_relative_overlay_from->SetLabel(from_text);
+	m_relative_overlay_from->Show(from_active);
+
+	//m_date_to_calendarctrl->Enable(!to_active);
+	m_relative_overlay_to->SetLabel(to_text);
+	m_relative_overlay_to->Show(to_active);
 }

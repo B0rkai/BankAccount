@@ -173,6 +173,8 @@
     <ClCompile Include="src\NewAccountDetailsDialog.cpp" />
     <ClCompile Include="src\PruneTransactionsDialog.cpp" />
     <ClCompile Include="src\RunWithProgress.cpp" />
+    <ClCompile Include="src\StoreQueryDialog.cpp" />
+    <ClCompile Include="src\StoreReportDialog.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\AddKeywordDialog.h" />
@@ -188,6 +190,8 @@
     <ClInclude Include="include\NewAccountDetailsDialog.h" />
     <ClInclude Include="include\PruneTransactionsDialog.h" />
     <ClInclude Include="include\RunWithProgress.h" />
+    <ClInclude Include="include\StoreQueryDialog.h" />
+    <ClInclude Include="include\StoreReportDialog.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>

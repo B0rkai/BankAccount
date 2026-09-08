@@ -369,6 +369,7 @@ external/**/*.h
 # program files
 log/**
 db/**
+reports/**
 
 # editor/assistant local config, not part of the project
 .claude/

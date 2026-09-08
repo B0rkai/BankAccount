@@ -150,6 +150,85 @@ TEST(FavoriteQueryFilePathTest, IsTheDocumentedRelativePath) {
     EXPECT_STREQ(FavoriteQueryFilePath(), "db\\favorite_queries.json");
 }
 
+TEST(WriteFavoriteQueriesTest, RoundTripsAllFieldsThroughParse) {
+    FavoriteQueryDef def;
+    def.name = "Round trip";
+    def.accounts = { "Checking" };
+    def.clients = { "Tesco", "!Excluded client" };
+    def.categories = { "Groceries" };
+    def.types = { "Card" };
+    def.exclude_clients = false;
+    def.exclude_categories = true;
+    def.exclude_types = false;
+    def.aggregate_by = { "category", "client" };
+    def.period = "monthly";
+    def.show_list = true;
+    def.date_mode = FavoriteQueryDef::DateMode::FIXED_RANGE;
+    def.date_from = "2026-01-01";
+    def.date_to = "2026-01-31";
+    def.chart_side = "expense";
+    def.chart_kind = "pie";
+
+    std::ostringstream out;
+    WriteFavoriteQueries({ def }, out);
+    std::istringstream in(out.str());
+    auto favorites = ParseFavoriteQueries(in);
+
+    ASSERT_EQ(favorites.size(), 1u);
+    const FavoriteQueryDef& parsed = favorites[0];
+    EXPECT_EQ(parsed.name, def.name);
+    ASSERT_EQ(parsed.accounts.size(), 1u);
+    EXPECT_EQ(parsed.accounts[0], "Checking");
+    ASSERT_EQ(parsed.clients.size(), 2u);
+    EXPECT_EQ(parsed.clients[1], "!Excluded client");
+    EXPECT_EQ(parsed.categories, def.categories);
+    EXPECT_EQ(parsed.types, def.types);
+    EXPECT_FALSE(parsed.exclude_clients);
+    EXPECT_TRUE(parsed.exclude_categories);
+    EXPECT_FALSE(parsed.exclude_types);
+    EXPECT_EQ(parsed.aggregate_by, def.aggregate_by);
+    EXPECT_EQ(parsed.period, "monthly");
+    EXPECT_TRUE(parsed.show_list);
+    EXPECT_TRUE(parsed.date_mode == FavoriteQueryDef::DateMode::FIXED_RANGE);
+    EXPECT_EQ(parsed.date_from, "2026-01-01");
+    EXPECT_EQ(parsed.date_to, "2026-01-31");
+    EXPECT_EQ(parsed.chart_side, "expense");
+    EXPECT_EQ(parsed.chart_kind, "pie");
+}
+
+TEST(WriteFavoriteQueriesTest, RelativePeriodRoundTrips) {
+    FavoriteQueryDef def;
+    def.name = "This month";
+    def.date_mode = FavoriteQueryDef::DateMode::RELATIVE_KEYWORD;
+    def.relative_period = "this_month";
+
+    std::ostringstream out;
+    WriteFavoriteQueries({ def }, out);
+    std::istringstream in(out.str());
+    auto favorites = ParseFavoriteQueries(in);
+
+    ASSERT_EQ(favorites.size(), 1u);
+    EXPECT_TRUE(favorites[0].date_mode == FavoriteQueryDef::DateMode::RELATIVE_KEYWORD);
+    EXPECT_EQ(favorites[0].relative_period, "this_month");
+}
+
+TEST(WriteFavoriteQueriesTest, MinimalDefRoundTripsWithoutOptionalFields) {
+    FavoriteQueryDef def;
+    def.name = "Bare minimum";
+
+    std::ostringstream out;
+    WriteFavoriteQueries({ def }, out);
+    std::istringstream in(out.str());
+    auto favorites = ParseFavoriteQueries(in);
+
+    ASSERT_EQ(favorites.size(), 1u);
+    EXPECT_EQ(favorites[0].name, "Bare minimum");
+    EXPECT_TRUE(favorites[0].accounts.empty());
+    EXPECT_TRUE(favorites[0].date_mode == FavoriteQueryDef::DateMode::NO_FILTER);
+    EXPECT_TRUE(favorites[0].chart_side.empty());
+    EXPECT_TRUE(favorites[0].chart_kind.empty());
+}
+
 TEST(BuildQueryFromFavoriteTest, PlainDefaultProducesAccountFilterAndCurrencyFallback) {
     FavoriteQueryDef def;
     def.name = "Plain";

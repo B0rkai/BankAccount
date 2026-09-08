@@ -1,6 +1,7 @@
 {
     "unreleased":  [
-
+                       "Add Store Query.../Store Report... in-app editors to save the current filter or an existing favorite query as a favorite without hand-editing JSON",
+                       "Add per-side relative dates (right-click a from/to calendar for \"Today\"/\"Start of This Month\"/etc.) and keep Periods-menu shortcuts self-updating in saved favorites instead of freezing today's range"
                    ],
     "released":  [
                      {

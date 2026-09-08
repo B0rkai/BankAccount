@@ -30,7 +30,8 @@ enhancement the wxCharts fork already carries (see [wxcharts-patches.md](wxchart
   `Favorite Queries` - loaded once at startup from a hand-edited `db\favorite_reports.json`, no
   in-app editor), and the HTML+Chart.js report generation/layout itself.
 - **Explicitly deferred**: a `Create Report` in-app dialog for building/saving a
-  `FavoriteReportDef` without hand-editing JSON - not designed yet. A `Make Report` menu item is
+  `FavoriteReportDef` without hand-editing JSON - not designed yet at the time this was written
+  (see "In-app editor: Store Report..." below for what shipped later). A `Make Report` menu item is
   present but permanently disabled (`wxMenuItem::Enable(false)`, no handler bound at all), as an
   explicit placeholder for a different, also not-yet-designed "ad-hoc report from the currently
   shown query results" feature - the two are separate ideas, kept as two distinct future items
@@ -282,3 +283,18 @@ source; one that self-updates instead gets it synced by `SelfUpdater::ApplyUpdat
 `release.json`'s `files` list (path + CRC32 per resource) and copies over anything missing or
 stale alongside the exe swap - see [json-file-schemas.md](json-file-schemas.md)'s `release.json`
 section.
+
+## In-app editor: "Store Report..." (added 2026-09-08)
+
+Partially supersedes "Scope of this first version" above: `Create Report` (building/saving a
+`FavoriteReportDef` without hand-editing JSON) is no longer deferred, though the separate
+`Make Report` placeholder (an ad-hoc report from currently-shown query results) still is and
+remains permanently disabled. `Reports → Store Report...` pops `StoreReportDialog`, asking for a
+name, an existing favorite query to run as the data source (picked from the already-loaded
+`m_favorite_queries` - the caller refuses to open the dialog at all if that's empty, since a
+report needs a data source), and a chart-sides/chart-kinds selection, then appends the result to
+`favorite_reports.json` via the new `WriteFavoriteReports()`/`SaveFavoriteReports()` (the
+write-side counterpart of `ParseFavoriteReports()`/`LoadFavoriteReports()`). Same overwrite
+confirmation and same `cMain::RebuildFavoritesMenus()` (`wxMenuBar::Replace()`-based) immediate
+reload as `Query → Store Query...` - see docs/favorite-queries-design.md's equivalent section for
+the shared mechanism.

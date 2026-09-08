@@ -1,5 +1,6 @@
 #pragma once
 #include <istream>
+#include <ostream>
 #include <vector>
 #include "CommonTypes.h"
 
@@ -49,6 +50,17 @@ const char* FavoriteQueryFilePath();
 // Reads FilePath() if present. Wraps ParseFavoriteQueries() below - kept separate so tests can
 // exercise the parsing logic through an istringstream without touching real files.
 std::vector<FavoriteQueryDef> LoadFavoriteQueries();
+
+// Writes `defs` as a pretty-printed JSON array, in the same shape ParseFavoriteQueries() reads
+// back - round-trips through Write.../Parse... exactly, including a "chart" object only when
+// chart_side/chart_kind is non-empty and a "relative_period" or "date_from"/"date_to" pair only
+// per DateMode. Kept separate from SaveFavoriteQueries() below so tests can check the produced
+// JSON (or round-trip it back through ParseFavoriteQueries()) without touching real files.
+void WriteFavoriteQueries(const std::vector<FavoriteQueryDef>& defs, std::ostream& out);
+
+// Overwrites FavoriteQueryFilePath() with WriteFavoriteQueries()'s output - the save-side
+// counterpart of LoadFavoriteQueries(), used by cMain's "Store Query..." menu item.
+void SaveFavoriteQueries(const std::vector<FavoriteQueryDef>& defs);
 
 // A JSON array of objects; recognized keys match FavoriteQueryDef's fields (snake_case, e.g.
 // "exclude_clients", "aggregate_by", "chart": {"side":.., "kind":..}). Malformed JSON, a

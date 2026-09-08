@@ -76,3 +76,39 @@ TEST(ParseFavoriteReportsTest, MissingChartSidesYieldsEmptyVector) {
     ASSERT_EQ(reports.size(), 1u);
     EXPECT_TRUE(reports[0].chart_sides.empty());
 }
+
+TEST(WriteFavoriteReportsTest, RoundTripsAllFieldsThroughParse) {
+    FavoriteReportDef def;
+    def.name = "Round trip report";
+    def.favorite_query = "This month by category";
+    def.chart_kinds = { "pie", "bar" };
+    def.chart_sides = { "expense" };
+
+    std::ostringstream out;
+    WriteFavoriteReports({ def }, out);
+    std::istringstream in(out.str());
+    auto reports = ParseFavoriteReports(in);
+
+    ASSERT_EQ(reports.size(), 1u);
+    EXPECT_EQ(reports[0].name, def.name);
+    EXPECT_EQ(reports[0].favorite_query, def.favorite_query);
+    EXPECT_EQ(reports[0].chart_kinds, def.chart_kinds);
+    EXPECT_EQ(reports[0].chart_sides, def.chart_sides);
+}
+
+TEST(WriteFavoriteReportsTest, MinimalDefRoundTripsWithoutOptionalFields) {
+    FavoriteReportDef def;
+    def.name = "Table only report";
+    def.favorite_query = "Last 30 days";
+
+    std::ostringstream out;
+    WriteFavoriteReports({ def }, out);
+    std::istringstream in(out.str());
+    auto reports = ParseFavoriteReports(in);
+
+    ASSERT_EQ(reports.size(), 1u);
+    EXPECT_EQ(reports[0].name, def.name);
+    EXPECT_EQ(reports[0].favorite_query, def.favorite_query);
+    EXPECT_TRUE(reports[0].chart_kinds.empty());
+    EXPECT_TRUE(reports[0].chart_sides.empty());
+}

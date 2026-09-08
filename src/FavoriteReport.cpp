@@ -87,3 +87,40 @@ std::vector<FavoriteReportDef> LoadFavoriteReports() {
 	LogInfo() << "Loaded " << result.size() << " favorite report" << (result.size() == 1 ? "" : "s");
 	return result;
 }
+
+namespace {
+	nlohmann::json StringVectorToJson(const StringVector& vec) {
+		nlohmann::json arr = nlohmann::json::array();
+		for (const String& s : vec) {
+			arr.push_back(s.ToStdString());
+		}
+		return arr;
+	}
+
+	nlohmann::json ToJson(const FavoriteReportDef& def) {
+		nlohmann::json j;
+		j["name"] = def.name.ToStdString();
+		j["favorite_query"] = def.favorite_query.ToStdString();
+		if (!def.chart_kinds.empty()) j["chart_kinds"] = StringVectorToJson(def.chart_kinds);
+		if (!def.chart_sides.empty()) j["chart_sides"] = StringVectorToJson(def.chart_sides);
+		return j;
+	}
+}
+
+void WriteFavoriteReports(const std::vector<FavoriteReportDef>& defs, std::ostream& out) {
+	nlohmann::json arr = nlohmann::json::array();
+	for (const FavoriteReportDef& def : defs) {
+		arr.push_back(ToJson(def));
+	}
+	out << arr.dump(2);
+}
+
+void SaveFavoriteReports(const std::vector<FavoriteReportDef>& defs) {
+	std::ofstream out(FavoriteReportFilePath());
+	if (!out.is_open()) {
+		LogError() << "Failed to open " << FavoriteReportFilePath() << " for writing - favorite reports not saved";
+		return;
+	}
+	WriteFavoriteReports(defs, out);
+	LogInfo() << "Saved " << defs.size() << " favorite report" << (defs.size() == 1 ? "" : "s");
+}

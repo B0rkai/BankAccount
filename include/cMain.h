@@ -69,6 +69,54 @@ public:
     wxCheckBox* m_use_date_filter_chkb = nullptr;
     wxCalendarCtrl* m_date_from_calendarctrl = nullptr;
     wxCalendarCtrl* m_date_to_calendarctrl = nullptr;
+    // One label per calendar, sitting in a reserved strip directly above it (RELATIVE_OVERLAY_HEIGHT/
+    // _OFFSET in cMain.cpp) rather than covering it - covering the whole control read as an odd
+    // blank gray box. Whenever that side is under relative-date control, the calendar itself is
+    // disabled (grayed out - its own displayed date is only whatever last happened to resolve, and
+    // editing it would just clear the relative state right back out) and this label shows the
+    // active keyword's display text above it (earlier versions tried directly above with no
+    // reserved space, which collided with the calendar's own month-header row, then a single
+    // combined label below m_use_date_filter_chkb instead - see RefreshRelativeDateOverlays()).
+    wxStaticText* m_relative_overlay_from = nullptr;
+    wxStaticText* m_relative_overlay_to = nullptr;
+
+    // The RelativePeriod.h keyword (e.g. "this_month") behind the Periods-menu shortcut that last
+    // set the calendar controls, or empty if they currently reflect a manually picked date range,
+    // or a pair of independent per-side relative dates (below), instead - see
+    // cMain::PeriodShortcutSelected. Lets Query -> Store Query... save a self-updating
+    // relative_period instead of freezing today's resolved range as a fixed one.
+    String m_active_relative_period;
+    String m_active_relative_period_label; // display text for both overlay labels
+
+    // The RelativePeriod.h single-date keyword (e.g. "today", "start_of_this_month") set via the
+    // per-calendar right-click menu (cMain::ShowRelativeDateMenu) on the "from"/"to" calendar
+    // respectively, or empty if that side currently holds a manually/whole-period-set fixed date.
+    // Independent of m_active_relative_period and of each other - e.g. a favorite can have a fixed
+    // "from" alongside a "to" that's always "today", with no single relative_period keyword
+    // covering that combination.
+    String m_active_relative_date_from;
+    String m_active_relative_date_from_label;
+    String m_active_relative_date_to;
+    String m_active_relative_date_to_label;
+
+    // Records `keyword` as the active shortcut and refreshes the indicator; called by
+    // cMain::PeriodShortcutSelected right after it sets the calendar dates.
+    void SetActiveRelativePeriod(const String& keyword, const String& display_label);
+    // Clears the active shortcut and refreshes the indicator; called whenever the calendars stop
+    // reflecting a shortcut - either the user edits a date by hand (cMain::CalendarManuallyChanged)
+    // or a fixed-year shortcut (no relative-period keyword) is picked.
+    void ClearActiveRelativePeriod();
+
+    // Per-side counterparts of the two methods above, for the "from"/"to" calendar's own
+    // right-click relative-date menu - picking one clears the whole-period state (the range is no
+    // longer one named period) but leaves the other side's own relative-date/fixed status alone.
+    void SetActiveRelativeDate(bool is_from, const String& keyword, const String& display_label);
+    void ClearActiveRelativeDate(bool is_from);
+
+    // Recomputes both overlay labels' text/visibility and their calendar's enabled state from the
+    // state above and m_use_date_filter_chkb - called after any state change above, and by
+    // cMain::DateFilterToggle when the checkbox itself is toggled.
+    void RefreshRelativeDateOverlays();
 };
 
 class ControlGroupQuery : public ControlGroup {
@@ -280,7 +328,21 @@ class cMain :
     void OnAddKeywordFromContextMenu(wxCommandEvent& evt);
     void OnMergeSelectedFromContextMenu(wxCommandEvent& evt);
     void PrepareQuery(Query& query);
+    // Builds the FavoriteQueryDef `PrepareQuery` would resolve for the *current* UI state -
+    // read-only, no name set (the "Store Query..." dialog fills that in). Used by OnStoreQuery.
+    FavoriteQueryDef BuildFavoriteFromUI() const;
     void InitMenu();
+    // Builds the Query/Reports menus (static items plus the current Favorite Queries/Favorite
+    // Reports submenus, loading them from disk) - factored out of InitMenu() so a post-Store
+    // reload (RebuildFavoritesMenus) can rebuild just these two instead of the whole menu bar.
+    wxMenu* BuildQueryMenu();
+    wxMenu* BuildReportsMenu();
+    // Re-reads favorite_queries.json/favorite_reports.json and swaps freshly-built Query/Reports
+    // menus into the live menu bar (wxMenuBar::Replace) - called after OnStoreQuery/OnStoreReport
+    // successfully write a new favorite, so it's usable without restarting.
+    void RebuildFavoritesMenus();
+    void OnStoreQuery(wxCommandEvent& evt);
+    void OnStoreReport(wxCommandEvent& evt);
     void InitControls();
     void SizeUpdate(wxSizeEvent& evt);
     void ModeSelection(wxCommandEvent& evt);
@@ -292,6 +354,17 @@ class cMain :
     // Applies a "Periods" menu shortcut (This/Last Month/Quarter/Half/Year): turns on the date
     // filter and sets the from/to calendar controls to the shortcut's computed range.
     void PeriodShortcutSelected(wxCommandEvent& evt);
+    // Bound directly (not via the static event table - see InitControls()) to both calendar
+    // controls' wxEVT_CALENDAR_SEL_CHANGED: a manual date pick means that calendar no longer
+    // reflects a Periods-menu shortcut or its own relative-date menu pick, so the relevant
+    // indicator(s) reset - both if a whole period was active (editing either side breaks it),
+    // otherwise just that side's own relative-date indicator.
+    void CalendarManuallyChanged(wxCalendarEvent& evt);
+    // Bound directly (not via the static event table) to both calendar controls'
+    // wxEVT_CONTEXT_MENU (right-click): offers RelativePeriod.h's single-date keywords ("Today",
+    // "Start of This Month", ...) for that specific calendar only, independent of the other side
+    // and of the whole-range Periods-menu shortcuts.
+    void ShowRelativeDateMenu(wxContextMenuEvent& evt);
     void LoadFile(wxCommandEvent& evt);
     void DoLoad();
     // Best-effort, silent-on-failure check against the network release location (see

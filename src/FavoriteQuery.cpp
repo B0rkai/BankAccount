@@ -134,6 +134,62 @@ std::vector<FavoriteQueryDef> LoadFavoriteQueries() {
 }
 
 namespace {
+	nlohmann::json StringVectorToJson(const StringVector& vec) {
+		nlohmann::json arr = nlohmann::json::array();
+		for (const String& s : vec) {
+			arr.push_back(s.ToStdString());
+		}
+		return arr;
+	}
+
+	nlohmann::json ToJson(const FavoriteQueryDef& def) {
+		nlohmann::json j;
+		j["name"] = def.name.ToStdString();
+		if (!def.accounts.empty()) j["accounts"] = StringVectorToJson(def.accounts);
+		if (!def.clients.empty()) j["clients"] = StringVectorToJson(def.clients);
+		if (!def.categories.empty()) j["categories"] = StringVectorToJson(def.categories);
+		if (!def.types.empty()) j["types"] = StringVectorToJson(def.types);
+		if (def.exclude_clients) j["exclude_clients"] = true;
+		if (def.exclude_categories) j["exclude_categories"] = true;
+		if (def.exclude_types) j["exclude_types"] = true;
+		if (!def.aggregate_by.empty()) j["aggregate_by"] = StringVectorToJson(def.aggregate_by);
+		if (!def.period.empty()) j["period"] = def.period.ToStdString();
+		if (def.show_list) j["show_list"] = true;
+		if (def.date_mode == FavoriteQueryDef::DateMode::RELATIVE_KEYWORD) {
+			j["relative_period"] = def.relative_period.ToStdString();
+		} else if (def.date_mode == FavoriteQueryDef::DateMode::FIXED_RANGE) {
+			j["date_from"] = def.date_from.ToStdString();
+			j["date_to"] = def.date_to.ToStdString();
+		}
+		if (!def.chart_side.empty() || !def.chart_kind.empty()) {
+			nlohmann::json chart;
+			if (!def.chart_side.empty()) chart["side"] = def.chart_side.ToStdString();
+			if (!def.chart_kind.empty()) chart["kind"] = def.chart_kind.ToStdString();
+			j["chart"] = chart;
+		}
+		return j;
+	}
+}
+
+void WriteFavoriteQueries(const std::vector<FavoriteQueryDef>& defs, std::ostream& out) {
+	nlohmann::json arr = nlohmann::json::array();
+	for (const FavoriteQueryDef& def : defs) {
+		arr.push_back(ToJson(def));
+	}
+	out << arr.dump(2);
+}
+
+void SaveFavoriteQueries(const std::vector<FavoriteQueryDef>& defs) {
+	std::ofstream out(FavoriteQueryFilePath());
+	if (!out.is_open()) {
+		LogError() << "Failed to open " << FavoriteQueryFilePath() << " for writing - favorite queries not saved";
+		return;
+	}
+	WriteFavoriteQueries(defs, out);
+	LogInfo() << "Saved " << defs.size() << " favorite quer" << (defs.size() == 1 ? "y" : "ies");
+}
+
+namespace {
 	void PushSumQuery(Query& query, const String& topic) {
 		if (topic == "category") {
 			query.push_back(new QueryCategorySum);
