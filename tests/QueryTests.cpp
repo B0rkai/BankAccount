@@ -332,7 +332,7 @@ TEST(PeriodicQueryTest, ChartResultRoutesEachTopicByNetSumSignAndPadsMissingPeri
     EXPECT_DOUBLE_EQ(groceries_income->m_values[0], 1000.0);
     EXPECT_DOUBLE_EQ(groceries_income->m_values[1], 0.0);
     EXPECT_DOUBLE_EQ(groceries_income->m_values[2], 0.0);
-    EXPECT_DOUBLE_EQ(groceries_income->m_values[3], 500.0); // magnitude of the 2023 net (-500), still on the income tab overall
+    EXPECT_DOUBLE_EQ(groceries_income->m_values[3], -500.0); // 2023's own net was an expense (-500) even though Groceries as a whole is net income - it must dip negative here, not add as if it were more income
 
     EXPECT_EQ(find_series(income, "Rent"), nullptr); // Rent never appears on the income tab
 

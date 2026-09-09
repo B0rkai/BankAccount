@@ -743,7 +743,8 @@ ChartResult PeriodicQuery::GetChartResult() const {
 					}
 				}
 			}
-			ChartData& chart = (net_total >= 0 ? result.m_income : result.m_expense)[currency];
+			const bool is_income = net_total >= 0;
+			ChartData& chart = (is_income ? result.m_income : result.m_expense)[currency];
 			chart.m_currency = currency;
 			chart.m_labels = labels;
 			ChartSeries& series = chart.m_series.emplace_back();
@@ -756,7 +757,12 @@ ChartResult PeriodicQuery::GetChartResult() const {
 					auto it = res_map.find(currency);
 					if (it != res_map.end()) {
 						const int64_t net = it->second.m_sum;
-						value = MoneyValueAsDouble(net >= 0 ? net : -net, currency);
+						// sign follows the series' destination chart (decided once, above, from
+						// net_total), not each period's own sign - a period that bucks the topic's
+						// overall trend (e.g. a refund month within an otherwise expense-heavy
+						// topic) must show as a negative dip on that chart, offsetting the total,
+						// rather than as a positive magnitude that would only add to it.
+						value = MoneyValueAsDouble(is_income ? net : -net, currency);
 					}
 				}
 				series.m_values.push_back(value);
