@@ -330,10 +330,25 @@ see "Decisions" below) rather than reparsing on every request.
    expected 404s from the metadata-fetch calls hitting the static file server standing in for the
    daemon, unrelated to auth).
 
-7. **Deployment.** systemd unit invoking `daemon` with command-line args (db path, bind
-   host/port, token) — no config file, no `db\location.json`-style JSON to parse/validate. No
-   auto-update either (unlike the desktop app's self-update): deploying a new build is
-   stop-daemon / replace-binary / restart, all via the systemd unit.
+7. **Deployment.** ✅ **Done (2026-09-11).** `deploy/bankaccount-daemon.service` — a systemd
+   unit invoking `daemon` with the same command-line args stories 2/6 already settled (db path,
+   bind host/port, token) — no app-level config file, no `db\location.json`-style JSON to
+   parse/validate. The values themselves live in `deploy/bankaccount-daemon.env.example`
+   (`BANKACCOUNT_DB`/`BANKACCOUNT_HOST`/`BANKACCOUNT_PORT`/`BANKACCOUNT_TOKEN`), loaded via the
+   unit's `EnvironmentFile=` and expanded into `ExecStart=` as `${VAR}` references — kept out of
+   the unit file itself (often world-readable under `/etc/systemd/system`) since the env file can
+   be locked to 0600/0640, and out of a bespoke config format since systemd's own env-file
+   mechanism already does the job. Runs as a dedicated unprivileged `bankaccount-daemon` system
+   user (never root), with `NoNewPrivileges`/`ProtectSystem=strict`/`ProtectHome`/`PrivateTmp`
+   hardening — reasonable since this daemon is read-only end-to-end (no `WQuery`/import/
+   categorize) and never needs to write anywhere but its own log directory. `LogsDirectory=`
+   creates and owns `/var/log/bankaccount-daemon`; `WorkingDirectory` points at it so
+   `Logger.cpp`'s cwd-relative `log/BankAccount.log` lands there instead of wherever systemd's
+   default working directory (`/`) would otherwise place it. No auto-update (unlike the desktop
+   app's self-update): [docs/linux-daemon-deployment.md](linux-daemon-deployment.md) documents
+   redeploying a new build as stop-daemon / replace-binary / restart, all via this unit, plus
+   one-time host setup (service user, binary/env-file permissions, token generation) and token
+   rotation.
 
 8. **Testing.** GoogleTest coverage for the new target following the existing testability seams
    (CLAUDE.md) — the JSON-to-`Query` translation layer should be unit-testable headless the same

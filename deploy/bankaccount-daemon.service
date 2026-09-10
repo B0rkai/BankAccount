@@ -1,0 +1,47 @@
+# systemd unit for the Linux query daemon (docs/linux-query-daemon-design.md, story 7).
+# Install as /etc/systemd/system/bankaccount-daemon.service - see
+# docs/linux-daemon-deployment.md for the full install/redeploy walkthrough. Paths below are
+# placeholders; adjust to match wherever the binary and env file actually live on the host.
+
+[Unit]
+Description=BankAccount read-only query daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bankaccount-daemon
+Group=bankaccount-daemon
+
+# db path / bind host+port / auth token are all argv to `daemon` (no app-level config file -
+# see the design doc's "Decisions" section), but the *values* still shouldn't sit in this unit
+# file in plain text, since unit files under /etc/systemd/system are often world-readable.
+# EnvironmentFile keeps them in a separate, 0600-permissioned file instead; systemd expands
+# ${VAR} references in ExecStart= against it before exec'ing.
+EnvironmentFile=/etc/bankaccount-daemon/bankaccount-daemon.env
+ExecStart=/opt/bankaccount-daemon/bin/daemon --db ${BANKACCOUNT_DB} --host ${BANKACCOUNT_HOST} --port ${BANKACCOUNT_PORT} --token ${BANKACCOUNT_TOKEN}
+
+Restart=on-failure
+RestartSec=5
+
+# LogsDirectory= makes systemd create/own /var/log/bankaccount-daemon (mode 0755, owned by the
+# service user) and folds it into ReadWritePaths below automatically. Logger.cpp's FileLogSink
+# writes a cwd-relative "log/BankAccount.log", so WorkingDirectory is set to the parent of that
+# "log" folder rather than to the directory itself.
+LogsDirectory=bankaccount-daemon
+WorkingDirectory=/var/log/bankaccount-daemon
+
+# Hardening: this daemon is read-only (no WQuery/import/categorize - see the design doc's
+# scope), so it never needs to write anywhere except its own log directory, and never needs
+# elevated privileges at all.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# BANKACCOUNT_DB typically points at a Samba/network mount outside the paths ProtectSystem=strict
+# already allows - list its containing directory here (read-only is enough; the daemon never
+# writes to the db). Replace with the real mount point.
+ReadOnlyPaths=/mnt/bankaccount-db
+
+[Install]
+WantedBy=multi-user.target
