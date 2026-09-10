@@ -32,6 +32,6 @@ ChangelogDialog::ChangelogDialog(wxWindow* parent, const String& title, const st
 	// XSIZE x YSIZE, matching the coordinates used below.
 	SetClientSize(XSIZE, YSIZE);
 	new wxTextCtrl(this, wxID_ANY, FormatEntries(entries), wxPoint(15, 15), wxSize(XSIZE - 30, YSIZE - 90),
-		wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+		wxTE_MULTILINE | wxTE_READONLY);
 	new wxButton(this, wxID_OK, "OK", wxPoint((XSIZE - 100) / 2, YSIZE - 60), wxSize(100, 30));
 }

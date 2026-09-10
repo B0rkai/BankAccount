@@ -1,7 +1,6 @@
 {
     "unreleased":  [
-                       "Add Store Query.../Store Report... in-app editors to save the current filter or an existing favorite query as a favorite without hand-editing JSON",
-                       "Add per-side relative dates (right-click a from/to calendar for \"Today\"/\"Start of This Month\"/etc.) and keep Periods-menu shortcuts self-updating in saved favorites instead of freezing today's range",
+                       "Word-wrap long lines in the What's New dialog instead of requiring horizontal scrolling",
                        "Fix periodic charts: a period that bucked a topic's overall trend (e.g. a refund month in an otherwise expense-heavy category) was plotted as a positive magnitude on that topic's chart instead of offsetting the total"
                    ],
     "released":  [
@@ -79,6 +78,14 @@
                          "changes":  [
                                          "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)",
                                          "Auto-recall a transaction\u0027s prior categorization when re-import or manual pruning removes it and a later import brings back the same date/amount/client, instead of asking again; fix a crash in PrepareImport when re-importing pops an account\u0027s entire transaction history"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.9",
+                         "date":  "2026-09-08",
+                         "changes":  [
+                                         "Add Store Query.../Store Report... in-app editors to save the current filter or an existing favorite query as a favorite without hand-editing JSON",
+                                         "Add per-side relative dates (right-click a from/to calendar for \"Today\"/\"Start of This Month\"/etc.) and keep Periods-menu shortcuts self-updating in saved favorites instead of freezing today\u0027s range"
                                      ]
                      }
                  ]
