@@ -36,9 +36,16 @@ std::vector<ReportSection> BuildReportSections(Query& q, const AccountManager& m
 }
 
 namespace {
-	const char* CHARTJS_PATH = "resources\\chart.umd.min.js";
-	const char* GRIDJS_JS_PATH = "resources\\gridjs.umd.js";
-	const char* GRIDJS_CSS_PATH = "resources\\gridjs.mermaid.min.css";
+	// Forward slash, not backslash: Windows accepts both interchangeably, but a literal backslash
+	// is just an ordinary filename character on Linux (the same class of bug
+	// FavoriteQueryFilePath()/FavoriteReportFilePath() had - see docs/linux-query-daemon-design.md
+	// story 4) - std::ifstream would look for a file literally named "resources\chart.umd.min.js"
+	// instead of descending into a "resources" directory, so the Linux daemon's frontend (story 5,
+	// which reuses these loaders to inline Chart.js/Grid.js the same way BuildHtmlReport() does)
+	// would silently always render tables/charts as missing.
+	const char* CHARTJS_PATH = "resources/chart.umd.min.js";
+	const char* GRIDJS_JS_PATH = "resources/gridjs.umd.js";
+	const char* GRIDJS_CSS_PATH = "resources/gridjs.mermaid.min.css";
 
 	String LoadTextFile(const char* path, const char* what) {
 		std::ifstream in(path, std::ios::binary);

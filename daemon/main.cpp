@@ -9,15 +9,19 @@
 #include "CommonTypes.h"
 #include "DaemonDb.h"
 #include "FavoritesApi.h"
+#include "FrontendPage.h"
+#include "HtmlReport.h"
 #include "Logger.h"
 #include "QueryApi.h"
 
 // Daemon entry point - see docs/linux-query-daemon-design.md. Takes the db path, bind host/
 // port, and auth token as plain argv (no config file - see the design doc's "Decisions" section
 // for why). Story 2 added GET /health; story 3 added POST /query, the ad-hoc query endpoint
-// (QueryApi.h); story 4 adds the favorite query/report listing + run-by-name routes
-// (FavoritesApi.h). --token is accepted and stored already so this argv shape doesn't need to
-// change again, but isn't enforced on any route yet - that's story 6 (Auth + network scoping).
+// (QueryApi.h); story 4 added the favorite query/report listing + run-by-name routes
+// (FavoritesApi.h); story 5 adds GET / (the interactive query builder page, FrontendPage.h) and
+// GET /accounts (the account-name list its checkbox picker needs). --token is accepted and stored
+// already so this argv shape doesn't need to change again, but isn't enforced on any route yet -
+// that's story 6 (Auth + network scoping).
 
 namespace {
 
@@ -91,6 +95,12 @@ int main(int argc, char** argv) {
 	const std::vector<FavoriteQueryDef> favorite_queries = LoadFavoriteQueries();
 	const std::vector<FavoriteReportDef> favorite_reports = LoadFavoriteReports();
 
+	// Built once at startup, not per-request - the whole page is static (its own JS does all the
+	// per-query work via fetch()), so there's nothing request-specific to rebuild. Reuses
+	// HtmlReport.h's existing resources\ loaders (same vendored Chart.js/Grid.js the static-report
+	// path already inlines) rather than reading those files a second, daemon-specific way.
+	const std::string frontend_page = std::string(BuildFrontendPage(LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss()).utf8_str());
+
 	std::atomic<bool> stop_watcher{false};
 	std::thread watcher([&] {
 		while (!stop_watcher.load()) {
@@ -105,6 +115,30 @@ int main(int argc, char** argv) {
 	});
 
 	httplib::Server server;
+	server.Get("/", [&](const httplib::Request&, httplib::Response& res) {
+		res.set_content(frontend_page, "text/html; charset=utf-8");
+	});
+
+	server.Get("/accounts", [&](const httplib::Request&, httplib::Response& res) {
+		if (!db.IsLoaded()) {
+			nlohmann::json err;
+			err["error"] = "Database not loaded";
+			res.status = 503;
+			res.set_content(err.dump(), "application/json");
+			return;
+		}
+		db.WithManager([&](const AccountManager& mgr) {
+			StringVector names;
+			mgr.ListOfAccNames(names);
+			nlohmann::json body;
+			body["accounts"] = nlohmann::json::array();
+			for (const String& name : names) {
+				body["accounts"].push_back(std::string(name.utf8_str()));
+			}
+			res.set_content(body.dump(), "application/json");
+		});
+	});
+
 	server.Get("/health", [&](const httplib::Request&, httplib::Response& res) {
 		nlohmann::json body;
 		body["status"] = "ok";

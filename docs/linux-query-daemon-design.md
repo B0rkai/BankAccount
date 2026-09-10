@@ -240,13 +240,63 @@ see "Decisions" below) rather than reparsing on every request.
    resolves correctly (empty result set, consistent with story 3's finding that the sample data is
    entirely from 2024).
 
-5. **Frontend: interactive query builder page.** Form controls mirroring the desktop's
-   basic-filter panel; an explicit "Run" button fetches the query endpoint and renders table
-   (Grid.js) + chart (Chart.js) — no live/debounced re-query on every filter change. Extracting a
-   shared "table → Grid.js config" /
-   "chart data → Chart.js config" helper out of `HtmlReport.cpp` so both the static-report path and
-   this JSON-API path stay in sync is worth doing here rather than duplicating the logic.
-   Favorite query/report picker alongside the ad-hoc form.
+5. **Frontend: interactive query builder page.** ✅ **Done (2026-09-11).** `daemon/FrontendPage.h`/
+   `.cpp` build one self-contained HTML page, served at `GET /` and built once at startup (nothing
+   request-specific in it - the page's own JS does all the per-query work via `fetch()`). Form
+   controls mirror `cMain.h`'s `ControlGroupBasicFilter`/`ControlGroupQuery` exactly: an account
+   checklist (`GET /accounts`, a new small route wrapping the existing `AccountManager::
+   ListOfAccNames()` - the only one of the four filter topics the desktop renders as checkboxes
+   rather than free text), client/category/type comma-separated filters with an `exclude` checkbox
+   each (the desktop's own semicolon-separated `m_client_filter_textctrl`/etc., mirrored with a
+   comma instead since that's the more natural separator in a web form - the API itself doesn't
+   care which), a date-mode radio (none / fixed range / relative-period keyword, the latter with a
+   `<datalist>` of `RelativePeriod.h`'s documented keywords plus free text for anything else, e.g.
+   `last_5_whole_years`), aggregate-by checkboxes, a period dropdown, and "show list". An explicit
+   "Run query" button `POST`s the assembled `FavoriteQueryDef`-shaped JSON body to `/query` (story
+   3) - no live/debounced re-query on every keystroke, matching the desktop's own explicit-button
+   model. A favorites bar alongside it lists `GET /favorites/queries`/`GET /favorites/reports`
+   (story 4) in two dropdowns; "Run" on either calls `GET /favorites/queries/run` directly (a
+   report's own "Run" resolves its `favorite_query` name first) and renders the result the same way
+   an ad-hoc run does, restricting which chart kinds/sides are offered to the report's own
+   `chart_kinds`/`chart_sides` when it named any.
+
+   **What "reusing the Grid.js/Chart.js rendering approach" ended up meaning in practice**: this
+   story's own text (written before story 3 was implemented) suggested extracting a shared
+   "table → Grid.js config"/"chart data → Chart.js config" helper out of `HtmlReport.cpp`. Story 3
+   already settled a different contract first, though - `QueryApi.h`'s JSON stays raw table/chart
+   data with nothing pre-rendered, specifically so the frontend builds its own tables/charts (see
+   story 3's writeup above) - so `HtmlReport.cpp`'s config-building functions
+   (`BuildGridJsConfig()`/`BuildSliceConfig()`/`BuildCategoricalConfig()`, plus `ChartFolding.h`'s
+   "fold the smallest trailing slices/series into one Others once they're under 5% of the total"
+   rule) run server-side, in C++, producing strings - there's no way to literally share that code
+   with logic that has to run client-side, in the browser, against JSON already delivered over the
+   wire. What actually happened instead: the page's own JavaScript reimplements the same
+   conversions and the same Others-folding rule independently (see `daemon/FrontendPage.cpp`'s
+   `foldSlices()`/`foldSeries()`/`buildChartConfig()`/`renderTable()`) - kept in sync with the
+   static-report path by mirroring the same rule, not by sharing a translation unit. `chart_kinds`
+   availability per `ChartShape` (`pie`/`doughnut`/`polar_area`/`bar` always, `stacked_bar`/`line`
+   periodic-only) matches `ShapeAllowsKind()` (`HtmlReport.cpp`) exactly, for the same reason.
+
+   **Another instance of the same class of bug story 4 found**: `HtmlReport.cpp`'s
+   `CHARTJS_PATH`/`GRIDJS_JS_PATH`/`GRIDJS_CSS_PATH` were also `"resources\\chart.umd.min.js"`-style
+   literal backslashes - since this page reuses `LoadChartJsSource()`/`LoadGridJsSource()`/
+   `LoadGridJsCss()` (the same loaders `BuildHtmlReport()` already used) to inline Chart.js/Grid.js
+   the same way the static-report path does, the Linux daemon would have silently served a page
+   with no chart/table library at all. Fixed the same way as story 4's fix (forward slashes, a
+   no-op on Windows); no test asserted the old literal.
+
+   Verified by building the real Linux daemon in WSL, fetching the rendered page plus a real
+   `POST /query` response (28-category HUF expense summary, exercising the Others fold) with curl,
+   then loading that page over a real local HTTP server in a browser (a `file://` load doesn't run
+   scripts, so this needed an actual `http://` origin) and stubbing only the `/query` fetch to
+   return the captured response (the daemon itself can't stay reachable for interactive browser
+   testing - backgrounded WSL processes don't survive past the single `wsl` invocation that started
+   them, a known limitation from earlier stories' testing). Confirmed: the Grid.js table renders
+   with working sort/search; four chart cards appear (income/expense × EUR/HUF, matching the
+   response); the Others fold correctly absorbed the smallest trailing categories (verified by
+   counting slices against the source data); and switching a chart's kind dropdown (e.g. Income
+   (HUF) pie → bar) live-redraws it with no console errors, confirming the kind-switcher's redraw
+   path and the categorical/slice config builders both work end-to-end against real Chart.js.
 
 6. **Auth + network scoping.** Bind-address restriction (above) plus a shared-token header/query
    param checked on every route.
