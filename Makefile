@@ -53,7 +53,7 @@ OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS))
 # daemon/ (story 2): an HTTP server skeleton linking the library above. Vendors cpp-httplib
 # (include/httplib.h, same low-friction single-header precedent as nlohmann/json) - header-only
 # but still needs -pthread for its worker thread pool at link time.
-DAEMON_SRCS := daemon/main.cpp daemon/DaemonDb.cpp
+DAEMON_SRCS := daemon/main.cpp daemon/DaemonDb.cpp daemon/QueryApi.cpp
 DAEMON_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_SRCS))
 # Under bin/, not directly in $(BUILD): the object files above already live in $(BUILD)/daemon/,
 # and a plain file can't share that path with the directory holding them.

@@ -6,15 +6,17 @@
 #include <thread>
 #include <nlohmann/json.hpp>
 #include "httplib.h"
+#include "CommonTypes.h"
 #include "DaemonDb.h"
 #include "Logger.h"
+#include "QueryApi.h"
 
-// Daemon entry point - see docs/linux-query-daemon-design.md, story 2 ("Daemon: HTTP server
-// skeleton"). Takes the db path, bind host/port, and auth token as plain argv (no config file -
-// see the design doc's "Decisions" section for why) and serves one /health route for now; the
-// ad-hoc query endpoint (story 3) and favorite query/report endpoints (story 4) land on top of
-// this same server. --token is accepted and stored already so this argv shape doesn't need to
-// change again, but isn't enforced on any route yet - that's story 6 (Auth + network scoping).
+// Daemon entry point - see docs/linux-query-daemon-design.md. Takes the db path, bind host/
+// port, and auth token as plain argv (no config file - see the design doc's "Decisions" section
+// for why). Story 2 added GET /health; story 3 adds POST /query, the ad-hoc query endpoint
+// (QueryApi.h). Favorite query/report endpoints (story 4) land on top of this same server.
+// --token is accepted and stored already so this argv shape doesn't need to change again, but
+// isn't enforced on any route yet - that's story 6 (Auth + network scoping).
 
 namespace {
 
@@ -68,6 +70,13 @@ int main(int argc, char** argv) {
 	static FileLogSink file_sink;
 	LogHistory::AddSink(&file_sink);
 
+	// Every relative-date keyword ("this_month", "last_30_days", ... - RelativePeriod.h) resolves
+	// against CommonTypes.h's process-wide GetToday(), which stays null (and crashes on the first
+	// dereference) until something calls SetToday()/SetRealToday() - see its declaration for why.
+	// cMain and BankAccountCli both do this at their own startup; the daemon needs the same call,
+	// since /query's relative_period accepts exactly those keywords.
+	SetRealToday();
+
 	DaemonDb db(args.db_path);
 	if (!db.ReloadIfChanged()) {
 		std::cerr << "Failed to load database from '" << args.db_path << "'\n";
@@ -101,6 +110,21 @@ int main(int argc, char** argv) {
 			});
 		}
 		res.set_content(body.dump(), "application/json");
+	});
+
+	server.Post("/query", [&](const httplib::Request& req, httplib::Response& res) {
+		if (!db.IsLoaded()) {
+			nlohmann::json err;
+			err["error"] = "Database not loaded";
+			res.status = 503;
+			res.set_content(err.dump(), "application/json");
+			return;
+		}
+		db.WithManager([&](const AccountManager& mgr) {
+			QueryApiResult result = RunAdHocQuery(req.body, mgr);
+			res.status = result.http_status;
+			res.set_content(result.body, "application/json");
+		});
 	});
 
 	LogInfo("DAEMON") << "Listening on " << args.host << ":" << args.port;

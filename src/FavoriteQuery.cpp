@@ -51,21 +51,12 @@ namespace {
 		return default_value;
 	}
 
-	// Returns std::nullopt (skip this entry) if `j` isn't a usable favorite definition -
-	// missing/non-string "name" is the only hard requirement, everything else has a safe default.
-	std::optional<FavoriteQueryDef> ParseOne(const nlohmann::json& j) {
-		if (!j.is_object()) {
-			LogWarn() << "favorite_queries.json: entry is not a JSON object - skipping";
-			return std::nullopt;
-		}
-		String name = ReadString(j, "name");
-		if (name.empty()) {
-			LogWarn() << "favorite_queries.json: entry missing a non-empty \"name\" - skipping";
-			return std::nullopt;
-		}
-
-		FavoriteQueryDef def;
-		def.name = name;
+	// Fills every FavoriteQueryDef field except `name` from `j` - shared by ParseOne() (favorite_
+	// queries.json entries, which additionally require "name") and ParseAdHocQuery() (an ad-hoc
+	// query has no "name" at all, since it's never saved under a label). Every field here has a
+	// safe default and never fails on its own - only the two callers' own root-shape checks
+	// (object-ness, plus ParseOne()'s "name" requirement) can reject an entry/request.
+	void FillQueryFieldsFromJson(const nlohmann::json& j, FavoriteQueryDef& def) {
 		def.accounts = ReadStringArray(j, "accounts");
 		def.clients = ReadStringArray(j, "clients");
 		def.categories = ReadStringArray(j, "categories");
@@ -91,7 +82,24 @@ namespace {
 			def.chart_side = ReadString(j["chart"], "side");
 			def.chart_kind = ReadString(j["chart"], "kind");
 		}
+	}
 
+	// Returns std::nullopt (skip this entry) if `j` isn't a usable favorite definition -
+	// missing/non-string "name" is the only hard requirement, everything else has a safe default.
+	std::optional<FavoriteQueryDef> ParseOne(const nlohmann::json& j) {
+		if (!j.is_object()) {
+			LogWarn() << "favorite_queries.json: entry is not a JSON object - skipping";
+			return std::nullopt;
+		}
+		String name = ReadString(j, "name");
+		if (name.empty()) {
+			LogWarn() << "favorite_queries.json: entry missing a non-empty \"name\" - skipping";
+			return std::nullopt;
+		}
+
+		FavoriteQueryDef def;
+		def.name = name;
+		FillQueryFieldsFromJson(j, def);
 		return def;
 	}
 }
@@ -120,6 +128,23 @@ std::vector<FavoriteQueryDef> ParseFavoriteQueries(std::istream& in) {
 		}
 	}
 	return result;
+}
+
+std::optional<FavoriteQueryDef> ParseAdHocQuery(std::istream& in) {
+	nlohmann::json j;
+	try {
+		in >> j;
+	} catch (const nlohmann::json::exception& e) {
+		LogWarn() << "ad-hoc query: failed to parse (" << e.what() << ")";
+		return std::nullopt;
+	}
+	if (!j.is_object()) {
+		LogWarn() << "ad-hoc query: request body is not a JSON object";
+		return std::nullopt;
+	}
+	FavoriteQueryDef def;
+	FillQueryFieldsFromJson(j, def);
+	return def;
 }
 
 std::vector<FavoriteQueryDef> LoadFavoriteQueries() {

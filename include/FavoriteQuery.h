@@ -1,5 +1,6 @@
 #pragma once
 #include <istream>
+#include <optional>
 #include <ostream>
 #include <vector>
 #include "CommonTypes.h"
@@ -68,6 +69,18 @@ void SaveFavoriteQueries(const std::vector<FavoriteQueryDef>& defs);
 // the whole file - one bad favorite shouldn't take down every other one. An entry missing "name"
 // is skipped too (a favorite with no label can't be shown in a menu).
 std::vector<FavoriteQueryDef> ParseFavoriteQueries(std::istream& in);
+
+// Parses a single ad-hoc query from `in` - a JSON object with the same field set as one
+// favorite_queries.json entry, minus "name" (an ad-hoc query is never saved under a label) -
+// used by the Linux daemon's ad-hoc query endpoint (story 3, see
+// docs/linux-query-daemon-design.md). Unlike ParseFavoriteQueries()'s "skip the bad entry, keep
+// the rest" contract (appropriate for a multi-entry file), a malformed body IS the whole
+// request here, so this reports failure instead of silently substituting an unfiltered query the
+// caller never asked for: returns std::nullopt (logged) for anything that isn't well-formed JSON
+// or isn't an object at the root. Every individual field within an object root still falls back
+// to the same permissive per-field defaults ParseFavoriteQueries() itself uses - an unrecognized
+// or missing field never fails the request on its own.
+std::optional<FavoriteQueryDef> ParseAdHocQuery(std::istream& in);
 
 // Builds a Query from `def`, mirroring cMain::PrepareQuery's UI-driven construction.
 // DateMode::RELATIVE_KEYWORD is resolved against GetToday() (CommonTypes.h) - a test wanting a

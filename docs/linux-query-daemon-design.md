@@ -149,11 +149,48 @@ see "Decisions" below) rather than reparsing on every request.
      repo's real `db/BankAccount.txt` sample data (4 accounts, 8469 transactions), `/health`
      responding correctly with unchanged counts after each.
 
-3. **API: ad-hoc query endpoint.** JSON request shape mirroring `PrepareQuery`'s fields — accounts,
-   client/category/type filters (+ exclude mode), date range/relative period, aggregate-by, period
-   — essentially a JSON `FavoriteQueryDef` with ad-hoc override. Response: table(s)
-   (`StringTable`) + chart data (`QueryElement::GetChartResult()`) as JSON, for the frontend to
-   render itself (not pre-rendered HTML).
+3. **API: ad-hoc query endpoint.** ✅ **Done (2026-09-11).** `POST /query` takes a JSON body with
+   the same field set as one `favorite_queries.json` entry minus `"name"` — `accounts`/`clients`/
+   `categories`/`types` filters, `exclude_clients`/`exclude_categories`/`exclude_types`,
+   `date_from`/`date_to` or `relative_period`, `aggregate_by`, `period`, `show_list`. Parsing
+   (`FavoriteQuery.h`'s new `ParseAdHocQuery()`) reuses the exact same per-field logic
+   `ParseFavoriteQueries()` already uses for the JSON file (refactored into a shared
+   `FillQueryFieldsFromJson()` helper), so the two stay in lockstep by construction rather than as
+   two hand-maintained parsers — the only difference is that a malformed *request* returns
+   `std::nullopt` (→ HTTP 400 `{"error": "..."}`) instead of the file-loading path's "skip this
+   one entry, keep the rest" contract, since a bad ad-hoc request has nothing else to fall back
+   to. An empty `"accounts"` means every account currently loaded (`0..CountAccounts()-1`) — the
+   closest equivalent to the desktop's "no boxes checked" convention when there's no UI checklist
+   to read from.
+
+   `BuildQueryFromFavorite()` (existing) turns the parsed def into a `Query`; `HtmlReport.h`'s
+   existing `BuildReportSections()` runs it and walks the result into one section per
+   `QueryElement` with data, plus a trailing "Transactions" section when `show_list` is set — the
+   exact same function the static-HTML-report path already uses, so both stay in sync. `daemon/
+   QueryApi.h`/`.cpp` serialize each section as JSON instead of rendering HTML/Chart.js: a table
+   as `{"header", "align", "rows"}` (row 0 / per-column `StringTable::GetMetaData()` — the same
+   convention `HtmlReport.cpp`'s Grid.js config building already relies on) and, when present, a
+   `"chart"` (`{"period_unit", "income": [...], "expense": [...]}`, one entry per currency
+   present) plus `"chart_shape"` (`"topic_sum"`/`"periodic"`). Nothing is pre-rendered — the
+   frontend (story 5) builds its own tables/charts from this data.
+
+   **One real bug found via testing, not code review**: the daemon crashed (segfault) on any
+   request using `relative_period` or a relative `date_from`/`date_to` keyword. Root cause:
+   `CommonTypes.h`'s `GetToday()` — the process-wide "what day is it" every relative-date keyword
+   resolves against — stays a null pointer until something calls `SetToday()`/`SetRealToday()`;
+   `cMain` and `BankAccountCli` both do this at their own startup (documented right on
+   `SetRealToday()`'s declaration), but the daemon's `main.cpp` never did, so the first
+   `ResolveRelativePeriod()` call dereferenced null. Fixed with one `SetRealToday()` call in
+   `daemon/main.cpp`'s startup, alongside the other two entry points. Caught by exercising the
+   actual crashing request shape rather than by inspection — a reminder that everything else in
+   this story checked out fine by reasoning alone, but this one didn't until it was actually run.
+
+   Verified against a live copy of the repo's real sample db: category/client/currency summaries,
+   a fixed date range, a relative period (`this_year`, `last_12_months` - correctly empty since
+   the sample data is entirely from 2024 and "today" now resolves to the real current date),
+   periodic monthly breakdowns, `exclude_*` mode, `show_list` (summary + transaction-list
+   sections together), and both malformed-JSON and non-object-root request bodies each returning
+   the expected HTTP 400.
 
 4. **API: favorite queries/reports endpoints.** List `FavoriteQueryDef`/`FavoriteReportDef` entries
    from the existing JSON files so the web UI offers the same pickers the desktop menu has; a
