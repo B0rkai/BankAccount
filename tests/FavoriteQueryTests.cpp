@@ -147,7 +147,7 @@ TEST(ParseFavoriteQueriesTest, ChartPreferenceIsOptionalAndParsedFromNestedObjec
 }
 
 TEST(FavoriteQueryFilePathTest, IsTheDocumentedRelativePath) {
-    EXPECT_STREQ(FavoriteQueryFilePath(), "db\\favorite_queries.json");
+    EXPECT_STREQ(FavoriteQueryFilePath(), "db/favorite_queries.json");
 }
 
 TEST(WriteFavoriteQueriesTest, RoundTripsAllFieldsThroughParse) {

@@ -78,28 +78,22 @@ const char* ChartShapeToString(ChartShape shape) {
 	}
 }
 
-QueryApiResult ErrorResult(const char* message) {
-	nlohmann::json err;
-	err["error"] = message;
-	return { 400, err.dump() };
-}
-
 } // namespace
 
-QueryApiResult RunAdHocQuery(const std::string& request_body, const AccountManager& mgr) {
-	std::istringstream in(request_body);
-	std::optional<FavoriteQueryDef> def = ParseAdHocQuery(in);
-	if (!def) {
-		return ErrorResult("Malformed query: request body must be a well-formed JSON object");
-	}
+QueryApiResult MakeErrorResult(int http_status, const std::string& message) {
+	nlohmann::json err;
+	err["error"] = message;
+	return { http_status, err.dump() };
+}
 
+QueryApiResult RunQueryDef(const FavoriteQueryDef& def, const AccountManager& mgr) {
 	// "no accounts filter" means every account currently loaded - the daemon has no UI checklist
 	// to mirror, so this is the closest equivalent to "no boxes checked" meaning "all of them".
 	std::vector<int> enabled_accounts(mgr.CountAccounts());
 	std::iota(enabled_accounts.begin(), enabled_accounts.end(), 0);
 
 	Query query;
-	BuildQueryFromFavorite(*def, query, enabled_accounts);
+	BuildQueryFromFavorite(def, query, enabled_accounts);
 	std::vector<ReportSection> sections = BuildReportSections(query, mgr);
 
 	nlohmann::json result = nlohmann::json::array();
@@ -114,4 +108,13 @@ QueryApiResult RunAdHocQuery(const std::string& request_body, const AccountManag
 		result.push_back(std::move(sj));
 	}
 	return { 200, result.dump() };
+}
+
+QueryApiResult RunAdHocQuery(const std::string& request_body, const AccountManager& mgr) {
+	std::istringstream in(request_body);
+	std::optional<FavoriteQueryDef> def = ParseAdHocQuery(in);
+	if (!def) {
+		return MakeErrorResult(400, "Malformed query: request body must be a well-formed JSON object");
+	}
+	return RunQueryDef(*def, mgr);
 }

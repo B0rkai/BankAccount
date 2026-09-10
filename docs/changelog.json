@@ -2,7 +2,8 @@
     "unreleased":  [
                        "Add a top-level Makefile building a read-only BankAccountCore subset on Linux (g++/wxBase), the first story of the Linux query daemon",
                        "Add a Linux daemon HTTP server skeleton (cpp-httplib) with a hot-reloading read-only db snapshot and a /health route, the second story of the Linux query daemon; fix a cross-platform log-path bug and a stale-pointer bug in Currency's exchange-rate history found along the way",
-                       "Add a POST /query ad-hoc query endpoint to the Linux daemon (JSON in, JSON tables/charts out), the third story of the Linux query daemon; fix a null-pointer crash on any relative-date query, caused by the daemon never calling SetRealToday() at startup"
+                       "Add a POST /query ad-hoc query endpoint to the Linux daemon (JSON in, JSON tables/charts out), the third story of the Linux query daemon; fix a null-pointer crash on any relative-date query, caused by the daemon never calling SetRealToday() at startup",
+                       "Add favorite query/report listing and run-by-name endpoints to the Linux daemon, the fourth story of the Linux query daemon; fix favorite_queries.json/favorite_reports.json never being found on Linux due to a hardcoded backslash path"
                    ],
     "released":  [
                      {

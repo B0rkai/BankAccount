@@ -105,7 +105,13 @@ namespace {
 }
 
 const char* FavoriteQueryFilePath() {
-	return "db\\favorite_queries.json";
+	// Forward slash, not backslash: Windows accepts both interchangeably, but a literal backslash
+	// is just an ordinary filename character on Linux (the same class of bug Logger.cpp's
+	// DEFAULT_LOG_LOCATION had - see docs/linux-query-daemon-design.md story 2) - std::ifstream
+	// would look for a file literally named "db\favorite_queries.json" instead of descending into
+	// a "db" directory, so the Linux daemon's favorites listing (story 4) would silently always
+	// come back empty without this.
+	return "db/favorite_queries.json";
 }
 
 std::vector<FavoriteQueryDef> ParseFavoriteQueries(std::istream& in) {

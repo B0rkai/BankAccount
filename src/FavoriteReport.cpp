@@ -52,7 +52,9 @@ namespace {
 }
 
 const char* FavoriteReportFilePath() {
-	return "db\\favorite_reports.json";
+	// Forward slash - see FavoriteQueryFilePath()'s comment (FavoriteQuery.cpp) for why a literal
+	// backslash here would break on Linux.
+	return "db/favorite_reports.json";
 }
 
 std::vector<FavoriteReportDef> ParseFavoriteReports(std::istream& in) {

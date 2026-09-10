@@ -192,9 +192,53 @@ see "Decisions" below) rather than reparsing on every request.
    sections together), and both malformed-JSON and non-object-root request bodies each returning
    the expected HTTP 400.
 
-4. **API: favorite queries/reports endpoints.** List `FavoriteQueryDef`/`FavoriteReportDef` entries
-   from the existing JSON files so the web UI offers the same pickers the desktop menu has; a
-   run-by-name endpoint returning the same shape as #3.
+4. **API: favorite queries/reports endpoints.** ✅ **Done (2026-09-11).** `daemon/main.cpp` loads
+   `db/favorite_queries.json`/`db/favorite_reports.json` once at startup (`LoadFavoriteQueries()`/
+   `LoadFavoriteReports()`, unchanged) - a one-time load, not part of `DaemonDb`'s mtime-polled hot
+   reload, matching the desktop app's own "load once, re-read only on an explicit Store Query/
+   Store Report" contract. Three new routes (`daemon/FavoritesApi.h`/`.cpp`):
+   - `GET /favorites/queries` - JSON array of every loaded favorite query, each serialized with
+     the same field set `ParseAdHocQuery` reads back (plus `"name"`), so a frontend can either run
+     one by name or pre-fill an ad-hoc form from it.
+   - `GET /favorites/reports` - JSON array of `{"name", "favorite_query", "chart_kinds",
+     "chart_sides"}`. No separate "run a report" endpoint: a report is just a named query plus
+     chart-rendering hints the frontend applies itself (story 5) - it runs the report's
+     `favorite_query` through the endpoint below.
+   - `GET /favorites/queries/run?name=<name>` - looks the name up among the loaded favorites and
+     runs it, returning the exact same JSON shape `POST /query` (story 3) does. An unknown name
+     yields HTTP 404 `{"error": "..."}` rather than silently falling back to an empty/unfiltered
+     query.
+
+   `QueryApi.cpp`'s ad-hoc-only `RunAdHocQuery()` was split into itself (parse the request body,
+   then delegate) plus a new `RunQueryDef(const FavoriteQueryDef&, const AccountManager&)`
+   (`QueryApi.h`) covering everything after parsing - building the `Query`, running
+   `BuildReportSections()`, serializing to JSON - so the ad-hoc path and the run-by-name path stay
+   byte-for-byte identical in output shape by construction instead of via two hand-synced copies.
+   Its former `ErrorResult(message)` (always HTTP 400) became a shared `MakeErrorResult(status,
+   message)` so the run-by-name 404 case reuses it too.
+
+   **One real bug found via testing, not code review, and the reason this story didn't "just
+   work" the moment it compiled**: `FavoriteQueryFilePath()`/`FavoriteReportFilePath()`
+   (`FavoriteQuery.cpp`/`FavoriteReport.cpp`) returned `"db\\favorite_queries.json"`/
+   `"db\\favorite_reports.json"` - a literal backslash, the exact same class of bug story 2's
+   `Logger.cpp` fix addressed. Windows accepts a backslash as a path separator, so the desktop app
+   never noticed; Linux does not, so `std::ifstream` looked for a file literally named
+   `db\favorite_queries.json` (one filename, backslash-and-all) instead of descending into a `db`
+   directory - the file was never found, `LoadFavoriteQueries()`/`LoadFavoriteReports()` silently
+   returned empty every time, and this entire story would have quietly done nothing on Linux
+   without ever producing an error. Fixed by switching both to forward slashes (a no-op change on
+   Windows); the one test asserting the old literal
+   (`FavoriteQueryFilePathTest.IsTheDocumentedRelativePath`) was updated to match. Also added
+   `src/FavoriteReport.cpp` to the Linux Makefile's source list - it was never needed by the
+   read-only build before this story (nothing on the ad-hoc query path touches
+   `FavoriteReportDef`), so it had been correctly left out by story 1, not an oversight there.
+
+   Verified end-to-end against a live copy of the repo's real sample db plus a small hand-written
+   `favorite_queries.json`/`favorite_reports.json`: both listing routes return the expected JSON,
+   running a favorite by name returns byte-identical output to running the same definition as an
+   ad-hoc `POST /query`, an unknown name returns 404, and a favorite using `relative_period`
+   resolves correctly (empty result set, consistent with story 3's finding that the sample data is
+   entirely from 2024).
 
 5. **Frontend: interactive query builder page.** Form controls mirroring the desktop's
    basic-filter panel; an explicit "Run" button fetches the query endpoint and renders table

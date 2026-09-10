@@ -8,15 +8,16 @@
 #include "httplib.h"
 #include "CommonTypes.h"
 #include "DaemonDb.h"
+#include "FavoritesApi.h"
 #include "Logger.h"
 #include "QueryApi.h"
 
 // Daemon entry point - see docs/linux-query-daemon-design.md. Takes the db path, bind host/
 // port, and auth token as plain argv (no config file - see the design doc's "Decisions" section
-// for why). Story 2 added GET /health; story 3 adds POST /query, the ad-hoc query endpoint
-// (QueryApi.h). Favorite query/report endpoints (story 4) land on top of this same server.
-// --token is accepted and stored already so this argv shape doesn't need to change again, but
-// isn't enforced on any route yet - that's story 6 (Auth + network scoping).
+// for why). Story 2 added GET /health; story 3 added POST /query, the ad-hoc query endpoint
+// (QueryApi.h); story 4 adds the favorite query/report listing + run-by-name routes
+// (FavoritesApi.h). --token is accepted and stored already so this argv shape doesn't need to
+// change again, but isn't enforced on any route yet - that's story 6 (Auth + network scoping).
 
 namespace {
 
@@ -84,6 +85,12 @@ int main(int argc, char** argv) {
 	}
 	LogInfo("DAEMON") << "Loaded database from " << args.db_path;
 
+	// Loaded once at startup, not part of DaemonDb's mtime-polled hot reload - db/favorite_
+	// queries.json and db/favorite_reports.json are hand-edited files the desktop app itself only
+	// re-reads on an explicit user action (Store Query/Store Report...), not on a timer.
+	const std::vector<FavoriteQueryDef> favorite_queries = LoadFavoriteQueries();
+	const std::vector<FavoriteReportDef> favorite_reports = LoadFavoriteReports();
+
 	std::atomic<bool> stop_watcher{false};
 	std::thread watcher([&] {
 		while (!stop_watcher.load()) {
@@ -122,6 +129,34 @@ int main(int argc, char** argv) {
 		}
 		db.WithManager([&](const AccountManager& mgr) {
 			QueryApiResult result = RunAdHocQuery(req.body, mgr);
+			res.status = result.http_status;
+			res.set_content(result.body, "application/json");
+		});
+	});
+
+	server.Get("/favorites/queries", [&](const httplib::Request&, httplib::Response& res) {
+		QueryApiResult result = ListFavoriteQueries(favorite_queries);
+		res.status = result.http_status;
+		res.set_content(result.body, "application/json");
+	});
+
+	server.Get("/favorites/reports", [&](const httplib::Request&, httplib::Response& res) {
+		QueryApiResult result = ListFavoriteReports(favorite_reports);
+		res.status = result.http_status;
+		res.set_content(result.body, "application/json");
+	});
+
+	server.Get("/favorites/queries/run", [&](const httplib::Request& req, httplib::Response& res) {
+		if (!db.IsLoaded()) {
+			nlohmann::json err;
+			err["error"] = "Database not loaded";
+			res.status = 503;
+			res.set_content(err.dump(), "application/json");
+			return;
+		}
+		std::string name = req.get_param_value("name");
+		db.WithManager([&](const AccountManager& mgr) {
+			QueryApiResult result = RunFavoriteQueryByName(name, favorite_queries, mgr);
 			res.status = result.http_status;
 			res.set_content(result.body, "application/json");
 		});
