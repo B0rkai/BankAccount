@@ -1,6 +1,6 @@
 # Design: Linux query daemon + interactive web UI (epic)
 
-Status: **proposed epic, not implemented**. Discussed 2026-09-10. Revisits option 1 of
+Status: **✅ implemented (2026-09-11)** — all 8 stories below done. Discussed 2026-09-10. Revisits option 1 of
 [mobile-spending-viewer-design.md](mobile-spending-viewer-design.md) ("live C++ backend linking
 `BankAccountCore` directly"), rejected there for the desktop's read-write shape — see "Why this is
 viable now" below for what changed.
@@ -350,9 +350,48 @@ see "Decisions" below) rather than reparsing on every request.
    one-time host setup (service user, binary/env-file permissions, token generation) and token
    rotation.
 
-8. **Testing.** GoogleTest coverage for the new target following the existing testability seams
-   (CLAUDE.md) — the JSON-to-`Query` translation layer should be unit-testable headless the same
-   way `BuildQueryFromFavorite` is today; no live-daemon integration test strictly required.
+8. **Testing.** ✅ **Done (2026-09-11).** GoogleTest coverage for the JSON-to-`Query` translation
+   layer, added to `BankAccountTests.vcxproj` rather than as any new Linux-side test runner: every
+   route handler this epic added (`daemon/QueryApi.cpp`'s `RunAdHocQuery`/`RunQueryDef`/
+   `MakeErrorResult`, `daemon/FavoritesApi.cpp`'s `ListFavoriteQueries`/`ListFavoriteReports`/
+   `RunFavoriteQueryByName`) turned out to be `httplib`-free — they only depend on
+   `AccountManager`/`FavoriteQuery`/`HtmlReport`, exactly the kind of translation layer
+   `BuildQueryFromFavorite` already proved out being unit-testable headless (tests/
+   FavoriteQueryTests.cpp) — so both `.cpp` files now compile directly into
+   `BankAccountTests.vcxproj` alongside the tests exercising them (`daemon` added to its
+   `IncludePath` so `#include "QueryApi.h"` etc. resolve), with zero new Linux-only test
+   infrastructure and no live daemon process involved. New coverage: `tests/QueryApiTests.cpp`
+   (malformed/non-object request bodies → HTTP 400, a real `ApplyRecoveryFile`-backed
+   `AccountManager` exercising a category-aggregation request end-to-end through JSON parse →
+   `BuildQueryFromFavorite` → `BuildReportSections` → JSON serialize, the empty-`"accounts"`-means-
+   every-loaded-account fallback, and that a plain transaction-list section carries no stray
+   `"chart"`/`"chart_shape"` keys) and `tests/FavoritesApiTests.cpp` (favorite query/report listing
+   JSON shape - including that a field left at its default is omitted from the JSON entirely, not
+   written as an explicit `false`/empty value - and run-by-name's 404-on-unknown-name plus
+   byte-identical output to running the same definition as an ad-hoc query). Also added
+   `ParseAdHocQueryTest` to `tests/FavoriteQueryTests.cpp` - `ParseAdHocQuery` (story 3) had zero
+   direct coverage before this story despite being the daemon's actual request parser (only its
+   shared `FillQueryFieldsFromJson()` helper was exercised, indirectly, via
+   `ParseFavoriteQueriesTest`) - covering its own root-shape contract: no `"name"` field read at
+   all (unlike `ParseFavoriteQueries`), and `std::nullopt` (→ HTTP 400) instead of "skip this one
+   entry" for anything malformed.
+
+   **One real assumption corrected via testing, not code review**: the first draft of
+   `QueryApiTests.cpp` assumed a category-aggregation query's JSON table would mirror
+   `HtmlReportTests.cpp`'s hand-built two-column (`Category`/`Amount`) fixture table - it doesn't;
+   the real `QueryCategorySum` output is the same six-column `Topic/Currency/#/Income/Expense/Sum`
+   shape already visible in this session's own ad-hoc `/query` testing during story 3. Similarly, a
+   plain `show_list` request (no `aggregate_by`) turned out to produce *two* sections, not one - a
+   "Currency Summary" section (the `CURRENCY` fallback `BuildQueryFromFavoriteTest.
+   PlainDefaultProducesAccountFilterAndCurrencyFallback` already documents for an empty
+   `aggregate_by`) plus the trailing "Transactions" section, not the transaction list alone. Both
+   were caught by dumping the real JSON output from a throwaway debug test and fixing the
+   assertions to match, rather than guessing the shape from the design doc's prose description.
+
+   Verified: `BankAccountTests.exe` (Debug x64) reports 395/395 tests passing (378 pre-existing +
+   17 new); a full solution rebuild (all four `.vcxproj`s) succeeds cleanly; and the Linux Makefile
+   build in WSL still succeeds unchanged (this story added no new files to it - `QueryApi.cpp`/
+   `FavoritesApi.cpp` were already in `DAEMON_SRCS` since stories 3/4).
 
 ## Decisions (2026-09-10)
 

@@ -71,10 +71,10 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>include;$(IncludePath)</IncludePath>
+    <IncludePath>include;daemon;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>include;$(IncludePath)</IncludePath>
+    <IncludePath>include;daemon;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -120,6 +120,12 @@
     <ClCompile Include="tests\FavoriteQueryTests.cpp" />
     <ClCompile Include="tests\FavoriteReportTests.cpp" />
     <ClCompile Include="tests\HtmlReportTests.cpp" />
+    <ClCompile Include="tests\QueryApiTests.cpp" />
+    <ClCompile Include="tests\FavoritesApiTests.cpp" />
+    <!-- Linux daemon JSON-API translation layer (docs/linux-query-daemon-design.md story 8) -
+         httplib-free, so it links cleanly here alongside the tests exercising it above. -->
+    <ClCompile Include="daemon\QueryApi.cpp" />
+    <ClCompile Include="daemon\FavoritesApi.cpp" />
     <ClCompile Include="tests\RelativePeriodTests.cpp" />
     <ClCompile Include="tests\Crc32Tests.cpp" />
     <ClCompile Include="tests\CurrencyTests.cpp" />

@@ -146,6 +146,68 @@ TEST(ParseFavoriteQueriesTest, ChartPreferenceIsOptionalAndParsedFromNestedObjec
     EXPECT_TRUE(favorites[1].chart_kind.empty());
 }
 
+// ParseAdHocQuery (the Linux daemon's POST /query body parser, story 3/8 of
+// docs/linux-query-daemon-design.md) shares FillQueryFieldsFromJson with ParseFavoriteQueries
+// above, but has its own root-shape contract: no "name" field is required or read at all (an
+// ad-hoc query is never saved under a label), and a malformed request reports failure via
+// std::nullopt instead of ParseFavoriteQueries' "skip this one entry, keep the rest" fallback,
+// since a bad ad-hoc request has nothing else to fall back to.
+TEST(ParseAdHocQueryTest, MalformedJsonYieldsNullopt) {
+    std::istringstream in("{not valid json");
+    EXPECT_FALSE(ParseAdHocQuery(in).has_value());
+}
+
+TEST(ParseAdHocQueryTest, NonObjectRootYieldsNullopt) {
+    std::istringstream in("[1, 2, 3]");
+    EXPECT_FALSE(ParseAdHocQuery(in).has_value());
+}
+
+TEST(ParseAdHocQueryTest, EmptyObjectYieldsDefaultDef) {
+    std::istringstream in("{}");
+    auto def = ParseAdHocQuery(in);
+    ASSERT_TRUE(def.has_value());
+    EXPECT_TRUE(def->accounts.empty());
+    EXPECT_TRUE(def->date_mode == FavoriteQueryDef::DateMode::NO_FILTER);
+    EXPECT_FALSE(def->show_list);
+}
+
+TEST(ParseAdHocQueryTest, NameFieldIsIgnoredIfPresent) {
+    // Unlike ParseFavoriteQueries, "name" isn't a recognized field here at all - present or not,
+    // it should have no bearing on whether parsing succeeds (there's no FavoriteQueryDef::name
+    // assignment in FillQueryFieldsFromJson to begin with).
+    std::istringstream in(R"({"name":"Ignored","aggregate_by":["category"]})");
+    auto def = ParseAdHocQuery(in);
+    ASSERT_TRUE(def.has_value());
+    EXPECT_TRUE(def->name.empty());
+    ASSERT_EQ(def->aggregate_by.size(), 1u);
+    EXPECT_EQ(def->aggregate_by[0], "category");
+}
+
+TEST(ParseAdHocQueryTest, ParsesFilterFieldsExcludeFlagsAndRelativePeriod) {
+    std::istringstream in(R"({
+        "accounts": ["Checking"],
+        "clients": ["Tesco"],
+        "categories": ["Groceries"],
+        "exclude_categories": true,
+        "aggregate_by": ["category"],
+        "period": "monthly",
+        "show_list": true,
+        "relative_period": "this_month"
+    })");
+    auto def = ParseAdHocQuery(in);
+    ASSERT_TRUE(def.has_value());
+    ASSERT_EQ(def->accounts.size(), 1u);
+    EXPECT_EQ(def->accounts[0], "Checking");
+    ASSERT_EQ(def->clients.size(), 1u);
+    EXPECT_EQ(def->clients[0], "Tesco");
+    EXPECT_TRUE(def->exclude_categories);
+    ASSERT_EQ(def->aggregate_by.size(), 1u);
+    EXPECT_EQ(def->period, "monthly");
+    EXPECT_TRUE(def->show_list);
+    EXPECT_TRUE(def->date_mode == FavoriteQueryDef::DateMode::RELATIVE_KEYWORD);
+    EXPECT_EQ(def->relative_period, "this_month");
+}
+
 TEST(FavoriteQueryFilePathTest, IsTheDocumentedRelativePath) {
     EXPECT_STREQ(FavoriteQueryFilePath(), "db/favorite_queries.json");
 }
