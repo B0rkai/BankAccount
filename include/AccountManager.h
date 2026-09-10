@@ -18,7 +18,6 @@
 #include "MnbExchangeRateClient.h"
 
 class Query;
-class Query::Result;
 class WQuery;
 class WQueryElement;
 class Account;

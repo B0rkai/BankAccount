@@ -3,7 +3,7 @@
 
 #include "Currency.h"
 #include "ExchangeRateHistory.h"
-#include "wx\arrstr.h"
+#include "wx/arrstr.h"
 
 // default exchange rates
 constexpr double EURHUF = 406.47;

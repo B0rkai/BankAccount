@@ -1,4 +1,5 @@
 #include "ClientManager.h"
+#include <algorithm>
 
 ClientManager::ClientManager()
 : ManagerType("CLIM", "Client Manager", new Client(0, "")) // NO CLIENT

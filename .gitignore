@@ -371,6 +371,9 @@ log/**
 db/**
 reports/**
 
+# Linux Makefile build output (docs/linux-query-daemon-design.md)
+build/
+
 # editor/assistant local config, not part of the project
 .claude/
 .vscode/

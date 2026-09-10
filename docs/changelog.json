@@ -1,7 +1,6 @@
 {
     "unreleased":  [
-                       "Word-wrap long lines in the What's New dialog instead of requiring horizontal scrolling",
-                       "Fix periodic charts: a period that bucked a topic's overall trend (e.g. a refund month in an otherwise expense-heavy category) was plotted as a positive magnitude on that topic's chart instead of offsetting the total"
+                       "Add a top-level Makefile building a read-only BankAccountCore subset on Linux (g++/wxBase), the first story of the Linux query daemon"
                    ],
     "released":  [
                      {
@@ -86,6 +85,14 @@
                          "changes":  [
                                          "Add Store Query.../Store Report... in-app editors to save the current filter or an existing favorite query as a favorite without hand-editing JSON",
                                          "Add per-side relative dates (right-click a from/to calendar for \"Today\"/\"Start of This Month\"/etc.) and keep Periods-menu shortcuts self-updating in saved favorites instead of freezing today\u0027s range"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.10",
+                         "date":  "2026-09-10",
+                         "changes":  [
+                                         "Word-wrap long lines in the What\u0027s New dialog instead of requiring horizontal scrolling",
+                                         "Fix periodic charts: a period that bucked a topic\u0027s overall trend (e.g. a refund month in an otherwise expense-heavy category) was plotted as a positive magnitude on that topic\u0027s chart instead of offsetting the total"
                                      ]
                      }
                  ]
