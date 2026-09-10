@@ -97,12 +97,57 @@ see "Decisions" below) rather than reparsing on every request.
    `Journal.h`, no `.cpp` needed) — `Journal.cpp` itself (the static, Windows-file-locking-backed
    class) is excluded, consistent with "no `RealJournal`".
 
-2. **Daemon: HTTP server skeleton.** Vendor cpp-httplib. `daemon/main.cpp` takes the db path,
-   bind host/port, and auth token as command-line arguments (no config file, nothing to load or
-   validate beyond argv) — loads the db read-only at startup and keeps it in memory, watching the
-   file for changes (mtime poll or an inotify-style watch) to reload in place; binds only to the
-   given Tailscale/LAN interface, never `0.0.0.0` on a publicly reachable box, one health-check
-   route.
+2. **Daemon: HTTP server skeleton.** ✅ **Done (2026-09-11).** Vendored
+   [cpp-httplib](https://github.com/yhirose/cpp-httplib) v0.54.0 as `include/httplib.h` (single
+   header, MIT, same low-friction precedent as nlohmann/json). `daemon/main.cpp` parses
+   `--db <path> --host <bind-host> --port <port> --token <token>` (no config file, nothing to
+   load/validate beyond argv, per the "Decisions" section below); `--token` is accepted and
+   stored already so this argv shape won't need to change for story 6, but isn't enforced on any
+   route yet. `daemon/DaemonDb.h`/`.cpp` load the db read-only at startup into an in-memory
+   `AccountManager` snapshot and keep it there; a background thread mtime-polls the file every 5s
+   (`ReloadIfChanged()`) and swaps in a freshly-built snapshot in place when it changes, under a
+   `std::mutex` route handlers also take (`WithManager()`) so a reload can't run mid-request. One
+   route so far, `GET /health`, returning `{status, db_loaded, last_loaded, accounts,
+   transactions}` as JSON. `server.listen(host, port)` binds only to the given interface, never
+   `0.0.0.0`.
+
+   **Deliberately doesn't reuse `BankAccountFile::Load()`**: that class also writes/checks a
+   crash-recovery journal via the real, disk-backed `Journal` (static calls, not the `IJournal`
+   seam) — machinery a read-only daemon with nothing to recover has no use for. `DaemonDb`
+   instead calls the same protected `AccountManager::StreamIn()` `BankAccountFile::Load()` itself
+   calls, with none of the journal bookkeeping around it, via a small internal `Manager` subclass
+   (`NullJournal`, `Modified()` a no-op — nothing here ever mutates). **Known gap**: only the
+   plain-text `db\BankAccount.txt` layout is supported, not a compressed/password-protected
+   `BData.baf` — decompressing that needs ZipLib, which isn't part of the Linux build (story 1
+   deliberately didn't vendor it, since nothing on the read-only path needed it at the time).
+   Porting ZipLib to Linux is deferred to a later story rather than folded into this one; until
+   then, `--db` has to point at a plain-text export (or the file left behind on a network share
+   while a desktop session has the db open unsaved), not the `.baf` a saved db normally is.
+
+   Two real bugs found and fixed along the way, both genuine cross-platform issues rather than
+   Linux-only workarounds:
+   - `Logger.cpp`'s `DEFAULT_LOG_LOCATION` was `"log\\BankAccount.log"` — a backslash, which
+     Windows accepts as a path separator but Linux does not (there it's just an ordinary filename
+     character). `FileLogSink`'s constructor would correctly create a `log` directory (via
+     `String::BeforeLast('\\')`) but then `std::ofstream` would look for a single flat file
+     literally named `log\BankAccount.log`, never actually finding the directory it just made.
+     Fixed by switching to `"log/BankAccount.log"` (and the matching `BeforeLast('/')`) —
+     Windows accepts forward slashes identically, so this is a no-op change there.
+   - `Currency`'s exchange-rate history is a single process-global pointer
+     (`Currency::SetHistory`/a file-static in `Currency.cpp`), set by `AccountManager`'s
+     constructor and unconditionally nulled by its destructor. That's safe as long as at most one
+     `AccountManager` is ever alive at a time — true for the desktop app (one long-lived
+     instance) and for GoogleTest fixtures (strictly sequential, never overlapping) — but
+     `DaemonDb::ReloadIfChanged()` builds a *replacement* `AccountManager` (which points the
+     global at itself mid-construction) before destroying the *old* one for a hot reload, so the
+     old instance's destructor was unconditionally nulling the new instance's already-correct
+     pointer on every single reload. Fixed by adding `Currency::ClearHistoryIfCurrent()`, which
+     only clears the global if it still points at the caller's own history, and switching
+     `AccountManager::~AccountManager()` to call that instead of `SetHistory(nullptr)` —
+     identical behavior for every existing (non-overlapping) caller, correct for the daemon's
+     overlapping one too. Verified: two consecutive reload cycles against a live copy of the
+     repo's real `db/BankAccount.txt` sample data (4 accounts, 8469 transactions), `/health`
+     responding correctly with unchanged counts after each.
 
 3. **API: ad-hoc query endpoint.** JSON request shape mirroring `PrepareQuery`'s fields — accounts,
    client/category/type filters (+ exclude mode), date range/relative period, aggregate-by, period

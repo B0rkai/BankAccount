@@ -15,8 +15,8 @@
 // LogDebug()/etc. as true no-ops"). So this suite treats "stays uninitialized" as an invariant to
 // verify, never something to exercise past that point.
 //
-// FileLogSink is the other one to avoid: its constructor alone creates the log\ directory (a
-// hardcoded relative path, "log\\BankAccount.log", with no injection seam - see
+// FileLogSink is the other one to avoid: its constructor alone creates the log/ directory (a
+// hardcoded relative path, "log/BankAccount.log", with no injection seam - see
 // FileLogSink::FileLogSink() in Logger.cpp), and OnLogEntry() appends to that same hardcoded
 // file. Exactly the same non-relocatable-path risk documented in JournalTests.cpp for
 // Journal::FilePath() - so it's simply never constructed here, direct or otherwise.

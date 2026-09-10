@@ -14,7 +14,13 @@ const char* cError = "ERROR";
 Log Log##LEVEL(const char* comp) { return { comp, c##LEVEL }; }
 #define CONSTLOGFUNC_DEF(LEVEL) Log Logger::Log##LEVEL() const { return ::Log##LEVEL(m_comp_id); }
 
-const char* DEFAULT_LOG_LOCATION = "log\\BankAccount.log";
+// Forward slash, not backslash: Windows accepts either as a path separator, but on Linux (the
+// daemon's build - see docs/linux-query-daemon-design.md) a backslash is just an ordinary
+// filename character, not a separator, so a backslash path here would create the log
+// directory correctly but then fail to find it again when opening the file, since std::ofstream
+// would look for a single flat file literally named "log\BankAccount.log" instead of
+// "BankAccount.log" inside "log/".
+const char* DEFAULT_LOG_LOCATION = "log/BankAccount.log";
 
 Log::Log() {
     time_t timestamp = time(&timestamp);
@@ -77,7 +83,7 @@ Log::~Log() {
 
 FileLogSink::FileLogSink() {
     String path(DEFAULT_LOG_LOCATION);
-    String dir = path.BeforeLast('\\');
+    String dir = path.BeforeLast('/');
     if (!std::filesystem::exists((std::string)dir)) {
         std::filesystem::create_directories((std::string)dir);
     }

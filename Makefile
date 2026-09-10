@@ -1,11 +1,11 @@
-# Read-only Linux build of a BankAccountCore subset - see docs/linux-query-daemon-design.md,
-# story 1 ("Core: carve out a read-only build via Makefile"). Builds only the load/query/report
-# path (no import, no mutation, no Windows-only file locking/network code) into a static library
-# a future daemon/ target can link against. Mirrors the .vcxproj files' explicit, non-globbing
+# Read-only Linux build of a BankAccountCore subset, plus the daemon that links it - see
+# docs/linux-query-daemon-design.md. Story 1 built the static library (no import, no mutation, no
+# Windows-only file locking/network code); story 2 adds daemon/ (an HTTP server skeleton vendoring
+# cpp-httplib, include/httplib.h) on top of it. Mirrors the .vcxproj files' explicit, non-globbing
 # source list rather than using wildcards.
 #
 # Build (WSL/Ubuntu or any Linux box with g++ and libwxbase3.0-dev installed):
-#   make            # build/linux/libbankaccountcore_ro.a
+#   make            # build/linux/libbankaccountcore_ro.a and build/linux/bin/daemon
 #   make clean
 
 CXX      := g++
@@ -49,10 +49,20 @@ SRCS := \
 	src/AccountManager.cpp
 
 OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS))
-DEPS := $(OBJS:.o=.d)
+
+# daemon/ (story 2): an HTTP server skeleton linking the library above. Vendors cpp-httplib
+# (include/httplib.h, same low-friction single-header precedent as nlohmann/json) - header-only
+# but still needs -pthread for its worker thread pool at link time.
+DAEMON_SRCS := daemon/main.cpp daemon/DaemonDb.cpp
+DAEMON_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_SRCS))
+# Under bin/, not directly in $(BUILD): the object files above already live in $(BUILD)/daemon/,
+# and a plain file can't share that path with the directory holding them.
+DAEMON_BIN  := $(BUILD)/bin/daemon
+
+DEPS := $(OBJS:.o=.d) $(DAEMON_OBJS:.o=.d)
 
 .PHONY: all clean
-all: $(LIB)
+all: $(LIB) $(DAEMON_BIN)
 
 $(LIB): $(OBJS)
 	ar rcs $@ $^
@@ -60,6 +70,17 @@ $(LIB): $(OBJS)
 $(BUILD)/%.o: src/%.cpp
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD)/daemon/%.o: daemon/%.cpp
+	@mkdir -p $(BUILD)/daemon
+	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+# -lstdc++fs: GCC 9 (WSL Ubuntu-20.04's default) still ships std::filesystem in a separate
+# library instead of folding it into libstdc++ proper - harmless to keep on newer toolchains
+# where it's a no-op/already-merged.
+$(DAEMON_BIN): $(DAEMON_OBJS) $(LIB)
+	@mkdir -p $(BUILD)/bin
+	$(CXX) $(CXXFLAGS) -Wl,--gc-sections -o $@ $(DAEMON_OBJS) $(LIB) $(shell wx-config --libs base) -pthread -lstdc++fs
 
 -include $(DEPS)
 

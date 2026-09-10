@@ -89,6 +89,12 @@ void Currency::SetHistory(const ExchangeRateHistory* history) {
 	g_exchange_rate_history = history;
 }
 
+void Currency::ClearHistoryIfCurrent(const ExchangeRateHistory* history) {
+	if (g_exchange_rate_history == history) {
+		g_exchange_rate_history = nullptr;
+	}
+}
+
 class Euro : public Currency {
 	static Euro* s_object;
 public:

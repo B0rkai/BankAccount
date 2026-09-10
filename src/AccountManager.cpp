@@ -241,11 +241,16 @@ AccountManager::AccountManager(IJournal& journal) :m_accounts(true), m_ttype_man
 }
 
 AccountManager::~AccountManager() {
-	// undoes the constructor's Currency::SetHistory(&m_exchange_rates) - without this,
+	// Undoes the constructor's Currency::SetHistory(&m_exchange_rates) - without this,
 	// Currency's static history pointer keeps pointing at this object's (now-destroyed)
 	// m_exchange_rates member, and the next Money::GetValue(type, date) call anywhere for a
-	// non-HUF-to-HUF (or HUF-to-non-HUF) conversion dereferences freed memory.
-	Currency::SetHistory(nullptr);
+	// non-HUF-to-HUF (or HUF-to-non-HUF) conversion dereferences freed memory. Uses the
+	// "only if current" form rather than an unconditional SetHistory(nullptr): a single
+	// long-lived desktop instance or sequential test fixtures never overlap, so both forms
+	// behave identically there, but the Linux daemon builds a replacement AccountManager
+	// (which points the global at itself) before destroying the old one for a hot reload -
+	// an unconditional null here would wipe out the replacement's already-correct pointer.
+	Currency::ClearHistoryIfCurrent(&m_exchange_rates);
 }
 
 size_t AccountManager::CountAccounts() const {

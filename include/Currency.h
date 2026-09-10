@@ -36,6 +36,10 @@ public:
 	static void SetExchangeRate(CurrencyType type, double newVal);
 	static double GetExcahngeRate(CurrencyType type);
 	static void SetHistory(const ExchangeRateHistory* history);
+	// Clears the static history pointer only if it's still `history` - unlike SetHistory(nullptr),
+	// safe to call from a destructor when a second instance's own SetHistory() may have already
+	// repointed it elsewhere. See AccountManager::~AccountManager()'s use of this.
+	static void ClearHistoryIfCurrent(const ExchangeRateHistory* history);
 };
 
 Currency* MakeCurrency(const CurrencyType type);
