@@ -1,7 +1,9 @@
 # Design: mobile spending viewer
 
-Status: **design only, not implemented**. Discussed 2026-09-02, prompted by wanting to check
-spending from a phone.
+Status: **scrapped, not implemented**. Discussed 2026-09-02, prompted by wanting to check spending
+from a phone; superseded 2026-09-10 by
+[linux-query-daemon-design.md](linux-query-daemon-design.md) (see "Revisited" section below) —
+the snapshot approach here will not be built.
 
 ## Goal
 
@@ -121,3 +123,15 @@ tens of KB, trivial over Tailscale.
 - App-side exporter: ~1 day (menu action, decide fields, serialize via existing `Query` results).
 - Server-side script + one HTML page: a few hours.
 - Tailscale setup: 15-30 min, one-time.
+
+## Revisited 2026-09-10: option 1 reconsidered, snapshot approach scrapped
+
+"Live C++ backend" above was rejected because `Journal`/`NetworkLock` tied it to Windows. For a
+**read-only** daemon that's no longer true — neither module needs to be linked in at all, and
+nothing else in `BankAccountCore` has a Windows-only dependency. See
+[linux-query-daemon-design.md](linux-query-daemon-design.md) for the revived, read-only version of
+this option.
+
+Decided the same day: that daemon fully replaces this doc's plan rather than living alongside it —
+no glance-only snapshot view is being kept. The exporter, the Flask/Node server, and the proposed
+JSON snapshot schema above are all dead; nothing in this doc should be implemented.
