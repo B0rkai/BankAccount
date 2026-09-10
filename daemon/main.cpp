@@ -18,10 +18,12 @@
 // port, and auth token as plain argv (no config file - see the design doc's "Decisions" section
 // for why). Story 2 added GET /health; story 3 added POST /query, the ad-hoc query endpoint
 // (QueryApi.h); story 4 added the favorite query/report listing + run-by-name routes
-// (FavoritesApi.h); story 5 adds GET / (the interactive query builder page, FrontendPage.h) and
-// GET /accounts (the account-name list its checkbox picker needs). --token is accepted and stored
-// already so this argv shape doesn't need to change again, but isn't enforced on any route yet -
-// that's story 6 (Auth + network scoping).
+// (FavoritesApi.h); story 5 added GET / (the interactive query builder page, FrontendPage.h) and
+// GET /accounts (the account-name list its checkbox picker needs); story 6 enforces --token on
+// every route via a pre-routing handler, and pairs it with --host (already bind-address-scoped
+// since story 2 - never 0.0.0.0) as the daemon's whole auth story, per the design doc's "minimal
+// shared-token check ... network-scoped to LAN/Tailscale only" - no accounts, no sessions, no
+// OAuth, matching the "out of scope" note ruling out OAuth-grade auth.
 
 namespace {
 
@@ -31,6 +33,20 @@ struct Args {
 	int port = 0;
 	std::string token;
 };
+
+// Constant-time compare so a wrong token takes the same time to reject regardless of how many
+// leading characters happen to match - a plain `!=` would leak a timing side-channel an attacker
+// on the same LAN/Tailscale segment could exploit to guess the token byte-by-byte.
+bool ConstantTimeEquals(const std::string& a, const std::string& b) {
+	if (a.size() != b.size()) {
+		return false;
+	}
+	unsigned char diff = 0;
+	for (size_t i = 0; i < a.size(); ++i) {
+		diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+	}
+	return diff == 0;
+}
 
 void PrintUsage(const char* argv0) {
 	std::cerr << "Usage: " << argv0 << " --db <path> --host <bind-host> --port <port> --token <token>\n";
@@ -115,6 +131,27 @@ int main(int argc, char** argv) {
 	});
 
 	httplib::Server server;
+
+	// Shared-token check in front of every route (including / and /health) - a request must carry
+	// the token either as an X-Auth-Token header (used by the frontend page's own fetch() calls
+	// once it has the token) or a ?token= query param (used for the very first page load, since
+	// there's no login form to collect a header from). Checked before route dispatch so a missing/
+	// wrong token never reaches a handler, let alone the loaded AccountManager snapshot.
+	server.set_pre_routing_handler([&](const httplib::Request& req, httplib::Response& res) {
+		std::string provided = req.get_header_value("X-Auth-Token");
+		if (provided.empty()) {
+			provided = req.get_param_value("token");
+		}
+		if (!ConstantTimeEquals(provided, args.token)) {
+			nlohmann::json err;
+			err["error"] = "Unauthorized";
+			res.status = 401;
+			res.set_content(err.dump(), "application/json");
+			return httplib::Server::HandlerResponse::Handled;
+		}
+		return httplib::Server::HandlerResponse::Unhandled;
+	});
+
 	server.Get("/", [&](const httplib::Request&, httplib::Response& res) {
 		res.set_content(frontend_page, "text/html; charset=utf-8");
 	});

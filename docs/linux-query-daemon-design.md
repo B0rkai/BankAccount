@@ -298,8 +298,37 @@ see "Decisions" below) rather than reparsing on every request.
    (HUF) pie → bar) live-redraws it with no console errors, confirming the kind-switcher's redraw
    path and the categorical/slice config builders both work end-to-end against real Chart.js.
 
-6. **Auth + network scoping.** Bind-address restriction (above) plus a shared-token header/query
-   param checked on every route.
+6. **Auth + network scoping.** ✅ **Done (2026-09-11).** `daemon/main.cpp` registers a
+   `set_pre_routing_handler` that runs before every route (`/`, `/health`, `/accounts`, `/query`,
+   `/favorites/*` - no route is exempt, including `/health`) and checks the request against
+   `--token`: either an `X-Auth-Token` header or a `?token=` query param, compared with a small
+   constant-time equality helper rather than plain `!=` (this daemon is reachable by anyone on the
+   LAN/Tailscale segment - a naive compare would leak a timing side-channel an attacker could use
+   to guess the token byte-by-byte, cheap enough to close that it wasn't worth leaving open). A
+   missing/wrong token gets a `401 {"error": "Unauthorized"}` before the handler ever touches the
+   loaded `AccountManager` snapshot. Network scoping was already in place as of story 2 - `--host`
+   binds to one explicit interface address (the LAN/Tailscale IP), never `0.0.0.0` - so this story
+   only added the token check; per the design doc's scope, that pairing (bind-address restriction +
+   shared token) is deliberately the daemon's *entire* auth story, no accounts/sessions/OAuth.
+
+   The frontend page (story 5) needed the token too, since it's itself just another route: the only
+   way to reach it at all is a URL of the form `http://host:port/?token=...` (there's no login form
+   to type a header into), so its JS reads the token once from `window.location.search` via
+   `URLSearchParams` and reuses it as an `X-Auth-Token` header on every subsequent `fetch()` - a
+   small `authFetch()` wrapper replacing the five raw `fetch()` calls added in story 5, rather than
+   re-appending `?token=` to every URL (which would otherwise leak the token into the daemon's own
+   access logs on each request).
+
+   Verified with the real Linux daemon in WSL: `curl` against every route confirmed 401 with no
+   token or a wrong token, 200 with the right token via either the header or the query param, and
+   confirmed `/health` itself (easy to forget, being the oldest/simplest route) is gated the same as
+   everything else. Then, using the same real-browser harness story 5's testing built (a captured
+   page served over a local `http://` origin, since `file://` doesn't run scripts), opened the page
+   with `?token=...` in the URL, monkey-patched `window.fetch` to record the options passed to it,
+   clicked "Run query", and confirmed the request carried `X-Auth-Token` with exactly the token from
+   the URL - with no console errors from the change itself (the only console errors were the
+   expected 404s from the metadata-fetch calls hitting the static file server standing in for the
+   daemon, unrelated to auth).
 
 7. **Deployment.** systemd unit invoking `daemon` with command-line args (db path, bind
    host/port, token) — no config file, no `db\location.json`-style JSON to parse/validate. No

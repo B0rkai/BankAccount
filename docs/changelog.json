@@ -4,7 +4,8 @@
                        "Add a Linux daemon HTTP server skeleton (cpp-httplib) with a hot-reloading read-only db snapshot and a /health route, the second story of the Linux query daemon; fix a cross-platform log-path bug and a stale-pointer bug in Currency's exchange-rate history found along the way",
                        "Add a POST /query ad-hoc query endpoint to the Linux daemon (JSON in, JSON tables/charts out), the third story of the Linux query daemon; fix a null-pointer crash on any relative-date query, caused by the daemon never calling SetRealToday() at startup",
                        "Add favorite query/report listing and run-by-name endpoints to the Linux daemon, the fourth story of the Linux query daemon; fix favorite_queries.json/favorite_reports.json never being found on Linux due to a hardcoded backslash path",
-                       "Add an interactive query builder web page to the Linux daemon (form filters, favorite query/report picker, live Grid.js tables and Chart.js charts), the fifth story of the Linux query daemon; fix the same hardcoded-backslash bug for the vendored Chart.js/Grid.js resource paths"
+                       "Add an interactive query builder web page to the Linux daemon (form filters, favorite query/report picker, live Grid.js tables and Chart.js charts), the fifth story of the Linux query daemon; fix the same hardcoded-backslash bug for the vendored Chart.js/Grid.js resource paths",
+                       "Require a shared --token on every route of the Linux daemon (header or query param, constant-time compared), the sixth story of the Linux query daemon"
                    ],
     "released":  [
                      {

@@ -168,6 +168,19 @@ td.num, th.num, table.gridjs-table td.num, table.gridjs-table th.num { text-alig
 function qs(id) { return document.getElementById(id); }
 function setStatus(text) { qs('status').textContent = text || ''; }
 
+// ---- auth token (story 6) ----
+// The daemon requires the same shared token on every route, including this page itself, so the
+// only way to have reached this script at all is a URL carrying ?token=... (the pre-routing
+// handler in daemon/main.cpp would have already rejected the page load with 401 otherwise). Reuse
+// that token as an X-Auth-Token header on every subsequent fetch(), rather than making the user
+// re-supply it, or leaving it to leak into every request's URL/server logs via a query param.
+var AUTH_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+function authFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers, { 'X-Auth-Token': AUTH_TOKEN });
+  return fetch(url, opts);
+}
+
 // ---- date-mode toggling ----
 document.querySelectorAll('input[name="dateMode"]').forEach(function(radio) {
   radio.addEventListener('change', function() {
@@ -444,7 +457,7 @@ function renderSections(sections, restriction) {
 qs('runButton').addEventListener('click', function() {
   var body = buildRequestBody();
   setStatus('Running...');
-  fetch('/query', { method: 'POST', body: JSON.stringify(body) })
+  authFetch('/query', { method: 'POST', body: JSON.stringify(body) })
     .then(function(res) { return res.json().then(function(data) { return { ok: res.ok, status: res.status, data: data }; }); })
     .then(function(result) {
       if (!result.ok) { setStatus('Error: ' + (result.data.error || result.status)); return; }
@@ -458,7 +471,7 @@ qs('runFavQuery').addEventListener('click', function() {
   var name = qs('favQuerySelect').value;
   if (!name) { return; }
   setStatus('Running favorite query...');
-  fetch('/favorites/queries/run?name=' + encodeURIComponent(name))
+  authFetch('/favorites/queries/run?name=' + encodeURIComponent(name))
     .then(function(res) { return res.json().then(function(data) { return { ok: res.ok, status: res.status, data: data }; }); })
     .then(function(result) {
       if (!result.ok) { setStatus('Error: ' + (result.data.error || result.status)); return; }
@@ -473,7 +486,7 @@ qs('runFavReport').addEventListener('click', function() {
   var report = (window.__favoriteReports || []).filter(function(r) { return r.name === name; })[0];
   if (!report) { return; }
   setStatus('Running favorite report...');
-  fetch('/favorites/queries/run?name=' + encodeURIComponent(report.favorite_query))
+  authFetch('/favorites/queries/run?name=' + encodeURIComponent(report.favorite_query))
     .then(function(res) { return res.json().then(function(data) { return { ok: res.ok, status: res.status, data: data }; }); })
     .then(function(result) {
       if (!result.ok) { setStatus('Error: ' + (result.data.error || result.status)); return; }
@@ -486,9 +499,9 @@ qs('runFavReport').addEventListener('click', function() {
 // ---- initial metadata load: accounts + favorites pickers ----
 function loadMeta() {
   Promise.all([
-    fetch('/accounts').then(function(r) { return r.json(); }),
-    fetch('/favorites/queries').then(function(r) { return r.json(); }),
-    fetch('/favorites/reports').then(function(r) { return r.json(); }),
+    authFetch('/accounts').then(function(r) { return r.json(); }),
+    authFetch('/favorites/queries').then(function(r) { return r.json(); }),
+    authFetch('/favorites/reports').then(function(r) { return r.json(); }),
   ]).then(function(results) {
     var accounts = results[0], favQueries = results[1], favReports = results[2];
     window.__accountNames = accounts.accounts || [];
