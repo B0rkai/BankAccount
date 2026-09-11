@@ -9,6 +9,7 @@
 #   make clean
 
 CXX      := g++
+CC       := gcc
 # -ffunction-sections/-fdata-sections let a linker's --gc-sections drop dead code per-function
 # rather than per-object-file - needed because AccountManager.cpp is one translation unit
 # covering both the read path this library exposes and mutation-only methods (Import,
@@ -16,7 +17,12 @@ CXX      := g++
 # the read path calls into those methods, so as long as a consumer never references them either,
 # --gc-sections at the consumer's link step drops them (and their otherwise-undefined-reference
 # callees) instead of requiring WQuery.cpp/DataImporter.cpp to be linked in.
-CXXFLAGS := -std=c++17 -Wall -Iinclude -ffunction-sections -fdata-sections $(shell wx-config --cxxflags)
+CXXFLAGS := -std=c++17 -Wall -Iinclude -Ithird_party/ziplib -ffunction-sections -fdata-sections $(shell wx-config --cxxflags)
+# extlibs/zlib's vendored .c sources use old K&R-style function definitions (e.g. adler32.c's
+# `adler32(adler, buf, len)` with the parameter types on separate lines) - valid C, but a syntax
+# error under a C++ compiler, so these need the real C frontend (gcc) rather than g++, unlike
+# every other vendored/local source in this Makefile.
+CFLAGS   := -Wall -Ithird_party/ziplib -ffunction-sections -fdata-sections
 BUILD    := build/linux
 LIB      := $(BUILD)/libbankaccountcore_ro.a
 
@@ -47,9 +53,37 @@ SRCS := \
 	src/ChartFolding.cpp \
 	src/Logger.cpp \
 	src/LogData.cpp \
-	src/AccountManager.cpp
+	src/AccountManager.cpp \
+	src/BafArchive.cpp
 
-OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS))
+# Vendored, trimmed (Store+Deflate only) ZipLib fork - see docs/ziplib-vendoring.md - needed so
+# BafArchive.cpp (above) can open a compressed/password-"protected" db\BData.baf directly, the
+# same file this app's Windows build reads/writes. Kept as its own OBJS/pattern rule rather than
+# folded into SRCS since its sources live outside src/ (third_party/ziplib/... instead).
+ZIPLIB_SRCS := \
+	third_party/ziplib/ZipArchive.cpp \
+	third_party/ziplib/ZipArchiveEntry.cpp \
+	third_party/ziplib/ZipFile.cpp \
+	third_party/ziplib/detail/EndOfCentralDirectoryBlock.cpp \
+	third_party/ziplib/detail/ZipCentralDirectoryFileHeader.cpp \
+	third_party/ziplib/detail/ZipGenericExtraField.cpp \
+	third_party/ziplib/detail/ZipLocalFileHeader.cpp
+ZIPLIB_C_SRCS := \
+	third_party/ziplib/extlibs/zlib/adler32.c \
+	third_party/ziplib/extlibs/zlib/compress.c \
+	third_party/ziplib/extlibs/zlib/crc32.c \
+	third_party/ziplib/extlibs/zlib/deflate.c \
+	third_party/ziplib/extlibs/zlib/infback.c \
+	third_party/ziplib/extlibs/zlib/inffast.c \
+	third_party/ziplib/extlibs/zlib/inflate.c \
+	third_party/ziplib/extlibs/zlib/inftrees.c \
+	third_party/ziplib/extlibs/zlib/trees.c \
+	third_party/ziplib/extlibs/zlib/uncompr.c \
+	third_party/ziplib/extlibs/zlib/zutil.c
+
+OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS)) \
+	$(patsubst third_party/ziplib/%.cpp,$(BUILD)/ziplib/%.o,$(ZIPLIB_SRCS)) \
+	$(patsubst third_party/ziplib/%.c,$(BUILD)/ziplib/%.o,$(ZIPLIB_C_SRCS))
 
 # daemon/ (story 2): an HTTP server skeleton linking the library above. Vendors cpp-httplib
 # (include/httplib.h, same low-friction single-header precedent as nlohmann/json) - header-only
@@ -71,6 +105,14 @@ $(LIB): $(OBJS)
 $(BUILD)/%.o: src/%.cpp
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD)/ziplib/%.o: third_party/ziplib/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD)/ziplib/%.o: third_party/ziplib/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD)/daemon/%.o: daemon/%.cpp
 	@mkdir -p $(BUILD)/daemon

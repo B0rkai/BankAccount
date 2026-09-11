@@ -45,8 +45,10 @@ stop/replace/restart.
    Generate the token with `openssl rand -hex 32` — anything guessable defeats the whole point of
    story 6's shared-token check. `BANKACCOUNT_HOST` should be the LAN or Tailscale interface
    address to bind, never `0.0.0.0` (the design doc's scope explicitly rules out public internet
-   exposure), and `BANKACCOUNT_DB` should point at the plain-text `BankAccount.txt` the daemon can
-   actually parse (story 2's "known gap": no `.baf` decompression on Linux yet).
+   exposure). `BANKACCOUNT_DB` can point at either the plain-text `BankAccount.txt` export or the
+   compressed/password-"protected" `BData.baf` a saved db normally is (a path ending in `.baf` is
+   opened via the vendored ZipLib - see [ziplib-vendoring.md](ziplib-vendoring.md)); pointing it
+   straight at a shared `.baf` avoids having to keep a separate plain-text export in sync.
 
 5. Install and enable the unit:
 

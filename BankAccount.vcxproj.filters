@@ -124,14 +124,4 @@
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
-  <ItemGroup>
-    <Library Include="external\ZipLib.lib" />
-    <Library Include="external\lzma.lib" />
-    <Library Include="external\bzip2.lib" />
-    <Library Include="external\zlib.lib" />
-    <Library Include="..\..\ziplib\Bin\x64\Debug\bzip2.lib" />
-    <Library Include="..\..\ziplib\Bin\x64\Debug\lzma.lib" />
-    <Library Include="..\..\ziplib\Bin\x64\Debug\ZipLib.lib" />
-    <Library Include="..\..\ziplib\Bin\x64\Debug\zlib.lib" />
-  </ItemGroup>
 </Project>

@@ -3,7 +3,16 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <string_view>
+#include "BafArchive.h"
 #include "Logger.h"
+
+namespace {
+	bool HasBafExtension(const std::string& path) {
+		static constexpr std::string_view kExt = ".baf";
+		return path.size() >= kExt.size() && path.compare(path.size() - kExt.size(), kExt.size(), kExt) == 0;
+	}
+}
 
 DaemonDb::DaemonDb(std::string path) : m_path(std::move(path)) {}
 
@@ -19,7 +28,16 @@ bool DaemonDb::ReloadIfChanged() {
 	}
 
 	auto candidate = std::make_unique<Manager>(m_null_journal);
-	{
+	if (HasBafExtension(m_path)) {
+		bool loaded = BafArchive::ReadInto(m_path, [&candidate](std::istream& in) {
+			candidate->LoadFrom(in);
+		});
+		if (!loaded) {
+			LogWarn("DAEMONDB") << "Could not open '" << m_path << "' as a BAF archive (missing/wrong password, or no '"
+				<< BafArchive::ENTRY_NAME << "' entry)";
+			return false;
+		}
+	} else {
 		std::ifstream in(m_path, std::ios::binary);
 		if (!in.is_open()) {
 			LogWarn("DAEMONDB") << "Could not open '" << m_path << "' for reading";

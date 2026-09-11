@@ -82,7 +82,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\ziplib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
   </ItemDefinitionGroup>
@@ -94,7 +94,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\ziplib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <Optimization>Full</Optimization>
@@ -104,6 +104,7 @@
     <ClCompile Include="src\Account.cpp" />
     <ClCompile Include="src\AccountManager.cpp" />
     <ClCompile Include="src\AccountNumber.cpp" />
+    <ClCompile Include="src\BafArchive.cpp" />
     <ClCompile Include="src\BankAccountFile.cpp" />
     <ClCompile Include="src\Category.cpp" />
     <ClCompile Include="src\CategorySystem.cpp" />
@@ -136,11 +137,37 @@
     <ClCompile Include="src\TransactionType.cpp" />
     <ClCompile Include="src\Version.cpp" />
     <ClCompile Include="src\WQuery.cpp" />
+    <!-- ObjectFileName redirects these into an IntDir subfolder: MSBuild otherwise names each
+         .obj after its bare filename, and zlib's crc32.c would silently collide with (and, built
+         later, clobber) src\Crc32.cpp's own Crc32.obj on Windows' case-insensitive filesystem. -->
+    <ClCompile Include="third_party\ziplib\ZipArchive.cpp"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\ZipArchiveEntry.cpp"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\ZipFile.cpp"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\EndOfCentralDirectoryBlock.cpp"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\ZipCentralDirectoryFileHeader.cpp"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\ZipGenericExtraField.cpp"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\ZipLocalFileHeader.cpp"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\adler32.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\compress.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <!-- Distinct filename, not just a subfolder: LIB.exe identifies static-library members by
+         base filename only, so "crc32.obj" here would still collide with src\Crc32.cpp's own
+         Crc32.obj (case-insensitive) even placed in a different IntDir subfolder, silently
+         dropping one of the two from the archive. -->
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\crc32.c"><ObjectFileName>$(IntDir)ziplib\zlib_crc32.obj</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\deflate.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\infback.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\inffast.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\inflate.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\inftrees.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\trees.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\uncompr.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\zutil.c"><ObjectFileName>$(IntDir)ziplib\</ObjectFileName></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Account.h" />
     <ClInclude Include="include\AccountManager.h" />
     <ClInclude Include="include\AccountNumber.h" />
+    <ClInclude Include="include\BafArchive.h" />
     <ClInclude Include="include\BankAccountFile.h" />
     <ClInclude Include="include\Category.h" />
     <ClInclude Include="include\CategorySystem.h" />

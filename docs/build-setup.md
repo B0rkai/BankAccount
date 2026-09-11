@@ -46,9 +46,15 @@ JS in a `<script>`) so the report stays fully offline. Upgrading the vendored ve
 re-downloading `https://cdn.jsdelivr.net/npm/gridjs@<version>/dist/gridjs.umd.js` and
 `.../dist/theme/mermaid.min.css` over the existing files.
 
+A fourth exception, but compiled (not header-only like the three above): **ZipLib** (zlib
+License, Copyright 2013 Petr Beneš) at `third_party\ziplib` — a trimmed (Store+Deflate only,
+bzip2/LZMA dropped), locally-patched copy, compiled directly into `BankAccountCore` (and the
+Linux `Makefile`) instead of built from a sibling checkout into a prebuilt `.lib` like the rest of
+this list. See [ziplib-vendoring.md](ziplib-vendoring.md) for what was trimmed/patched and why,
+and [db-encryption-design.md](db-encryption-design.md) for what it's used for (reading/writing
+`db\BData.baf`, including from the Linux daemon).
+
 - **wxWidgets 3.0** headers at `C:\Users\<user>\source\wxWidgets\include` (both configs).
-- **ZipLib** headers at `C:\Users\<user>\source\ziplib\Source\ZipLib`; Debug|x64 links its
-  built libs from `..\..\ziplib\Bin\x64\Debug\*.lib` (i.e. a `ziplib` checkout next to this repo).
 - **xlnt** (MIT-licensed, [xlnt-community/xlnt](https://github.com/xlnt-community/xlnt) — the
   maintained fork of the original, now-abandoned `tfussell/xlnt`) is a source checkout at
   `C:\Users\<user>\source\xlnt`, built locally via CMake (`cmake -G "Visual Studio 17 2022" -A x64
@@ -63,8 +69,9 @@ re-downloading `https://cdn.jsdelivr.net/npm/gridjs@<version>/dist/gridjs.umd.js
   dates and each tracked currency) — unlike the OpenXLSX library tried first, xlnt has a real
   styling API and, since it's self-built rather than a prebuilt Release-only binary, works in both
   Debug and Release.
-- Prebuilt wxWidgets/ZipLib/zlib/bzip2/lzma `.lib`/`.pdb` files are checked into `external/`
-  and used for Release|x64 and general linking (`AdditionalLibraryDirectories`).
+- Prebuilt wxWidgets `.lib`/`.pdb` files are checked into `external/` and used for Release|x64
+  and general linking (`AdditionalLibraryDirectories`). ZipLib/zlib/bzip2/lzma `.lib`/`.pdb` used
+  to live here too, back when ZipLib was a sibling checkout rather than vendored (see above).
 - **wxCharts** — clone **your private fork**, `https://github.com/B0rkai/wxCharts` (not
   upstream [wxIshiko/wxCharts](https://github.com/wxIshiko/wxCharts) directly), to
   `C:\Users\<user>\source\wxCharts`. The fork's `main` branch already carries this project's

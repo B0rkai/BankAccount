@@ -3,12 +3,13 @@
 #include "BankAccountFile.h"
 #include "Logger.h"
 #include "ZipFile.h"
+#include "BafArchive.h"
 #include "Crc32.h"
 #include "Journal.h"
 
 static const char* DEFAULT_UNCOMPRESSED_FILE_PATH("db\\BankAccount.txt");
-static const char* PASSWORD = "pass";
-static const char* ENTRY = "save.data";
+static const char* PASSWORD = BafArchive::PASSWORD;
+static const char* ENTRY = BafArchive::ENTRY_NAME;
 
 bool MakeBackup(const String& file_from) {
 	String backup = file_from;
@@ -86,24 +87,15 @@ bool BankAccountFile::Load() {
 			return false;
 		}
 		LogDebug() << "Loading BAF database file from: " << (std::string)m_filename;
-		ZipArchive::Ptr archive = ZipFile::Open((std::string)m_filename);
-		ZipArchiveEntry::Ptr entry = archive->GetEntry(ENTRY);
-		// if the entry is password protected, it is necessary
-		// to set the password before getting a decompression stream
-		if (entry->IsPasswordProtected()) {
-			// when decompressing an encrypted entry
-			// there is no need to specify the use of data descriptor
-			// (ZibLib will deduce if the data descriptor was used)
-			entry->SetPassword(PASSWORD);
-		}
-		// if the entry is password protected and the provided password is wrong
-		// (or none is provided) the return value will be nullptr
-		std::istream* decompressStream = entry->GetDecompressionStream();
-		{
-			Crc32InputStreambuf crc_buf(decompressStream->rdbuf());
+		bool ok = BafArchive::ReadInto((std::string)m_filename, [this, &crc](std::istream& decompressStream) {
+			Crc32InputStreambuf crc_buf(decompressStream.rdbuf());
 			std::istream crc_in(&crc_buf);
 			StreamIn(crc_in);
 			crc = crc_buf.Value();
+		});
+		if (!ok) {
+			LogError() << "LOAD FAILED! Cannot open '" << ENTRY << "' entry in BAF database file '" << m_filename.utf8_str() << "'";
+			return false;
 		}
 		LogInfo() << "Database loaded from saved file";
 	} else {

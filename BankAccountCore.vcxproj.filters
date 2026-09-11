@@ -14,6 +14,7 @@
     <ClCompile Include="src\Account.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\AccountManager.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\AccountNumber.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\BafArchive.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\BankAccountFile.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Category.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\CategorySystem.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -46,11 +47,30 @@
     <ClCompile Include="src\TransactionType.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Version.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\WQuery.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\ZipArchive.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\ZipArchiveEntry.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\ZipFile.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\EndOfCentralDirectoryBlock.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\ZipCentralDirectoryFileHeader.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\ZipGenericExtraField.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\detail\ZipLocalFileHeader.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\adler32.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\compress.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\crc32.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\deflate.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\infback.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\inffast.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\inflate.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\inftrees.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\trees.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\uncompr.c"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="third_party\ziplib\extlibs\zlib\zutil.c"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Account.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\AccountManager.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\AccountNumber.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\BafArchive.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\BankAccountFile.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Category.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\CategorySystem.h"><Filter>Header Files</Filter></ClInclude>

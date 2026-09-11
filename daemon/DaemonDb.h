@@ -15,11 +15,10 @@
 // Instead this calls the same protected StreamIn() BankAccountFile itself calls, with none of
 // the journal bookkeeping around it.
 //
-// Only supports the plain-text db\BankAccount.txt layout for now, not a compressed/
-// password-protected BData.baf - decompressing that needs ZipLib, which isn't part of the Linux
-// build yet (see docs/linux-query-daemon-design.md's story 2 completion notes for why this was
-// deferred rather than solved here). Pointing --db at a plain-text export already works; a
-// later story can add the .baf path once ZipLib is ported.
+// --db can point at either layout: a path ending in ".baf" is opened via BafArchive::ReadInto
+// (the vendored, portable ZipLib - see docs/ziplib-vendoring.md); anything else is read as the
+// plain-text db\BankAccount.txt export. See docs/db-encryption-design.md for why the .baf
+// password ("pass") isn't real security yet.
 class DaemonDb {
 public:
 	explicit DaemonDb(std::string path);

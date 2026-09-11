@@ -1,9 +1,10 @@
 # Design: Real db encryption + Linux `.baf` support (proposed epic)
 
-Status: **proposed, not implemented**. Discussed 2026-09-11, growing out of investigating
-vendoring ZipLib so the Linux daemon ([linux-query-daemon-design.md](linux-query-daemon-design.md),
-now fully implemented) could open `db\BData.baf` directly instead of requiring a plain-text
-`BankAccount.txt` export.
+Status: Story 1 (below) **implemented 2026-09-11**; Story 2/3 (real password-based encryption)
+**still proposed, not implemented**. Grew out of investigating vendoring ZipLib so the Linux
+daemon ([linux-query-daemon-design.md](linux-query-daemon-design.md), now fully implemented)
+could open `db\BData.baf` directly instead of requiring a plain-text `BankAccount.txt` export -
+see [ziplib-vendoring.md](ziplib-vendoring.md) for how that was done.
 
 ## Goal
 
@@ -66,8 +67,11 @@ two primitives, or hand-rolling AES-GCM.
 
 ## Story 1: vendor a trimmed ZipLib for compression, cross-platform
 
-Full findings from the initial investigation (file counts, portability check) are in this
-session's transcript; summary:
+**Implemented 2026-09-11** - see [ziplib-vendoring.md](ziplib-vendoring.md) for the full writeup
+(what was trimmed, the local patches needed, the Windows object-file-collision gotcha) and
+[DaemonDb.h](../daemon/DaemonDb.h)/[BafArchive.h](../include/BafArchive.h) for the resulting
+shared read path. Original investigation findings (file counts, portability check) below, kept for
+context:
 
 - `BankAccountFile.cpp` only ever uses `ZipFile::Open/SaveAndClose/ExtractEncryptedFile`,
   `CreateEntry/GetEntry`, `SetCompressionStream`/`GetDecompressionStream` — and always with the
@@ -83,14 +87,16 @@ session's transcript; summary:
 - No `_WIN32`/`windows.h` anywhere in the wrapper or in zlib's actual codec files (only in zlib's
   own platform-guard headers) — confirmed portable to Linux/g++ as-is.
 
-Work: fork ZipLib (mirroring the wxCharts fork precedent), trim to Store+Deflate, vendor the
-resulting ~84 files directly under `include`/`src` (or a `third_party/` subfolder) compiled inline
-by both `BankAccountCore.vcxproj` and the Makefile — no separate `.lib`, no sibling checkout, which
-also fixes today's Debug-config pain point (currently depends on a locally-built
-`..\..\ziplib\Bin\x64\Debug\*.lib` sibling). Extract the `.baf`-decode step out of
-`BankAccountFile.cpp` (which stays Windows/journal-specific) into a small platform-agnostic helper
-in `BankAccountCore`, called from both `BankAccountFile::Load()` and a new
-`DaemonDb`-side loader — same shared-core pattern as `IJournal`.
+Done: trimmed to Store+Deflate (69 files/732K, close to the ~84/~780K estimate above), vendored
+under `third_party/ziplib` compiled inline by both `BankAccountCore.vcxproj` and the `Makefile` -
+no separate `.lib`, no sibling checkout, which also fixed the old Debug-config pain point (used to
+depend on a locally-built `..\..\ziplib\Bin\x64\Debug\*.lib` sibling). No separate GitHub fork was
+created (unlike wxCharts) - a plain in-repo vendored copy was simpler for a one-time trim with no
+plan to track further upstream changes; see [ziplib-vendoring.md](ziplib-vendoring.md) for the
+local patches this still needed on top of the trim. The `.baf`-decode step was extracted out of
+`BankAccountFile.cpp` (which stays Windows/journal-specific) into `BafArchive::ReadInto()` in
+`BankAccountCore`, called from both `BankAccountFile::Load()` and `DaemonDb::ReloadIfChanged()` -
+same shared-core pattern as `IJournal`.
 
 ## Story 2: vendor Monocypher, real password-based encryption
 

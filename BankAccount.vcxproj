@@ -110,7 +110,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include;C:\Users\borka\source\wxCharts\include;C:\Users\borka\source\wxCharts\build</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\ziplib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include;C:\Users\borka\source\wxCharts\include;C:\Users\borka\source\wxCharts\build</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -128,7 +128,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\borka\source\ziplib\Source\ZipLib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include;C:\Users\borka\source\wxCharts\include;C:\Users\borka\source\wxCharts\build</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\ziplib;C:\Users\borka\source\wxWidgets\include;C:\Users\borka\source\wxWidgets\include\msvc;C:\Users\borka\source\xlnt\include;C:\Users\borka\source\wxCharts\include;C:\Users\borka\source\wxCharts\build</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <Optimization>Full</Optimization>
@@ -198,32 +198,6 @@
     <ProjectReference Include="BankAccountCore.vcxproj">
       <Project>{0cd48326-39dd-4765-a6c3-9517e4a7fa93}</Project>
     </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="..\..\ziplib\Bin\x64\Debug\bzip2.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </Library>
-    <Library Include="..\..\ziplib\Bin\x64\Debug\lzma.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </Library>
-    <Library Include="..\..\ziplib\Bin\x64\Debug\ZipLib.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </Library>
-    <Library Include="..\..\ziplib\Bin\x64\Debug\zlib.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </Library>
-    <Library Include="external\bzip2.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </Library>
-    <Library Include="external\lzma.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </Library>
-    <Library Include="external\ZipLib.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </Library>
-    <Library Include="external\zlib.lib">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </Library>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

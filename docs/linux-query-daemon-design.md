@@ -116,13 +116,14 @@ see "Decisions" below) rather than reparsing on every request.
    seam) — machinery a read-only daemon with nothing to recover has no use for. `DaemonDb`
    instead calls the same protected `AccountManager::StreamIn()` `BankAccountFile::Load()` itself
    calls, with none of the journal bookkeeping around it, via a small internal `Manager` subclass
-   (`NullJournal`, `Modified()` a no-op — nothing here ever mutates). **Known gap**: only the
-   plain-text `db\BankAccount.txt` layout is supported, not a compressed/password-protected
-   `BData.baf` — decompressing that needs ZipLib, which isn't part of the Linux build (story 1
-   deliberately didn't vendor it, since nothing on the read-only path needed it at the time).
-   Porting ZipLib to Linux is deferred to a later story rather than folded into this one; until
-   then, `--db` has to point at a plain-text export (or the file left behind on a network share
-   while a desktop session has the db open unsaved), not the `.baf` a saved db normally is.
+   (`NullJournal`, `Modified()` a no-op — nothing here ever mutates). Originally only supported
+   the plain-text `db\BankAccount.txt` layout, not a compressed/password-protected `BData.baf`,
+   since decompressing that needed ZipLib and story 1 didn't vendor it (nothing on the read-only
+   path needed it at the time). That gap was closed in
+   [db-encryption-design.md](db-encryption-design.md)'s Story 1 — see
+   [ziplib-vendoring.md](ziplib-vendoring.md) — which vendored a trimmed, portable ZipLib and gave
+   `DaemonDb` a `BafArchive::ReadInto()`-based path for `.baf`, alongside the plain-text one;
+   `--db` accepts either.
 
    Two real bugs found and fixed along the way, both genuine cross-platform issues rather than
    Linux-only workarounds:
