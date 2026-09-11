@@ -68,6 +68,16 @@ Id AccountManager::CreateOrGetAccountId(const String& account_number, const Stri
 
 IdSet AccountManager::GetIds(const QueryTopic topic, const String& name) const {
 	switch (topic) {
+	case QueryTopic::ACCOUNT:
+		{
+			IdSet ids;
+			for (size_t i = 0; i < m_accounts.size(); ++i) {
+				if (m_accounts[i]->GetFullName() == name) {
+					ids.insert(Id((Id::Type)i));
+				}
+			}
+			return ids;
+		}
 	case QueryTopic::CLIENT:
 		return m_client_man.SearchIds(name);
 	case QueryTopic::CATEGORY:
@@ -81,6 +91,8 @@ IdSet AccountManager::GetIds(const QueryTopic topic, const String& name) const {
 
 String AccountManager::GetInfo(const QueryTopic topic, const Id id) const {
 	switch (topic) {
+	case QueryTopic::ACCOUNT:
+		return m_accounts.at(id)->GetFullName();
 	case QueryTopic::CLIENT:
 		return m_client_man.GetInfo(id);
 	case QueryTopic::CATEGORY:

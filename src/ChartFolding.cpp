@@ -68,7 +68,9 @@ FoldedTopicSlices BuildFoldedTopicSlices(const ChartData& chart, ChartShape shap
 		others_running = candidate;
 		--cutoff;
 	}
-	if (cutoff == slices.size()) {
+	// Folding exactly one slice into "Others" would just rename it - only worth doing once there
+	// are at least two slices in the tail to actually collapse together.
+	if (slices.size() - cutoff <= 1) {
 		return { slices, false };
 	}
 
@@ -118,7 +120,9 @@ FoldedPeriodicSeries BuildFoldedPeriodicSeries(const ChartData& chart) {
 		others_running = candidate;
 		--cutoff;
 	}
-	if (cutoff == result.series.size()) {
+	// Folding exactly one series into "Others" would just rename it - only worth doing once there
+	// are at least two series in the tail to actually collapse together.
+	if (result.series.size() - cutoff <= 1) {
 		return result;
 	}
 

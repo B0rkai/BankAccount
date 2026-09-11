@@ -116,6 +116,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="tests\AccountManagerTests.cpp" />
+    <ClCompile Include="tests\ChartFoldingTests.cpp" />
     <ClCompile Include="tests\CommonTypesTests.cpp" />
     <ClCompile Include="tests\FavoriteQueryTests.cpp" />
     <ClCompile Include="tests\FavoriteReportTests.cpp" />

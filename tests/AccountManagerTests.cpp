@@ -265,6 +265,42 @@ TEST(ApplyEditTest, SetCategoryQueryChangesTheTransactionsCategory) {
     EXPECT_EQ(mgr.GetTransactionFieldId(identity, QueryTopic::CATEGORY), new_category);
 }
 
+TEST(MakeQueryTest, ReadOnlyQueryAccountFilterByNameFindsTheMatchingTransaction) {
+    // Regression test for the linux daemon's account-selection bug: QueryAccount::AddName()
+    // (used when the daemon's request body names specific accounts, unlike the desktop UI's
+    // checklist which always resolves accounts by id via AddId()) relies on
+    // AccountManager::GetIds(QueryTopic::ACCOUNT, name) - previously missing from that switch,
+    // so it always returned an empty set and every by-name account filter matched nothing.
+    NullJournal journal;
+    TestAccountManager mgr(journal);
+    AccountManager::TransactionIdentity identity = BuildOneTransactionFixture(mgr);
+
+    Query q;
+    QueryAccount* filter = new QueryAccount();
+    filter->AddName("OTP::Test Acc"); // GetFullName() == "<bank>::<name>" - see NamedType::GetFullName()
+    q.push_back(filter);
+
+    mgr.MakeQuery(q);
+
+    ASSERT_EQ(q.GetResult().size(), 1u);
+    EXPECT_EQ(q.GetResult().front()->GetAccountId(), identity.account_id);
+}
+
+TEST(MakeQueryTest, ReadOnlyQueryAccountFilterByUnknownNameFindsNothing) {
+    NullJournal journal;
+    TestAccountManager mgr(journal);
+    BuildOneTransactionFixture(mgr);
+
+    Query q;
+    QueryAccount* filter = new QueryAccount();
+    filter->AddName("Nonexistent Account");
+    q.push_back(filter);
+
+    mgr.MakeQuery(q);
+
+    EXPECT_EQ(q.GetResult().size(), 0u);
+}
+
 TEST(MakeQueryTest, WQueryWithNoFilterCategorizesTheMatchedTransaction) {
     NullJournal journal;
     TestAccountManager mgr(journal);

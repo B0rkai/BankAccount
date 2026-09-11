@@ -114,7 +114,9 @@ function renderTable(container, table) {
 var OTHERS_FOLD_TAIL_SHARE = 0.05;
 
 function foldSlices(labels, values) {
-  var items = labels.map(function(l, i) { return { label: l, total: values[i] }; });
+  // Drop no-activity items first (mirrors ChartFolding.cpp skipping series.m_values[i] == 0.0) -
+  // an item that never had any activity has nothing to show, let alone fold into "Others".
+  var items = labels.map(function(l, i) { return { label: l, total: values[i] }; }).filter(function(it) { return it.total !== 0; });
   items.sort(function(a, b) { return b.total - a.total; });
   var grandTotal = items.reduce(function(s, it) { return s + Math.abs(it.total); }, 0);
   var budget = grandTotal * OTHERS_FOLD_TAIL_SHARE;
@@ -124,6 +126,9 @@ function foldSlices(labels, values) {
     if (next > budget) { break; }
     tail = next; cut = i;
   }
+  // Folding exactly one item into "Others" would just rename it - only worth it once there are
+  // at least two items in the tail to actually collapse together.
+  if (items.length - cut <= 1) { cut = items.length; }
   var result = items.slice(0, cut);
   var folded = items.slice(cut);
   if (folded.length > 0) {
@@ -138,9 +143,12 @@ function foldSlices(labels, values) {
 }
 
 function foldSeries(labels, series) {
+  // Drop series with no activity in any period first (mirrors ChartFolding.cpp's
+  // ChartSeriesAllZero filter) - a series that's zero everywhere has nothing to show, let alone
+  // fold into "Others".
   var withTotal = series.map(function(s) {
     return { name: s.name, values: s.values, total: s.values.reduce(function(a, b) { return a + Math.abs(b); }, 0) };
-  });
+  }).filter(function(s) { return s.total !== 0; });
   withTotal.sort(function(a, b) { return b.total - a.total; });
   var grandTotal = withTotal.reduce(function(s, it) { return s + it.total; }, 0);
   var budget = grandTotal * OTHERS_FOLD_TAIL_SHARE;
@@ -150,6 +158,9 @@ function foldSeries(labels, series) {
     if (next > budget) { break; }
     tail = next; cut = i;
   }
+  // Folding exactly one series into "Others" would just rename it - only worth it once there are
+  // at least two series in the tail to actually collapse together.
+  if (withTotal.length - cut <= 1) { cut = withTotal.length; }
   var kept = withTotal.slice(0, cut);
   var folded = withTotal.slice(cut);
   var result = kept.map(function(s) { return { name: s.name, values: s.values }; });

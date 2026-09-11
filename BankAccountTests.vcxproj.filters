@@ -8,6 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="tests\AccountManagerTests.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="tests\ChartFoldingTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\CommonTypesTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\FavoriteQueryTests.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="tests\FavoriteReportTests.cpp"><Filter>Source Files</Filter></ClCompile>
