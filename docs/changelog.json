@@ -9,7 +9,8 @@
                        "Add a systemd unit and deployment guide for the Linux daemon (env-file-based secrets, dedicated unprivileged user, sandboxing), the seventh story of the Linux query daemon",
                        "Add GoogleTest coverage for the Linux daemon's JSON query/favorites API, the eighth and final story of the Linux query daemon",
                        "Vendor a trimmed, portable ZipLib (Store+Deflate only) directly into the repo instead of a Windows-only sibling checkout, and let the Linux daemon open a compressed/password-protected BData.baf directly instead of requiring a plain-text export",
-                       "Revise income/expense chart routing so account/type split their income and expense legs independently while category/client stay net-sign, and a plain currency-sum query renders as one unsided Summary chart; consolidate the Linux daemon's query builder to one chart per currency with a dataset dropdown (Income/Expense/Summary) alongside the chart-kind picker"
+                       "Revise income/expense chart routing so account/type split their income and expense legs independently while category/client stay net-sign, and a plain currency-sum query renders as one unsided Summary chart; consolidate the Linux daemon's query builder to one chart per currency with a dataset dropdown (Income/Expense/Summary) alongside the chart-kind picker",
+                       "Serve the Linux daemon's query builder CSS/JS from hot-reloadable daemon/static/ files instead of baking them into the page string, so a styling/behavior edit shows up on the next page load with no daemon rebuild/restart"
                    ],
     "released":  [
                      {

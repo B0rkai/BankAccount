@@ -10,6 +10,7 @@
 #include "DaemonDb.h"
 #include "FavoritesApi.h"
 #include "FrontendPage.h"
+#include "HotReloadFile.h"
 #include "HtmlReport.h"
 #include "Logger.h"
 #include "QueryApi.h"
@@ -111,11 +112,15 @@ int main(int argc, char** argv) {
 	const std::vector<FavoriteQueryDef> favorite_queries = LoadFavoriteQueries();
 	const std::vector<FavoriteReportDef> favorite_reports = LoadFavoriteReports();
 
-	// Built once at startup, not per-request - the whole page is static (its own JS does all the
-	// per-query work via fetch()), so there's nothing request-specific to rebuild. Reuses
-	// HtmlReport.h's existing resources\ loaders (same vendored Chart.js/Grid.js the static-report
-	// path already inlines) rather than reading those files a second, daemon-specific way.
-	const std::string frontend_page = std::string(BuildFrontendPage(LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss()).utf8_str());
+	// Built once at startup, not per-request - reuses HtmlReport.h's existing resources\ loaders
+	// (same vendored Chart.js/Grid.js the static-report path already inlines) rather than reading
+	// those files a second, daemon-specific way. Leaves %PAGE_CSS%/%PAGE_JS% unresolved (see
+	// FrontendPage.h) since those two are meant to be hand-tweaked without a daemon rebuild;
+	// page_css/page_js below re-check their files' mtimes on every GET / and only re-read from disk
+	// when something actually changed, so a styling edit shows up on the next page load.
+	const String frontend_shell = BuildFrontendPage(LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss());
+	HotReloadFile page_css("daemon/static/style.css");
+	HotReloadFile page_js("daemon/static/app.js");
 
 	std::atomic<bool> stop_watcher{false};
 	std::thread watcher([&] {
@@ -153,7 +158,12 @@ int main(int argc, char** argv) {
 	});
 
 	server.Get("/", [&](const httplib::Request&, httplib::Response& res) {
-		res.set_content(frontend_page, "text/html; charset=utf-8");
+		String page = InjectPageAssets(frontend_shell, String::FromUTF8(page_css.Content().c_str()), String::FromUTF8(page_js.Content().c_str()));
+		// The whole point of HotReloadFile is that a style.css/app.js edit shows up on the next
+		// load with no daemon restart - a browser-cached copy of this page would silently defeat
+		// that, so tell it never to cache this response.
+		res.set_header("Cache-Control", "no-store");
+		res.set_content(std::string(page.utf8_str()), "text/html; charset=utf-8");
 	});
 
 	server.Get("/accounts", [&](const httplib::Request&, httplib::Response& res) {

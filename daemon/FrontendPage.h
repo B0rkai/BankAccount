@@ -32,4 +32,17 @@
 // page but everything else still renders (buttons, form, JSON preview would just have no
 // table/chart widgets to attach to - in practice both are always non-empty, since the same
 // resources\ files already ship with every build).
+//
+// The returned string still has two placeholders left unresolved, %PAGE_CSS%/%PAGE_JS% - unlike
+// the vendored libraries above, the daemon's own styling/behavior (daemon/static/style.css,
+// daemon/static/app.js) is meant to be hand-tweaked without a rebuild, so it isn't baked in here.
+// Call BuildFrontendPage() once at daemon startup (its inputs never change without a rebuild
+// anyway) and InjectPageAssets() on every request to splice in the current file contents.
 String BuildFrontendPage(const String& chartjs_source, const String& gridjs_source, const String& gridjs_css);
+
+// Splices `page_css`/`page_js` into the %PAGE_CSS%/%PAGE_JS% placeholders BuildFrontendPage()
+// leaves in `page_shell`. Cheap (two substring replaces against small inputs, unlike the
+// megabyte-scale vendored-library substitution BuildFrontendPage() does), meant to be called on
+// every GET / with content from a HotReloadFile.h-backed cache (see daemon/main.cpp) so an on-disk
+// edit to those two files shows up on the next page load with no daemon rebuild/restart.
+String InjectPageAssets(const String& page_shell, const String& page_css, const String& page_js);

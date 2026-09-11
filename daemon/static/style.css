@@ -1,0 +1,35 @@
+* { box-sizing: border-box; }
+body { font-family: Segoe UI, Arial, sans-serif; font-size: 14px; margin: 0; padding: 16px; color: #222; background: #fafafa; }
+h1 { font-size: 20px; margin: 0 0 12px; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+h3 { font-size: 15px; margin: 16px 0 8px; }
+fieldset { border: 1px solid #ccc; border-radius: 4px; margin: 0 0 12px; padding: 10px 12px; }
+legend { font-weight: 600; padding: 0 4px; }
+label { display: inline-block; margin: 2px 10px 2px 0; white-space: nowrap; }
+input[type=text], input[type=date], select { padding: 4px 6px; font-size: 14px; width: 100%; max-width: 320px; }
+.row { margin-bottom: 8px; }
+.row > label.field-label { display: block; font-weight: 600; margin-bottom: 2px; }
+.checkbox-list { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+button { padding: 6px 14px; font-size: 14px; cursor: pointer; }
+#status { margin: 8px 0; color: #a33; min-height: 1.2em; }
+.favorites-bar { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; padding: 10px 12px; background: #eef; border-radius: 4px; }
+.favorites-bar .group { display: flex; align-items: center; gap: 6px; }
+.result-section { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 12px; margin-bottom: 16px; }
+.table-container { overflow-x: auto; margin-bottom: 12px; }
+.charts-container { display: flex; flex-wrap: wrap; gap: 20px; }
+.chart-card { flex: 1 1 320px; max-width: 480px; min-width: 0; border: 1px solid #eee; border-radius: 4px; padding: 8px; }
+.chart-title { font-weight: 600; margin-bottom: 4px; }
+.chart-card select { max-width: 160px; margin-bottom: 6px; }
+td.num, th.num, table.gridjs-table td.num, table.gridjs-table th.num { text-align: right; font-family: Consolas, 'Courier New', monospace; }
+/* gridjs.mermaid.min.css's own theme padding (12px/24px, 14px/24px) and table-layout:fixed are
+   element+class/tag+class specificity (0,1,1) - a class-only override loses regardless of source
+   order, so match element+class/tag+class here. table-layout:fixed locks every column's width to
+   whatever the *first* rendered row needs, so a column with a short value in row 1 but much longer
+   values later (e.g. HUF amounts vs EUR amounts in the same "Amount" column) wraps those later
+   rows even under white-space:nowrap - switching to auto sizes each column from all rows' content. */
+table.gridjs-table { table-layout: auto; }
+td.gridjs-td, th.gridjs-th { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+@media (max-width: 480px) {
+  label { display: block; margin: 4px 0; }
+}
