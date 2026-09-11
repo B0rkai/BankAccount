@@ -31,7 +31,7 @@ namespace {
 		}
 		for (const auto& item : j[key]) {
 			if (item.is_string()) {
-				result.push_back(String(item.get<std::string>()));
+				result.push_back(String::FromUTF8(item.get<std::string>().c_str()));
 			}
 		}
 		return result;
@@ -39,7 +39,7 @@ namespace {
 
 	String ReadString(const nlohmann::json& j, const char* key) {
 		if (j.contains(key) && j[key].is_string()) {
-			return String(j[key].get<std::string>());
+			return String::FromUTF8(j[key].get<std::string>().c_str());
 		}
 		return cStringEmpty;
 	}
