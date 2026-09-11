@@ -36,7 +36,9 @@ constexpr int cREPORT_GRID_CELL_PADDING_H_PX = 12;   // .gridjs-td/.gridjs-th ho
 struct ReportSection {
 	String heading;          // from Query.h's DescribeQueryElement()
 	StringTable table;
-	ChartResult chart_data;  // empty/IsEmpty() for a plain transaction-list section
+	ChartResult chart_data;  // empty/IsEmpty() for a plain transaction-list section; a "Currency
+	                         // Summary" section (no real aggregation topic) populates m_summary
+	                         // instead of m_income/m_expense - see ChartData.h
 	ChartShape chart_shape = ChartShape::NONE;
 };
 
@@ -62,19 +64,21 @@ String LoadGridJsCss();
 // Builds one self-contained HTML document: `title` as the page heading, one section per
 // `sections` entry (a table, plus - for each of `chart_kinds` that's valid for that section's
 // ChartShape, for each income/expense side allowed by `chart_sides` and present in the data, for
-// each currency present in that side's ChartDataByCurrency - one Chart.js <canvas>). Each chart's
-// topics/series are folded via BuildFoldedTopicSlices()/BuildFoldedPeriodicSeries()
-// (ChartFolding.h) exactly like the live wxCharts dialog, so a chart with dozens of
-// categories/clients renders as a handful of slices/bars plus one trailing "Others" rather than an
-// unreadable wall of them. `chart_kinds` is a subset of "pie"/"doughnut"/"polar_area"/"bar"/
-// "stacked_bar"/"line" (mirrors ChartWidgetKind, see ChartDialog.h); an unrecognized string, or a
-// kind not valid for a given section's shape (TOPIC_SUM: pie/doughnut/polar_area/bar only - a
-// single-series shape can't stack or trend; PERIODIC: all six, matching ChartTabPanel::
-// PopulateKindChoices()), is silently skipped for that section - same "skip rather than fail"
-// contract as FavoriteQueryDef's own chart_kind. `chart_sides` is a subset of "income"/"expense"
-// (matching FavoriteQueryDef::chart_side's own lowercase convention); empty, or containing only
-// unrecognized values, means no restriction (both sides rendered, the pre-existing default) -
-// never an empty report. `chartjs_source` (see LoadChartJsSource()) is inlined verbatim into one
+// each currency present in that side's ChartDataByCurrency - one Chart.js <canvas>). A section
+// with no real aggregation topic (ChartResult::m_summary non-empty rather than m_income/m_expense
+// - see ChartData.h) renders a single "Summary" chart per currency instead, unaffected by
+// `chart_sides` (there's no side to filter). Each chart's topics/series are folded via
+// BuildFoldedTopicSlices()/BuildFoldedPeriodicSeries() (ChartFolding.h) exactly like the live
+// wxCharts dialog, so a chart with dozens of categories/clients renders as a handful of
+// slices/bars plus one trailing "Others" rather than an unreadable wall of them. `chart_kinds` is
+// a subset of "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line" (mirrors ChartWidgetKind,
+// see ChartDialog.h); an unrecognized string, or a kind not valid for a given section's shape
+// (TOPIC_SUM: pie/doughnut/polar_area/bar only - a single-series shape can't stack or trend;
+// PERIODIC: all six, matching ChartTabPanel::PopulateKindChoices()), is silently skipped for that
+// section - same "skip rather than fail" contract as FavoriteQueryDef's own chart_kind.
+// `chart_sides` is a subset of "income"/"expense" (matching FavoriteQueryDef::chart_side's own
+// lowercase convention); empty, or containing only unrecognized values, means no restriction (both
+// sides rendered, the pre-existing default) - never an empty report. `chartjs_source` (see LoadChartJsSource()) is inlined verbatim into one
 // <script> block so the output file has zero external references; passing an empty string omits
 // chart rendering entirely (tables only). `gridjs_source`/`gridjs_css` (see LoadGridJsSource()/
 // LoadGridJsCss()) are likewise inlined verbatim and, when non-empty, make every section's table

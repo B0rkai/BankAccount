@@ -11,7 +11,7 @@ by amount/date, and periodic yearly/monthly/daily summaries).
 
 ## Build
 
-No CMake/Makefile — a Visual Studio solution (`BankAccount.sln`) built with MSBuild, three projects:
+No CMake/Makefile — a Visual Studio solution (`BankAccount.sln`) built with MSBuild, four projects:
 
 - `BankAccountCore.vcxproj` — static lib, every GUI-free domain file (`AccountManager`, `Account`,
   `Query`/`WQuery`, `ManagerType`/`ManagedType`, `Currency`, `Journal`, `Logger`, ...). No wx GUI
@@ -20,6 +20,9 @@ No CMake/Makefile — a Visual Studio solution (`BankAccount.sln`) built with MS
   a `<ProjectReference>`.
 - `BankAccountTests.vcxproj` — GoogleTest console exe (`tests/*.cpp`), also links
   `BankAccountCore.lib`; never links wx GUI libs or xlnt.
+- `BankAccountCli.vcxproj` — headless console exe, also links only `BankAccountCore.lib`.
+  Generates Favorite Reports to `.html` unattended (e.g. from a scheduled task), read-only. Detail:
+  [docs/bankaccount-cli.md](docs/bankaccount-cli.md).
 
 Configs: Debug/Release x86 and x64 — **only x64 is wired up** (sets `IncludePath`, links
 `external/*.lib`); Win32 configs are stale/unused. C++17, Unicode charset.
@@ -28,7 +31,7 @@ Configs: Debug/Release x86 and x64 — **only x64 is wired up** (sets `IncludePa
   ```
   msbuild BankAccount.sln /p:Configuration=Debug /p:Platform=x64
   ```
-  (builds all three; MSBuild resolves `BankAccountCore` first via the project reference). Point
+  (builds all four; MSBuild resolves `BankAccountCore` first via the project reference). Point
   at a single `.vcxproj` instead of the `.sln` to build just that project.
 - If `msbuild` isn't on `PATH`, locate it via `vswhere` instead of guessing a path:
   ```powershell
@@ -59,6 +62,16 @@ vendored directly in this repo: **nlohmann/json** (MIT, v3.11.3) at `include/nlo
 single-header, no-build, used for the small JSON config/data files (`db\location.json`,
 `release.json`, `db\favorite_queries.json` — schemas in
 [docs/json-file-schemas.md](docs/json-file-schemas.md)).
+
+## Linux query daemon
+
+A second, non-MSBuild build lives alongside the Windows solution: the top-level `Makefile` builds
+a read-only subset of `BankAccountCore` for Linux (no import/mutation/Windows-only file-locking
+code) plus `daemon/`, an HTTP+JSON server (vendored [cpp-httplib](https://github.com/yhirose/cpp-httplib)
+as `include/httplib.h`) exposing the `Query` engine and a self-contained browser frontend for
+ad-hoc querying of the live db over the LAN/Tailscale. Design and story-by-story history:
+[docs/linux-query-daemon-design.md](docs/linux-query-daemon-design.md); systemd deployment/
+redeploy/token-rotation: [docs/linux-daemon-deployment.md](docs/linux-daemon-deployment.md).
 
 ## Data storage
 

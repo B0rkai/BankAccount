@@ -353,7 +353,11 @@ namespace {
 			return; // unrecognized chart_kinds entry - skip silently, same contract as FavoriteQueryDef::chart_kind
 		}
 		struct Side { const char* label; const ChartDataByCurrency* data; };
-		const Side sides[] = { {"Income", &chart_data.m_income}, {"Expense", &chart_data.m_expense} };
+		// "Summary" (ChartResult::m_summary - a result with no real aggregation topic, see
+		// ChartData.h) is mutually exclusive with Income/Expense, and side_allowed() only ever
+		// filters "Income"/"Expense" labels (see BuildSideFilter()) - so a chart_sides restriction
+		// never suppresses a Summary chart, matching the "no real side to filter" contract.
+		const Side sides[] = { {"Summary", &chart_data.m_summary}, {"Income", &chart_data.m_income}, {"Expense", &chart_data.m_expense} };
 		for (const Side& side : sides) {
 			if (!side_allowed(side.label)) {
 				continue;

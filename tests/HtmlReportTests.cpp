@@ -152,6 +152,30 @@ std::vector<ReportSection> BothSidesSection() {
     return { section };
 }
 
+// A "Currency Summary" section (no real aggregation topic - see ChartData.h's ChartResult
+// comment) populates m_summary instead of m_income/m_expense.
+ChartResult MakeSummaryChartResult() {
+    ChartResult result;
+    ChartData data;
+    data.m_currency = HUF;
+    data.m_labels = { "Income", "Expense" };
+    ChartSeries series;
+    series.m_name = "Sum";
+    series.m_values = { 9000.0, 2000.0 };
+    data.m_series.push_back(series);
+    result.m_summary[HUF] = data;
+    return result;
+}
+
+std::vector<ReportSection> SummarySection() {
+    ReportSection section;
+    section.heading = "Currency Summary";
+    section.table = MakeTwoColumnTable();
+    section.chart_data = MakeSummaryChartResult();
+    section.chart_shape = ChartShape::TOPIC_SUM;
+    return { section };
+}
+
 TEST(BuildHtmlReportTest, TableCellsAppearInOutput) {
     String html = BuildHtmlReport("My Report", OneTopicSumSection(), {}, {}, cStringEmpty);
     EXPECT_NE(html.Find("Groceries"), wxNOT_FOUND);
@@ -333,6 +357,21 @@ TEST(BuildHtmlReportTest, UnrecognizedChartSidesValueIsIgnoredNotTreatedAsExclus
     String html = BuildHtmlReport("My Report", BothSidesSection(), { "pie" }, { "bogus" }, "/* fake chartjs */");
     EXPECT_NE(html.Find("Expense ("), wxNOT_FOUND);
     EXPECT_NE(html.Find("Income ("), wxNOT_FOUND);
+}
+
+TEST(BuildHtmlReportTest, SummarySectionRendersAsOneUnsidedChartNotIncomeExpenseTabs) {
+    String html = BuildHtmlReport("My Report", SummarySection(), { "pie" }, {}, "/* fake chartjs */");
+    EXPECT_NE(html.Find("Summary ("), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("Income ("), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("Expense ("), wxNOT_FOUND);
+}
+
+TEST(BuildHtmlReportTest, ChartSidesRestrictionDoesNotSuppressASummarySection) {
+    // "Summary" has no side to filter (see AppendChartsForKind's side_allowed() contract) - a
+    // chart_sides restriction meant for Income/Expense sections must never silently blank out an
+    // unsided one.
+    String html = BuildHtmlReport("My Report", SummarySection(), { "pie" }, { "expense" }, "/* fake chartjs */");
+    EXPECT_NE(html.Find("Summary ("), wxNOT_FOUND);
 }
 
 TEST(BuildHtmlReportTest, EmptyGridJsSourceRendersPlainStaticTable) {

@@ -101,6 +101,65 @@ TEST(RunAdHocQueryTest, CategoryAggregationRequestReturnsExpectedTableAndChart) 
     ASSERT_EQ(section["chart"]["expense"].size(), 1u); // one currency, HUF
     EXPECT_EQ(section["chart"]["expense"][0]["currency"], "HUF");
     EXPECT_EQ(section["chart"]["expense"][0]["labels"].size(), 2u);
+    EXPECT_TRUE(section["chart"]["summary"].empty()); // a real aggregation topic - not the CURRENCY fallback
+}
+
+TEST(RunAdHocQueryTest, NoAggregationRequestReturnsAnUnsidedSummaryChart) {
+    // No "aggregate_by" - BuildQueryFromFavorite() falls back to a bare QuerySumByTopic
+    // (GetTopic()==CURRENCY, see QueryTests.cpp's own coverage of this), which has no real side to
+    // split by and so populates chart.summary instead of chart.income/chart.expense.
+    NullJournal journal;
+    TestAccountManager mgr(journal);
+    TempRecoveryFile file("test_queryapi_fixture4.tmp", kFixtureContent);
+    ASSERT_TRUE(mgr.ApplyRecoveryFile(file.Path(), true).success);
+
+    QueryApiResult result = RunAdHocQuery("{}", mgr);
+    ASSERT_EQ(result.http_status, 200);
+    nlohmann::json sections = nlohmann::json::parse(result.body);
+    ASSERT_EQ(sections.size(), 1u);
+    const nlohmann::json& section = sections[0];
+    EXPECT_EQ(section["heading"], "Currency Summary");
+    ASSERT_TRUE(section.contains("chart"));
+    EXPECT_TRUE(section["chart"]["income"].empty());
+    EXPECT_TRUE(section["chart"]["expense"].empty());
+    ASSERT_EQ(section["chart"]["summary"].size(), 1u); // one currency, HUF
+    EXPECT_EQ(section["chart"]["summary"][0]["currency"], "HUF");
+    ASSERT_EQ(section["chart"]["summary"][0]["labels"].size(), 1u); // both fixture transactions are expenses
+    EXPECT_EQ(section["chart"]["summary"][0]["labels"][0], "Expense");
+}
+
+TEST(RunAdHocQueryTest, AccountAggregationSplitsIncomeAndExpenseForTheSameAccount) {
+    // Unlike category (see CategoryAggregationRequestReturnsExpectedTableAndChart above), an
+    // account carrying both a salary and rent should end up on both sides at once.
+    const char* const kMixedDirectionFixture =
+        "ACCOUNT\t0\t1177337704983110\tTest Acc\tOTP\tHUF\n"
+        "CLIENT\t1\tAlice\n"
+        "CATEGORY\t1\tSalary\n"
+        "CATEGORY\t2\tRent\n"
+        "TYPE\t0\tPurchase\n"
+        "TRANSACTION\t0\t45000\t0\t9000\t1\t1\n"
+        "TRANSACTION\t0\t45001\t0\t-2000\t1\t2\n";
+    NullJournal journal;
+    TestAccountManager mgr(journal);
+    TempRecoveryFile file("test_queryapi_fixture5.tmp", kMixedDirectionFixture);
+    ASSERT_TRUE(mgr.ApplyRecoveryFile(file.Path(), true).success);
+
+    QueryApiResult result = RunAdHocQuery(R"({"aggregate_by":["account"]})", mgr);
+    ASSERT_EQ(result.http_status, 200);
+    nlohmann::json sections = nlohmann::json::parse(result.body);
+    ASSERT_EQ(sections.size(), 1u);
+    const nlohmann::json& section = sections[0];
+    EXPECT_EQ(section["heading"], "Account Summary");
+    ASSERT_TRUE(section.contains("chart"));
+    EXPECT_TRUE(section["chart"]["summary"].empty());
+    ASSERT_EQ(section["chart"]["income"].size(), 1u);
+    ASSERT_EQ(section["chart"]["expense"].size(), 1u);
+    // Account names resolve as "Bank::Name" (see AccountManager's name resolution) - "OTP::Test Acc"
+    // here, matching the ACCOUNT line's bank/name fields above.
+    EXPECT_EQ(section["chart"]["income"][0]["labels"][0], "OTP::Test Acc");
+    EXPECT_EQ(section["chart"]["income"][0]["series"][0]["values"][0], 9000);
+    EXPECT_EQ(section["chart"]["expense"][0]["labels"][0], "OTP::Test Acc");
+    EXPECT_EQ(section["chart"]["expense"][0]["series"][0]["values"][0], 2000);
 }
 
 TEST(RunAdHocQueryTest, EmptyAccountsFilterMeansEveryLoadedAccount) {

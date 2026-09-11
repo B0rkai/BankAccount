@@ -40,8 +40,8 @@ enum class ChartWidgetKind {
 
 // One notebook tab's worth of chart UI: a currency selector (only shown when the data spans more
 // than one currency), a chart-type switcher, and the actual chart+legend controls for one
-// ChartDataByCurrency (either the Income or the Expense side of a ChartResult - see
-// ChartDialog). Switching chart type, currency, or the convert-currencies checkbox never
+// ChartDataByCurrency (the Income side, the Expense side, or the unsided Summary of a ChartResult
+// - see ChartDialog). Switching chart type, currency, or the convert-currencies checkbox never
 // re-runs the query, it just rebuilds the wxCharts controls from the same already-computed data.
 class ChartTabPanel : public wxPanel {
 	ChartDataByCurrency m_data;
@@ -102,10 +102,11 @@ public:
 };
 
 // Shows one query's ChartResult in a separate window alongside the result grid (never replacing
-// it), as two notebook tabs - Income and Expense are never merged into one signed chart, since a
+// it), as either two notebook tabs (Income/Expense - never merged into one signed chart, since a
 // pie slice/bar-chart axis can't represent a negative magnitude and a merged net trend obscures
-// which direction actually moved. Only opened when ChartResult::IsEmpty() is false - see
-// cMain::ShowChartClicked/ShowOrRefreshChart.
+// which direction actually moved) or, for a result with no real aggregation topic (ChartResult::
+// m_summary non-empty - see ChartData.h), a single "Summary" tab instead. Only opened when
+// ChartResult::IsEmpty() is false - see cMain::ShowChartClicked/ShowOrRefreshChart.
 //
 // A wxFrame, not a wxDialog, despite the class's name (kept to avoid an unrelated file-rename
 // churn) - cMain::ShowOrRefreshChart() shows it non-modally and reuses/rebuilds it across

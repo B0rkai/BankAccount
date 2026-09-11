@@ -67,6 +67,14 @@ nlohmann::json ChartResultToJson(const ChartResult& result) {
 	for (const auto& pair : result.m_expense) {
 		j["expense"].push_back(ChartDataToJson(pair.second));
 	}
+	// Populated instead of income/expense for a result with no real aggregation topic (see
+	// ChartData.h's ChartResult comment) - each entry already carries "Income"/"Expense" as its
+	// own series/labels, so the frontend renders it as one unsided chart per currency rather than
+	// an Income/Expense pair.
+	j["summary"] = nlohmann::json::array();
+	for (const auto& pair : result.m_summary) {
+		j["summary"].push_back(ChartDataToJson(pair.second));
+	}
 	return j;
 }
 

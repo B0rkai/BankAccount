@@ -394,6 +394,26 @@ see "Decisions" below) rather than reparsing on every request.
    build in WSL still succeeds unchanged (this story added no new files to it - `QueryApi.cpp`/
    `FavoritesApi.cpp` were already in `DAEMON_SRCS` since stories 3/4).
 
+## Revision (2026-09-11): unsided summary charts, one chart per currency
+
+Follows [html-reports-design.md](html-reports-design.md)'s own "three-way income/expense/summary
+routing" revision - `QueryApi.h`'s `chart` JSON gained a third `"summary"` array alongside
+`"income"`/`"expense"` (each entry shaped exactly like an income/expense one, but already carrying
+"Income"/"Expense" as its own labels/series - see that doc for why), populated instead of the other
+two for a "Currency Summary" (no `aggregate_by` chosen) result.
+
+The frontend page (story 5) also stopped rendering one card per (side, currency) combination -
+account/type aggregation can now legitimately produce both a non-empty income and expense chart for
+the same currency, which would have grown a section to 4+ always-visible cards. `daemon/
+FrontendPage.cpp`'s `renderChartsForSection()` instead groups a section's `income`/`expense`/
+`summary` entries by currency first, and renders one canvas per currency with a "Dataset" dropdown
+(only shown when a currency actually has more than one dataset - Summary is mutually exclusive with
+Income/Expense, so in practice it's a 2-item Income/Expense choice) alongside the pre-existing
+chart-kind dropdown, both just redrawing the same `Chart` instance in place. A `chart_sides`
+restriction (from a favorite report's `chart_sides`) narrows the dataset dropdown's options the same
+way it narrows `HtmlReport.cpp`'s side filter - "summary" is exempt from that restriction for the
+same "no real side to filter" reason.
+
 ## Decisions (2026-09-10)
 
 - **Explicit "Run" button**, not live-as-you-type — matches the desktop's own model, no

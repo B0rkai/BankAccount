@@ -536,24 +536,30 @@ ChartDialog::ChartDialog(wxWindow* parent, const ChartResult& data, ChartShape s
 	: wxFrame(parent, wxID_ANY, "Chart", wxDefaultPosition, wxSize(1000, 800)) {
 	SetMinSize(wxSize(700, 500)); // a topic-sum bar/pie can have dozens of categories - more room by default, still shrinkable
 	wxNotebook* notebook = new wxNotebook(this, wxID_ANY);
-	// Guarded independently (rather than assuming both are always non-empty together) - the
-	// common case does mirror the same currencies on both sides (see
-	// QuerySumByTopic::GetChartResult()/PeriodicQuery::GetChartResult()), but nothing here
-	// depends on that holding. Income always added first (tab order stays fixed/predictable
-	// regardless of preferred_side) - only which tab starts selected changes below.
-	int income_page = -1, expense_page = -1;
-	if (!data.m_income.empty()) {
-		notebook->AddPage(new ChartTabPanel(notebook, data.m_income, shape, data.m_period_unit, preferred_kind), "Income");
-		income_page = (int)notebook->GetPageCount() - 1;
-	}
-	if (!data.m_expense.empty()) {
-		notebook->AddPage(new ChartTabPanel(notebook, data.m_expense, shape, data.m_period_unit, preferred_kind), "Expense");
-		expense_page = (int)notebook->GetPageCount() - 1;
-	}
-	if ((preferred_side == "expense") && (expense_page >= 0)) {
-		notebook->SetSelection(expense_page);
-	} else if ((preferred_side == "income") && (income_page >= 0)) {
-		notebook->SetSelection(income_page);
+	if (!data.m_summary.empty()) {
+		// No real aggregation topic (see ChartData.h's ChartResult comment) - one "Summary" tab
+		// instead of an Income/Expense pair; preferred_side has nothing to select between here.
+		notebook->AddPage(new ChartTabPanel(notebook, data.m_summary, shape, data.m_period_unit, preferred_kind), "Summary");
+	} else {
+		// Guarded independently (rather than assuming both are always non-empty together) - the
+		// common case does mirror the same currencies on both sides (see
+		// QuerySumByTopic::GetChartResult()/PeriodicQuery::GetChartResult()), but nothing here
+		// depends on that holding. Income always added first (tab order stays fixed/predictable
+		// regardless of preferred_side) - only which tab starts selected changes below.
+		int income_page = -1, expense_page = -1;
+		if (!data.m_income.empty()) {
+			notebook->AddPage(new ChartTabPanel(notebook, data.m_income, shape, data.m_period_unit, preferred_kind), "Income");
+			income_page = (int)notebook->GetPageCount() - 1;
+		}
+		if (!data.m_expense.empty()) {
+			notebook->AddPage(new ChartTabPanel(notebook, data.m_expense, shape, data.m_period_unit, preferred_kind), "Expense");
+			expense_page = (int)notebook->GetPageCount() - 1;
+		}
+		if ((preferred_side == "expense") && (expense_page >= 0)) {
+			notebook->SetSelection(expense_page);
+		} else if ((preferred_side == "income") && (income_page >= 0)) {
+			notebook->SetSelection(income_page);
+		}
 	}
 
 	wxBoxSizer* top = new wxBoxSizer(wxVERTICAL);

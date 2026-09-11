@@ -240,6 +240,29 @@ report author can set it to `["expense"]` to produce a spending-only report inst
 chart plus one expense chart per section; empty, or containing only unrecognized values, falls
 back to rendering both sides, so a missing/misspelled key never silently produces an empty report.
 
+## Revision (2026-09-11): three-way income/expense/summary routing
+
+Originally every `TOPIC_SUM`/`PERIODIC` result routed a whole topic to one side, decided by the
+sign of its net sum - simple, but wrong for a topic that's a structural money conduit (an account,
+or a transaction type like "Transfer") rather than an inherently income- or expense-flavored one
+(a category, a client): an account that both receives a salary and pays rent used to show up
+entirely on one tab, its other direction invisible. `Query.cpp`'s `ChartSideMode` (used by both
+`QuerySumByTopic::GetChartResult()` and `PeriodicQuery::GetChartResult()`, so both stay in
+lockstep) now picks one of three routings per topic kind: `NET_SIGN` (category, client - unchanged,
+one side) `SPLIT` (account, type - income leg and expense leg routed independently, so the same
+topic can legitimately appear on both charts, each showing only its own-direction total) and
+`UNSIDED` (no real aggregation topic chosen at all - the `GetTopic()==CURRENCY` "Currency Summary"
+fallback `BuildQueryFromFavorite()` pushes for an empty `aggregate_by` - both legs become "Income"/
+"Expense" entries in one combined chart instead of a two-tab split with nothing meaningful to
+split by). The `UNSIDED` case populates `ChartResult::m_summary` (see `ChartData.h`) instead of
+`m_income`/`m_expense`; `AppendChartsForKind` (`HtmlReport.cpp`) renders it as one "Summary" chart
+per currency, and - since `side_allowed()` only ever filters "Income"/"Expense" labels - a
+`chart_sides` restriction never suppresses it, so the pre-existing filter contract above keeps
+working unchanged on top of the new default. `ChartDialog`/`ChartTabPanel` (the in-app chart
+window) mirror the same split: a single "Summary" notebook tab instead of the Income/Expense pair
+when `m_summary` is populated. `FavoriteQueryDef::chart_side` is unaffected - it still only picks
+which already-produced tab/chart starts selected, not how the data was produced.
+
 ## Folding many topics into "Others"
 
 A `TOPIC_SUM`/`PERIODIC` chart backing a report section can have as many topics (categories,

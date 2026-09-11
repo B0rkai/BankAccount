@@ -381,13 +381,33 @@ function buildChartConfig(kind, shape, currencyData) {
   };
 }
 
+// One card, one visible chart per currency - rather than a separate card per (side, currency)
+// combination, every dataset available for a currency (its "Summary" chart, or its "Income"/
+// "Expense" charts - the two are mutually exclusive, see ChartData.h's ChartResult comment on the
+// C++ side) shares one canvas, switched via a "Dataset" dropdown alongside the existing chart-kind
+// dropdown. Keeps the page from growing 4+ cards per section once an account/type breakdown can
+// legitimately have both an Income and an Expense chart for the same currency.
+var DATASET_ORDER = ['summary', 'income', 'expense'];
+var DATASET_LABELS = { summary: 'Summary', income: 'Income', expense: 'Expense' };
+
 function renderChartsForSection(container, section, restriction) {
   if (typeof Chart === 'undefined') { return; }
   var shape = section.chart_shape;
   var chart = section.chart;
-  var sidesList = [['income', chart.income], ['expense', chart.expense]];
+
+  var byCurrency = {}; // currency code -> { summary: data, income: data, expense: data } (sparse)
+  DATASET_ORDER.forEach(function(key) {
+    (chart[key] || []).forEach(function(data) {
+      byCurrency[data.currency] = byCurrency[data.currency] || {};
+      byCurrency[data.currency][key] = data;
+    });
+  });
+
+  var datasetOrder = DATASET_ORDER;
   if (restriction && restriction.sides && restriction.sides.length) {
-    sidesList = sidesList.filter(function(pair) { return restriction.sides.indexOf(pair[0]) !== -1; });
+    // "summary" has no side to restrict (see the C++ side_allowed() contract HtmlReport.cpp
+    // mirrors) - a chart_sides restriction only ever narrows which of income/expense show.
+    datasetOrder = datasetOrder.filter(function(k) { return (k === 'summary') || (restriction.sides.indexOf(k) !== -1); });
   }
   var defaultKinds = kindsForShape(shape);
   var availableKinds = defaultKinds;
@@ -395,34 +415,57 @@ function renderChartsForSection(container, section, restriction) {
     var narrowed = defaultKinds.filter(function(k) { return restriction.kinds.indexOf(k) !== -1; });
     if (narrowed.length) { availableKinds = narrowed; }
   }
-  sidesList.forEach(function(pair) {
-    var sideName = pair[0], list = pair[1];
-    list.forEach(function(currencyData) {
-      var card = document.createElement('div');
-      card.className = 'chart-card';
-      var title = document.createElement('div');
-      title.className = 'chart-title';
-      title.textContent = (sideName === 'income' ? 'Income' : 'Expense') + ' (' + currencyData.currency + ')';
-      var kindSelect = document.createElement('select');
-      availableKinds.forEach(function(k) {
+
+  Object.keys(byCurrency).forEach(function(currencyCode) {
+    var datasets = byCurrency[currencyCode];
+    var availableDatasetKeys = datasetOrder.filter(function(k) { return datasets[k]; });
+    if (!availableDatasetKeys.length) { return; }
+
+    var card = document.createElement('div');
+    card.className = 'chart-card';
+    var title = document.createElement('div');
+    title.className = 'chart-title';
+    card.appendChild(title);
+
+    var controls = document.createElement('div');
+    controls.className = 'inline';
+    var datasetSelect = null;
+    // Only offered when there's an actual choice - a Summary-only or single-side currency just
+    // states its dataset in the title instead of a lone one-item dropdown.
+    if (availableDatasetKeys.length > 1) {
+      datasetSelect = document.createElement('select');
+      availableDatasetKeys.forEach(function(k) {
         var opt = document.createElement('option');
-        opt.value = k; opt.textContent = chartTypeMeta(k).label;
-        kindSelect.appendChild(opt);
+        opt.value = k; opt.textContent = DATASET_LABELS[k];
+        datasetSelect.appendChild(opt);
       });
-      var canvas = document.createElement('canvas');
-      card.appendChild(title);
-      card.appendChild(kindSelect);
-      card.appendChild(canvas);
-      container.appendChild(card);
-      var chartInstance = null;
-      function redraw() {
-        if (chartInstance) { chartInstance.destroy(); }
-        var cfg = buildChartConfig(kindSelect.value, shape, currencyData);
-        if (cfg) { chartInstance = new Chart(canvas, cfg); }
-      }
-      kindSelect.addEventListener('change', redraw);
-      redraw();
+      controls.appendChild(datasetSelect);
+    }
+    var kindSelect = document.createElement('select');
+    availableKinds.forEach(function(k) {
+      var opt = document.createElement('option');
+      opt.value = k; opt.textContent = chartTypeMeta(k).label;
+      kindSelect.appendChild(opt);
     });
+    controls.appendChild(kindSelect);
+    card.appendChild(controls);
+
+    var canvas = document.createElement('canvas');
+    card.appendChild(canvas);
+    container.appendChild(card);
+
+    var chartInstance = null;
+    function currentKey() { return datasetSelect ? datasetSelect.value : availableDatasetKeys[0]; }
+    function redraw() {
+      var key = currentKey();
+      title.textContent = DATASET_LABELS[key] + ' (' + currencyCode + ')';
+      if (chartInstance) { chartInstance.destroy(); }
+      var cfg = buildChartConfig(kindSelect.value, shape, datasets[key]);
+      if (cfg) { chartInstance = new Chart(canvas, cfg); }
+    }
+    if (datasetSelect) { datasetSelect.addEventListener('change', redraw); }
+    kindSelect.addEventListener('change', redraw);
+    redraw();
   });
 }
 

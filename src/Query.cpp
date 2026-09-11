@@ -1,5 +1,6 @@
 #include <sstream>
 #include <algorithm>
+#include <functional>
 #include "Query.h"
 #include "Currency.h"
 #include "CommonTypes.h"
@@ -182,23 +183,69 @@ void AppendTopicSumPoint(ChartDataByCurrency& target, const CurrencyType currenc
 	chart.m_series.front().m_values.push_back(MoneyValueAsDouble(raw_amount, currency));
 }
 
+// The three ways a topic's income/expense legs can be routed into a ChartResult - shared by
+// QuerySumByTopic::GetChartResult() and PeriodicQuery::GetChartResult() so both stay in lockstep.
+// See ChartData.h's ChartResult comment for the reasoning behind which topic gets which mode.
+enum class ChartSideMode {
+	NET_SIGN, // whole topic to one side, decided by the sign of its net sum (category, client)
+	SPLIT,    // income leg and expense leg routed independently (account, type)
+	UNSIDED   // both legs combined into ChartResult::m_summary (no real topic chosen - GetTopic()==CURRENCY)
+};
+
+ChartSideMode GetChartSideMode(const QueryTopic topic) {
+	switch (topic) {
+	case QueryTopic::ACCOUNT:
+	case QueryTopic::TYPE:
+		return ChartSideMode::SPLIT;
+	case QueryTopic::CURRENCY: // the "Currency Summary" fallback - no aggregation topic was chosen
+		return ChartSideMode::UNSIDED;
+	default: // CATEGORY, CLIENT
+		return ChartSideMode::NET_SIGN;
+	}
+}
+
 ChartResult QuerySumByTopic::GetChartResult() const {
 	ChartResult result;
+	const ChartSideMode mode = GetChartSideMode(GetTopic());
 	// each topic's currencies are added independently, so a topic that never had e.g. an EUR
 	// transaction simply has no EUR data point - unlike PeriodicQuery::GetChartResult(), there's
-	// no shared axis here that needs every topic represented at every position. Each topic+
-	// currency pair is routed to exactly one of income/expense, decided by the sign of its net
-	// sum (m_sum = m_inc + m_exp, not m_inc/m_exp tracked separately) - a topic with both income
-	// and expense transactions (e.g. a category with occasional refunds) would otherwise show up
-	// on both tabs.
+	// no shared axis here that needs every topic represented at every position.
 	for (const TopicSubQuery* tsq : GetSortedSubQueries()) {
 		for (auto& pair : tsq->GetResults()) {
 			const CurrencyType currency = pair.first;
-			const int64_t net = pair.second.m_sum;
-			if (net >= 0) {
-				AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), net);
-			} else {
-				AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -net);
+			const QuerySum::Result& res = pair.second;
+			switch (mode) {
+			case ChartSideMode::SPLIT:
+				// income leg and expense leg routed independently - a topic active in both
+				// directions (e.g. an account paying rent and receiving a salary) legitimately
+				// appears on both tabs, each time showing only its own-direction total.
+				if (res.m_inc > 0) {
+					AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), res.m_inc);
+				}
+				if (res.m_exp < 0) {
+					AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -res.m_exp);
+				}
+				break;
+			case ChartSideMode::UNSIDED:
+				// no real topic here (GetTopic()==CURRENCY, one "topic" per currency) - present as
+				// one currency-keyed chart of "Income"/"Expense" magnitudes instead of two tabs.
+				if (res.m_inc > 0) {
+					AppendTopicSumPoint(result.m_summary, currency, "Income", res.m_inc);
+				}
+				if (res.m_exp < 0) {
+					AppendTopicSumPoint(result.m_summary, currency, "Expense", -res.m_exp);
+				}
+				break;
+			case ChartSideMode::NET_SIGN:
+			default: {
+				const int64_t net = res.m_sum;
+				if (net >= 0) {
+					AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), net);
+				} else {
+					AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -net);
+				}
+				break;
+			}
 			}
 		}
 	}
@@ -723,49 +770,89 @@ ChartResult PeriodicQuery::GetChartResult() const {
 	for (int date_id = start; date_id <= end; ++date_id) {
 		labels.push_back(DateId2String(m_mode, date_id));
 	}
-	// unlike QuerySumByTopic::GetChartResult(), every topic shares the same period axis, so a
-	// topic with no transactions in a given period still gets an explicit 0 there rather than
-	// being skipped, keeping every series the same length as m_labels.
+	const ChartSideMode mode = GetChartSideMode(GetTopic());
+	// Builds one named series for `p`/`currency` into `target`, reading each period's value via
+	// `value_for` - shared by every ChartSideMode branch below, which differ only in which
+	// target(s) they build into and how they read Result. unlike QuerySumByTopic::GetChartResult(),
+	// every topic shares the same period axis, so a topic with no transactions in a given period
+	// still gets an explicit 0 there rather than being skipped, keeping every series the same
+	// length as m_labels.
+	auto build_series = [&](ChartDataByCurrency& target, CurrencyType currency, const TopicPeriodicSubQuery* p, const String& name, const std::function<double(const QuerySum::Result&)>& value_for) {
+		ChartData& chart = target[currency];
+		chart.m_currency = currency;
+		chart.m_labels = labels;
+		ChartSeries& series = chart.m_series.emplace_back();
+		series.m_name = name;
+		for (int date_id = start; date_id <= end; ++date_id) {
+			const TopicSubQuery* sub = p->GetSubQuery(date_id);
+			double value = 0.0;
+			if (sub) {
+				auto res_map = sub->GetResults();
+				auto it = res_map.find(currency);
+				if (it != res_map.end()) {
+					value = value_for(it->second);
+				}
+			}
+			series.m_values.push_back(value);
+		}
+	};
 	for (const TopicPeriodicSubQuery* p : GetSortedSubQueries()) {
 		for (CurrencyType currency : p->GetCurrencyTypes()) {
-			// decide the single destination chart first, from the topic's net sum (m_inc+m_exp)
-			// across the whole period - same rule as QuerySumByTopic::GetChartResult(), applied
-			// once per series rather than per point, so a topic's trend line doesn't jump between
-			// tabs from one period to the next.
-			int64_t net_total = 0;
+			// totals across the whole period, read once per topic+currency regardless of mode -
+			// NET_SIGN uses their sum to decide the single destination chart; SPLIT/UNSIDED use
+			// each leg independently to decide whether a series is worth building at all.
+			int64_t total_inc = 0;
+			int64_t total_exp = 0;
 			for (int date_id = start; date_id <= end; ++date_id) {
 				const TopicSubQuery* sub = p->GetSubQuery(date_id);
 				if (sub) {
 					auto res_map = sub->GetResults();
 					auto it = res_map.find(currency);
 					if (it != res_map.end()) {
-						net_total += it->second.m_sum;
+						total_inc += it->second.m_inc;
+						total_exp += it->second.m_exp;
 					}
 				}
 			}
-			const bool is_income = net_total >= 0;
-			ChartData& chart = (is_income ? result.m_income : result.m_expense)[currency];
-			chart.m_currency = currency;
-			chart.m_labels = labels;
-			ChartSeries& series = chart.m_series.emplace_back();
-			series.m_name = p->GetName();
-			for (int date_id = start; date_id <= end; ++date_id) {
-				const TopicSubQuery* sub = p->GetSubQuery(date_id);
-				double value = 0.0;
-				if (sub) {
-					auto res_map = sub->GetResults();
-					auto it = res_map.find(currency);
-					if (it != res_map.end()) {
-						const int64_t net = it->second.m_sum;
-						// sign follows the series' destination chart (decided once, above, from
-						// net_total), not each period's own sign - a period that bucks the topic's
-						// overall trend (e.g. a refund month within an otherwise expense-heavy
-						// topic) must show as a negative dip on that chart, offsetting the total,
-						// rather than as a positive magnitude that would only add to it.
-						value = MoneyValueAsDouble(is_income ? net : -net, currency);
-					}
+			switch (mode) {
+			case ChartSideMode::SPLIT:
+				// income leg and expense leg built as independent series - a topic active in both
+				// directions legitimately gets a trend line on both tabs.
+				if (total_inc > 0) {
+					build_series(result.m_income, currency, p, p->GetName(), [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_inc, currency); });
 				}
-				series.m_values.push_back(value);
+				if (total_exp < 0) {
+					build_series(result.m_expense, currency, p, p->GetName(), [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(-r.m_exp, currency); });
+				}
+				break;
+			case ChartSideMode::UNSIDED:
+				// no real topic here (GetTopic()==CURRENCY) - both legs become named series
+				// ("Income"/"Expense") sharing one currency-keyed chart in m_summary, rather than
+				// deciding a single destination side for the (redundant) per-currency "topic".
+				if (total_inc > 0) {
+					build_series(result.m_summary, currency, p, "Income", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_inc, currency); });
+				}
+				if (total_exp < 0) {
+					build_series(result.m_summary, currency, p, "Expense", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(-r.m_exp, currency); });
+				}
+				break;
+			case ChartSideMode::NET_SIGN:
+			default: {
+				// decide the single destination chart first, from the topic's net sum across the
+				// whole period, applied once per series rather than per point, so a topic's trend
+				// line doesn't jump between tabs from one period to the next.
+				const bool is_income = (total_inc + total_exp) >= 0;
+				build_series(is_income ? result.m_income : result.m_expense, currency, p, p->GetName(),
+					[currency, is_income](const QuerySum::Result& r) {
+						// sign follows the series' destination chart (decided once, above, from the
+						// topic's overall total), not each period's own sign - a period that bucks
+						// the topic's overall trend (e.g. a refund month within an otherwise
+						// expense-heavy topic) must show as a negative dip on that chart, offsetting
+						// the total, rather than as a positive magnitude that would only add to it.
+						return MoneyValueAsDouble(is_income ? r.m_sum : -r.m_sum, currency);
+					});
+				break;
+			}
 			}
 		}
 	}

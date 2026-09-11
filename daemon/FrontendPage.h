@@ -19,6 +19,11 @@
 // independent code (one runs at report-generation time in C++, the other in the browser after an
 // API response), so they're kept in sync by mirroring the same rule, not by literally sharing code.
 //
+// One chart per currency, not one per (side, currency) combination: a section's Income/Expense/
+// Summary datasets for the same currency (see QueryApi.h's "chart" JSON shape) share one canvas in
+// renderChartsForSection(), switched via a "Dataset" dropdown alongside the existing chart-kind
+// dropdown, rather than each getting its own always-visible card.
+//
 // `chartjs_source`/`gridjs_source`/`gridjs_css` are the same vendored resources\ file contents
 // HtmlReport.h's LoadChartJsSource()/LoadGridJsSource()/LoadGridJsCss() already load for the
 // static-report path - inlined verbatim here too (BuildHtmlReport()'s own precedent) so this page
