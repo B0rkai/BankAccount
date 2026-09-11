@@ -1,5 +1,6 @@
 #include "FrontendPage.h"
 #include <sstream>
+#include "Version.h"
 
 namespace {
 
@@ -27,7 +28,7 @@ const char* PAGE_TEMPLATE = R"HTMLPAGE(<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>BankAccount Query</h1>
+<h1>BankAccount Query <span class="version">v%APP_VERSION%</span></h1>
 <div id="status"></div>
 
 <div class="favorites-bar">
@@ -162,6 +163,7 @@ String BuildFrontendPage(const String& chartjs_source, const String& gridjs_sour
 	page = Replace(page, "%CHARTJS%", std::string(chartjs_source.utf8_str()));
 	page = Replace(page, "%GRIDJS_JS%", std::string(gridjs_source.utf8_str()));
 	page = Replace(page, "%GRIDJS_CSS%", std::string(gridjs_css.utf8_str()));
+	page = Replace(page, "%APP_VERSION%", APP_VERSION);
 	return String::FromUTF8(page.c_str());
 }
 

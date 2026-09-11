@@ -1,6 +1,7 @@
 * { box-sizing: border-box; }
 body { font-family: Segoe UI, Arial, sans-serif; font-size: 14px; margin: 0; padding: 16px; color: #222; background: #fafafa; }
 h1 { font-size: 20px; margin: 0 0 12px; }
+h1 .version { font-size: 13px; font-weight: normal; color: #888; }
 h2 { font-size: 15px; margin: 0 0 8px; }
 h3 { font-size: 15px; margin: 16px 0 8px; }
 fieldset { border: 1px solid #ccc; border-radius: 4px; margin: 0 0 12px; padding: 10px 12px; }
