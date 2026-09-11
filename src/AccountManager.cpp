@@ -331,7 +331,7 @@ void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& key
 }
 
 bool AccountManager::RenameId(const QueryTopic topic, Id id, const String& new_name) {
-	if (strlen(new_name) == 0) {
+	if (new_name.empty()) {
 		m_logger.LogError() << "RenameId() empty name";
 		return false;
 	}

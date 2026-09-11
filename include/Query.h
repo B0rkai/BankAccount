@@ -89,7 +89,12 @@ protected:
 public:
 	QueryByName() = default;
 	virtual ~QueryByName() = default;
-	inline void AddName(const char* name) { m_names.emplace(name); }
+	// Takes a String (not a const char*/std::string) so a caller passing an already-decoded
+	// wxString never gets forced through a narrow-char round trip - wxString::c_str() bound to a
+	// literal `const char*` parameter converts via the locale-dependent wxConvLibc, which mangles
+	// non-ASCII text on any non-UTF-8 locale (e.g. the Linux daemon's default "C" locale) even
+	// though the wxString itself was correctly UTF-8-decoded going in.
+	inline void AddName(const String& name) { m_names.emplace(name); }
 	virtual String GetStringResult() const;
 };
 

@@ -263,7 +263,7 @@ void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std
 		}
 	} else {
 		for (const String& name : def.accounts) {
-			qa->AddName(name.c_str());
+			qa->AddName(name);
 		}
 	}
 	query.push_back(qa);
@@ -271,7 +271,7 @@ void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std
 	if (!def.clients.empty()) {
 		QueryClient* qcli = new QueryClient;
 		for (const String& name : def.clients) {
-			qcli->AddName(name.c_str());
+			qcli->AddName(name);
 		}
 		if (def.exclude_clients) {
 			qcli->SetExcludeMode();
@@ -281,7 +281,7 @@ void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std
 	if (!def.categories.empty()) {
 		QueryCategory* qcat = new QueryCategory;
 		for (const String& name : def.categories) {
-			qcat->AddName(name.c_str());
+			qcat->AddName(name);
 		}
 		if (def.exclude_categories) {
 			qcat->SetExcludeMode();
@@ -291,7 +291,7 @@ void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std
 	if (!def.types.empty()) {
 		QueryType* qtyp = new QueryType;
 		for (const String& name : def.types) {
-			qtyp->AddName(name.c_str());
+			qtyp->AddName(name);
 		}
 		if (def.exclude_types) {
 			qtyp->SetExcludeMode();

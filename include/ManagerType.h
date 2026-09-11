@@ -102,7 +102,7 @@ public:
 	}
 
 	IdSet SearchIds(const String& word, bool full_name = false) const {
-		if (strlen(word) == 0) {
+		if (word.empty()) {
 			return {}; // cannot match
 		}
 		IdSet results = SearchIdsHighConfidence(word, full_name);
@@ -125,7 +125,7 @@ public:
 	}
 
 	Id Create(const String& fullname) {
-		if (strlen(fullname) == 0) {
+		if (fullname.empty()) {
 			return 0; // NO NAME
 		}
 		String name = fullname;
@@ -166,7 +166,7 @@ public:
 	// refused rather than silently creating two entities with the same effective name
 	// (that's what Merge() is for).
 	bool Rename(const Id id, const String& new_name) {
-		if (strlen(new_name) == 0) {
+		if (new_name.empty()) {
 			m_logger.LogError() << "Rename() empty name for ID " << (Id::Type)id;
 			return false;
 		}

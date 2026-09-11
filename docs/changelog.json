@@ -13,8 +13,8 @@
                        "Serve the Linux daemon's query builder CSS/JS from hot-reloadable daemon/static/ files instead of baking them into the page string, so a styling/behavior edit shows up on the next page load with no daemon rebuild/restart",
                        "Fix the Linux daemon's account filter matching nothing unless every account was selected (AccountManager never resolved accounts by name), and fix report/daemon charts sometimes folding a single real category into a pointless one-item \"Others\" slice or showing an empty \"Others\" for a category with no actual activity",
                        "Fix the Linux daemon's ad-hoc query JSON fields (client/category/type/account filters, favorite query definitions) being decoded via the locale-dependent narrow-string constructor instead of UTF-8, breaking any accented-character filter (e.g. searching \"Autó\" never matched \"Autófókusz\")",
-                       "Show the running APP_VERSION next to the title on the Linux daemon's web query page"
-                   ],
+                       "Show the running APP_VERSION next to the title on the Linux daemon's web query page",
+                       "Fix the real cause of the Linux daemon's accented-character search bug still failing after the earlier UTF-8 JSON-decode fix: ManagerType's SearchIds/Create/Rename and AccountManager::RenameId checked for an empty name via strlen() on a wxString, forcing it through a locale-dependent narrow-char conversion that silently fails on non-ASCII text under the daemon's uninitialized \"C\" locale, so any client/category/type/account filter containing an accented character (not just a mismatched one) matched nothing; also stop QueryByName::AddName from forcing every filter name through that same lossy conversion by taking a String directly instead of a const char*"
     "released":  [
                      {
                          "version":  "1.0.6",

@@ -1548,7 +1548,7 @@ void cMain::PrepareQuery(Query& q) {
 		QueryClient* qcli = new QueryClient;
 		StringVector vec = ParseMultiValueString(StripTrailingChar(client_filter_value, ';'));
 		for (const String& v : vec) {
-			qcli->AddName(v.c_str());
+			qcli->AddName(v);
 		}
 		q.push_back(qcli);
 	}
@@ -1556,7 +1556,7 @@ void cMain::PrepareQuery(Query& q) {
 		QueryCategory* qcat = new QueryCategory;
 		StringVector vec = ParseMultiValueString(StripTrailingChar(category_filter_value, ';'));
 		for (const String& v : vec) {
-			qcat->AddName(v.c_str());
+			qcat->AddName(v);
 		}
 		q.push_back(qcat);
 	}
@@ -1564,7 +1564,7 @@ void cMain::PrepareQuery(Query& q) {
 		QueryType* qtyp = new QueryType;
 		StringVector vec = ParseMultiValueString(StripTrailingChar(type_filter_value, ';'));
 		for (const String& v : vec) {
-			qtyp->AddName(v.c_str());
+			qtyp->AddName(v);
 		}
 		q.push_back(qtyp);
 	}
