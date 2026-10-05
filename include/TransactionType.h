@@ -4,6 +4,6 @@
 
 class TransactionType : public ManagedType {
 public:
-	TransactionType(const Id id, const char* name);
+	TransactionType(const Id id, const String& name);
 };
 
