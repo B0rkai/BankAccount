@@ -1,8 +1,6 @@
 {
     "unreleased":  [
-                       "Fix the Linux daemon aborting while loading a BData.baf read over a real Samba/CIFS mount: the vendored ZipLib's sub_streambuf treated a short read (normal on CIFS) as EOF, truncating decompression mid-file; also document copying the daemon's static frontend assets into the systemd WorkingDirectory",
-                       "Fix the Linux daemon's Type aggregation rendering blank topic labels (table rows and chart legends): TransactionType's constructor took a const char*, so every accented type name loaded from the db went through a locale-dependent narrow-char conversion and came out empty under the daemon's \"C\" locale",
-                       "Charts never mix Income and Expense: every chart (desktop, HTML reports, Linux daemon) shows exactly one dataset - Net (new, default), Income or Expense - Net as bar/line only and drawn either side of a zero line; single-entry charts keep fixed colours (Income green, Expense red, Net purple), multi-topic charts are colourful, line charts shade only between the line and zero, and the daemon gains a Currency dropdown with 'Convert all to this currency'"
+
                    ],
     "released":  [
                      {
@@ -116,6 +114,15 @@
                                          "Fix the Linux daemon\u0027s ad-hoc query JSON fields (client/category/type/account filters, favorite query definitions) being decoded via the locale-dependent narrow-string constructor instead of UTF-8, breaking any accented-character filter (e.g. searching \"Autó\" never matched \"Autófókusz\")",
                                          "Show the running APP_VERSION next to the title on the Linux daemon\u0027s web query page",
                                          "Fix the real cause of the Linux daemon\u0027s accented-character search bug still failing after the earlier UTF-8 JSON-decode fix: ManagerType\u0027s SearchIds/Create/Rename and AccountManager::RenameId checked for an empty name via strlen() on a wxString, forcing it through a locale-dependent narrow-char conversion that silently fails on non-ASCII text under the daemon\u0027s uninitialized \"C\" locale, so any client/category/type/account filter containing an accented character (not just a mismatched one) matched nothing; also stop QueryByName::AddName from forcing every filter name through that same lossy conversion by taking a String directly instead of a const char*"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.12",
+                         "date":  "2026-10-05",
+                         "changes":  [
+                                         "Fix the Linux daemon aborting while loading a BData.baf read over a real Samba/CIFS mount: the vendored ZipLib\u0027s sub_streambuf treated a short read (normal on CIFS) as EOF, truncating decompression mid-file; also document copying the daemon\u0027s static frontend assets into the systemd WorkingDirectory",
+                                         "Fix the Linux daemon\u0027s Type aggregation rendering blank topic labels (table rows and chart legends): TransactionType\u0027s constructor took a const char*, so every accented type name loaded from the db went through a locale-dependent narrow-char conversion and came out empty under the daemon\u0027s \"C\" locale",
+                                         "Charts never mix Income and Expense: every chart (desktop, HTML reports, Linux daemon) shows exactly one dataset - Net (new, default), Income or Expense - Net as bar/line only and drawn either side of a zero line; single-entry charts keep fixed colours (Income green, Expense red, Net purple), multi-topic charts are colourful, line charts shade only between the line and zero, and the daemon gains a Currency dropdown with \u0027Convert all to this currency\u0027"
                                      ]
                      }
                  ]
