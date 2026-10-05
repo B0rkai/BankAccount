@@ -11,6 +11,10 @@
 // Sum of one series' values across every period.
 double ChartSeriesTotal(const ChartSeries& series);
 
+// Sum of the absolute values of one series' values across every period - how big a series is
+// regardless of sign (a Net series can swing both ways).
+double ChartSeriesMagnitude(const ChartSeries& series);
+
 // True if every value is exactly zero - e.g. a topic that never had any activity at all in this
 // income/expense direction.
 bool ChartSeriesAllZero(const std::vector<double>& values);
@@ -48,8 +52,8 @@ struct FoldedPeriodicSeries {
 
 // For a PERIODIC ChartData's per-topic series (chart.m_series, one per topic, sharing
 // chart.m_labels as the period axis): drops topics with no activity at all, sorts the rest
-// descending by total-across-periods magnitude, then folds the smallest trailing series into one
+// descending by magnitude (ChartSeriesMagnitude()), then folds the smallest trailing series into one
 // "Others" series (summed period-by-period) once the tail exceeds CHART_OTHERS_FOLD_TAIL_SHARE of
-// the total-across-every-series-and-period magnitude - same rule as BuildFoldedTopicSlices, just
+// the summed magnitude of every series - same rule as BuildFoldedTopicSlices, just
 // applied to whole series instead of single slice values.
 FoldedPeriodicSeries BuildFoldedPeriodicSeries(const ChartData& chart);

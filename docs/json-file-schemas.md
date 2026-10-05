@@ -165,8 +165,8 @@ non-array root discards the whole file; a non-object array entry, or an entry mi
 | `period` | string | no, default `"none"` | `"none"` \| `"yearly"` \| `"half_yearly"` \| `"quarterly"` \| `"monthly"` \| `"daily"`. Any other value (including omitted) behaves as `"none"` (plain sum, not periodic). |
 | `show_list` | bool | no, default `false` | Whether the query also returns/shows the raw transaction list alongside any summary. |
 | `chart` | object | no | Optional chart display preference; omitted = no preference (today's default: Income tab if present else Expense, first chart kind available for the shape). |
-| `chart.side` | string | no | `"income"` \| `"expense"`. Unrecognized/unavailable falls back to the default. |
-| `chart.kind` | string | no | `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartDialog.h](../include/ChartDialog.h)). Unrecognized, or a kind that doesn't apply to the resolved chart shape, falls back to the default. |
+| `chart.side` | string | no | `"net"` \| `"income"` \| `"expense"` - which dataset the chart starts on. Unrecognized/unavailable falls back to the default (Net). |
+| `chart.kind` | string | no | `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartPresentation.h](../include/ChartPresentation.h)). Unrecognized, or a kind that doesn't apply to the resolved chart shape/dataset (Net is never a pie/doughnut/polar area/stacked bar), falls back to the default. |
 
 ## `db\favorite_reports.json`
 
@@ -193,8 +193,8 @@ See [html-reports-design.md](html-reports-design.md) for the feature as a whole.
 |---|---|---|---|
 | `name` | string | **yes** | Menu label, and the generated report's page heading/file name. Missing/empty/non-string skips the entire entry. |
 | `favorite_query` | string | **yes** | Must match a `name` in `db\favorite_queries.json` - resolved by exact string match at report-generation time (not at load time), so the two files can be edited independently; a report referencing a since-renamed/deleted favorite query fails gracefully with an on-screen message rather than crashing. Missing/empty skips the entire entry. |
-| `chart_kinds` | string array | no | Subset of `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartDialog.h](../include/ChartDialog.h)). Empty/omitted = tables only, no charts. A kind not valid for a given report section's data shape (e.g. `"line"` for a plain by-topic sum) is silently skipped for that section. |
-| `chart_sides` | string array | no | Subset of `"income"` \| `"expense"` - restricts which side(s) get rendered as charts, e.g. `["expense"]` for a spending-only report. Empty/omitted/all-unrecognized = no restriction (both sides rendered, same as before this key existed) - never an empty report. |
+| `chart_kinds` | string array | no | Subset of `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartPresentation.h](../include/ChartPresentation.h)). Empty/omitted = tables only, no charts. A kind not valid for a given section's data shape/dataset (e.g. `"line"` for a plain by-topic sum, or `"pie"` for Net) falls back to that dataset's default kind; a list with no recognized kind at all renders no charts. |
+| `chart_sides` | string array | no | Subset of `"net"` \| `"income"` \| `"expense"` - restricts which dataset(s) get rendered as charts, e.g. `["expense"]` for a spending-only report. Empty/omitted/all-unrecognized = no restriction (all datasets rendered, Net first) - never an empty report. |
 
 ## Files intentionally out of scope
 

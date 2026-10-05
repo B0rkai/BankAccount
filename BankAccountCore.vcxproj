@@ -126,6 +126,8 @@
     <ClCompile Include="src\FavoriteQuery.cpp" />
     <ClCompile Include="src\FavoriteReport.cpp" />
     <ClCompile Include="src\ChartFolding.cpp" />
+    <ClCompile Include="src\ChartPresentation.cpp" />
+    <ClCompile Include="src\ChartConversion.cpp" />
     <ClCompile Include="src\HtmlReport.cpp" />
     <ClCompile Include="src\Query.cpp" />
     <ClCompile Include="src\RelativePeriod.cpp" />
@@ -173,6 +175,8 @@
     <ClInclude Include="include\CategorySystem.h" />
     <ClInclude Include="include\ChartData.h" />
     <ClInclude Include="include\ChartFolding.h" />
+    <ClInclude Include="include\ChartPresentation.h" />
+    <ClInclude Include="include\ChartConversion.h" />
     <ClInclude Include="include\Client.h" />
     <ClInclude Include="include\ClientManager.h" />
     <ClInclude Include="include\CommonTypes.h" />

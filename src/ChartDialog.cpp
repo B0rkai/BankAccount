@@ -14,42 +14,12 @@
 #include "wx/charts/wxcharts.h"
 #include "Currency.h"
 #include "ChartFolding.h"
+#include "ChartConversion.h"
 // Windows-only, matching this whole app - see OnExportClicked() for why PrintWindow specifically.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 namespace {
-	CurrencyType PickDefaultCurrency(const ChartDataByCurrency& data) {
-		if (data.count(HUF)) {
-			return HUF;
-		}
-		return data.begin()->first; // ChartTabPanel is only ever constructed with non-empty data
-	}
-
-	// Returns std::nullopt for an empty/unrecognized string - callers fall back to the default
-	// (first available) kind for the shape, same as when no favorite chart preference was given.
-	std::optional<ChartWidgetKind> ParseChartWidgetKind(const String& kind) {
-		if (kind == "pie") return ChartWidgetKind::PIE;
-		if (kind == "doughnut") return ChartWidgetKind::DOUGHNUT;
-		if (kind == "polar_area") return ChartWidgetKind::POLAR_AREA;
-		if (kind == "bar") return ChartWidgetKind::BAR;
-		if (kind == "stacked_bar") return ChartWidgetKind::STACKED_BAR;
-		if (kind == "line") return ChartWidgetKind::LINE;
-		return std::nullopt;
-	}
-
-	wxString KindLabel(ChartWidgetKind kind) {
-		switch (kind) {
-		case ChartWidgetKind::PIE: return "Pie";
-		case ChartWidgetKind::DOUGHNUT: return "Doughnut";
-		case ChartWidgetKind::POLAR_AREA: return "Polar Area";
-		case ChartWidgetKind::BAR: return "Bar";
-		case ChartWidgetKind::STACKED_BAR: return "Stacked Bar";
-		case ChartWidgetKind::LINE: return "Line";
-		}
-		return wxEmptyString;
-	}
-
 	// value is in the same real-world units as ChartSeries::m_values (see MoneyValueAsDouble() in
 	// Query.cpp, which this reverses) - formats it exactly the way the rest of the app displays a
 	// Money of this currency (thousands separators, currency sign, cents where the currency has
@@ -61,103 +31,12 @@ namespace {
 		return curr->PrettyPrint(raw);
 	}
 
-	// Exchanges `value` (already in FormatCurrencyValue's real-world units) from one currency to
-	// another at today's static rate - the same simplification QueryCurrencySum::GetSumValue()
-	// already uses elsewhere in this app for ad-hoc cross-currency comparison, not the
-	// per-transaction historical rate the table view's "EXCHANGED TOTAL" row uses (this is
-	// post-aggregation chart data, so a per-transaction date is no longer available to look one
-	// up by).
-	double ConvertValue(double value, CurrencyType from, CurrencyType to) {
-		if (from == to) {
-			return value;
-		}
-		Currency* from_curr = MakeCurrency(from);
-		int32_t raw = from_curr->HasCents() ? (int32_t)std::llround(value * 100.0) : (int32_t)std::llround(value);
-		Money converted(from, raw);
-		int32_t converted_raw = converted.GetValue(to);
-		Currency* to_curr = MakeCurrency(to);
-		return to_curr->HasCents() ? converted_raw / 100.0 : (double)converted_raw;
+	wxColour ToWxColour(ChartRgb colour) {
+		return wxColour(colour.r, colour.g, colour.b);
 	}
 
-	// Exchanges every currency present in `data` into `target` and merges them into one
-	// ChartData - a topic present in more than one currency (e.g. a category with both EUR and
-	// HUF transactions) sums its converted contributions rather than appearing twice.
-	ChartData MergeConvertedToCurrency(const ChartDataByCurrency& data, CurrencyType target, ChartShape shape) {
-		ChartData result;
-		result.m_currency = target;
-		if (data.empty()) {
-			return result;
-		}
-
-		if (shape == ChartShape::PERIODIC) {
-			result.m_labels = data.begin()->second.m_labels; // every currency shares the same period axis
-			std::map<String, size_t> series_index_by_name;
-			for (const auto& currency_pair : data) {
-				for (const ChartSeries& series : currency_pair.second.m_series) {
-					size_t idx;
-					auto it = series_index_by_name.find(series.m_name);
-					if (it == series_index_by_name.end()) {
-						idx = result.m_series.size();
-						series_index_by_name[series.m_name] = idx;
-						result.m_series.push_back(ChartSeries{ series.m_name, std::vector<double>(result.m_labels.size(), 0.0) });
-					} else {
-						idx = it->second;
-					}
-					for (size_t i = 0; i < series.m_values.size(); ++i) {
-						result.m_series[idx].m_values[i] += ConvertValue(series.m_values[i], currency_pair.first, target);
-					}
-				}
-			}
-		} else { // TOPIC_SUM
-			std::map<String, double> value_by_label;
-			StringVector label_order;
-			for (const auto& currency_pair : data) {
-				const ChartSeries& series = currency_pair.second.m_series.front();
-				for (size_t i = 0; i < currency_pair.second.m_labels.size(); ++i) {
-					const String& label = currency_pair.second.m_labels[i];
-					double converted = ConvertValue(series.m_values[i], currency_pair.first, target);
-					auto it = value_by_label.find(label);
-					if (it == value_by_label.end()) {
-						value_by_label[label] = converted;
-						label_order.push_back(label);
-					} else {
-						it->second += converted;
-					}
-				}
-			}
-			// ascending by converted value - matches QuerySumByTopic::GetSortedSubQueries()'s own
-			// convention, which this reduction otherwise loses (each currency's own labels arrive
-			// pre-sorted, but merging across currencies can reorder them).
-			std::sort(label_order.begin(), label_order.end(), [&](const String& a, const String& b) {
-				return value_by_label[a] < value_by_label[b];
-			});
-			ChartSeries merged;
-			merged.m_name = "Sum";
-			for (const String& label : label_order) {
-				result.m_labels.push_back(label);
-				merged.m_values.push_back(value_by_label[label]);
-			}
-			result.m_series.push_back(merged);
-		}
-		return result;
-	}
-
-	// A pie/doughnut/polar-area slice always needs an explicit colour, and bar/stacked-bar/line
-	// datasets need one too - see EnsureDatasetThemesRegistered() below for why wxCharts' own
-	// default theme isn't good enough for either. One shared, solid, opaque categorical palette,
-	// cycled by slice/series index.
-	const wxColour PIE_PALETTE[] = {
-		wxColour(0x4E, 0x79, 0xA7), wxColour(0xF2, 0x8E, 0x2B), wxColour(0xE1, 0x57, 0x59),
-		wxColour(0x76, 0xB7, 0xB2), wxColour(0x59, 0xA1, 0x4F), wxColour(0xED, 0xC9, 0x48),
-		wxColour(0xB0, 0x7A, 0xA1), wxColour(0xFF, 0x9D, 0xA7), wxColour(0x9C, 0x75, 0x5F),
-		wxColour(0xBA, 0xB0, 0xAC)
-	};
-	constexpr size_t PIE_PALETTE_SIZE = sizeof(PIE_PALETTE) / sizeof(PIE_PALETTE[0]);
-
-	// A neutral grey, deliberately outside PIE_PALETTE - a folded "Others" bucket should always
-	// read as "everything else", never be mistaken for one more real category sharing the same
-	// palette.
-	const wxColour OTHERS_COLOUR(0x9E, 0x9E, 0x9E);
+	// A folded "Others" bucket's grey - see CHART_OTHERS_COLOUR.
+	const wxColour OTHERS_COLOUR = ToWxColour(CHART_OTHERS_COLOUR);
 
 	// wxCharts' own default theme (wxChartsPresentationTheme) only ever pre-registers dataset
 	// colours for implicit ids 0-2, and each of those 3 is a semi-transparent, washed-out shade
@@ -184,9 +63,11 @@ namespace {
 		wxChartsDefaultTheme->SetDatasetTheme(wxChartsDatasetId::CreateImplicitId((int)index), theme);
 	}
 
-	void EnsureDatasetThemesRegistered(size_t count) {
+	// A single-series chart gets its dataset's fixed colour (green Income, red Expense, purple Net),
+	// a multi-topic one a distinct categorical colour per series - see ChartEntryColour().
+	void EnsureDatasetThemesRegistered(size_t count, ChartDataset dataset) {
 		for (size_t i = 0; i < count; ++i) {
-			RegisterDatasetTheme(i, PIE_PALETTE[i % PIE_PALETTE_SIZE]);
+			RegisterDatasetTheme(i, ToWxColour(ChartEntryColour(dataset, i, count)));
 		}
 	}
 
@@ -208,14 +89,14 @@ namespace {
 
 }
 
-ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit, const String& preferred_kind)
-	: wxPanel(parent), m_data(data), m_shape(shape), m_currency(PickDefaultCurrency(data)), m_period_unit(period_unit) {
+ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, ChartDataset dataset, const String& period_unit, const String& preferred_kind)
+	: wxPanel(parent), m_data(data), m_shape(shape), m_dataset(dataset), m_currency(PickDefaultChartCurrency(data)), m_period_unit(period_unit),
+	  m_available_kinds(AllowedChartKinds(shape, dataset)) {
 	for (const auto& pair : data) {
 		m_currencies.push_back(pair.first);
 	}
-	PopulateKindChoices();
-	// Index into m_available_kinds to select initially - 0 (today's default) unless a favorite
-	// requested a kind that's actually offered for this shape.
+	// Index into m_available_kinds to select initially - 0 (the default) unless a favorite
+	// requested a kind that's actually allowed for this shape and dataset.
 	int initial_kind_index = 0;
 	std::optional<ChartWidgetKind> wanted_kind = ParseChartWidgetKind(preferred_kind);
 	if (wanted_kind) {
@@ -257,7 +138,7 @@ ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, 
 		toolbar->Add(new wxStaticText(this, wxID_ANY, "Chart type:"), 0, wxALIGN_CENTER_VERTICAL | wxALL, 6);
 		m_kind_choice = new wxChoice(this, wxID_ANY);
 		for (ChartWidgetKind kind : m_available_kinds) {
-			m_kind_choice->Append(KindLabel(kind));
+			m_kind_choice->Append(ChartWidgetKindLabel(kind));
 		}
 		m_kind_choice->SetSelection(initial_kind_index);
 		m_kind_choice->Bind(wxEVT_CHOICE, &ChartTabPanel::OnKindChanged, this);
@@ -281,22 +162,6 @@ ChartTabPanel::ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, 
 
 	SetSizer(top);
 	BuildChart(GetSelectedKind());
-}
-
-void ChartTabPanel::PopulateKindChoices() {
-	if (m_shape == ChartShape::PERIODIC) {
-		m_available_kinds = {
-			ChartWidgetKind::BAR, ChartWidgetKind::STACKED_BAR, ChartWidgetKind::LINE,
-			ChartWidgetKind::PIE, ChartWidgetKind::DOUGHNUT, ChartWidgetKind::POLAR_AREA
-		};
-	} else { // TOPIC_SUM - ChartTabPanel is only ever built for one of these two shapes
-		// No Stacked Bar/Line here - both need more than one series to mean anything, and a
-		// TOPIC_SUM chart only ever has the one ("Sum") series (see BuildCategoricalChart()'s
-		// TOPIC_SUM branch), unlike a PERIODIC chart's one series per topic.
-		m_available_kinds = {
-			ChartWidgetKind::PIE, ChartWidgetKind::DOUGHNUT, ChartWidgetKind::POLAR_AREA, ChartWidgetKind::BAR
-		};
-	}
 }
 
 ChartWidgetKind ChartTabPanel::GetSelectedKind() const {
@@ -412,7 +277,7 @@ void ChartTabPanel::BuildSliceChart(const ChartData& chart, ChartWidgetKind kind
 		}
 
 		bool is_others = folded.has_others && (i == slices.size() - 1);
-		wxChartSliceData slice(s.total, is_others ? OTHERS_COLOUR : PIE_PALETTE[i % PIE_PALETTE_SIZE], s.label);
+		wxChartSliceData slice(s.total, is_others ? OTHERS_COLOUR : ToWxColour(ChartEntryColour(m_dataset, i, slices.size())), s.label);
 		slice.SetTooltipTextOverride(tooltip);
 		slice_data.push_back(slice);
 	}
@@ -468,7 +333,7 @@ void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKin
 		// chart's one-series-per-topic layout rather than putting topics along the x-axis - this
 		// draws a single x-axis group with one coloured bar per topic side by side, using the same
 		// "which topics matter enough to show individually" fold BuildSliceChart() applies to pie
-		// slices (see PopulateKindChoices(), which only offers Bar - not Stacked Bar/Line - here,
+		// slices (see AllowedChartKinds(), which only offers Bar - not Stacked Bar/Line - here,
 		// since both need more than one x-axis group to mean anything).
 		FoldedTopicSlices folded = BuildFoldedTopicSlices(chart, m_shape);
 		if (folded.slices.empty()) {
@@ -478,7 +343,7 @@ void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKin
 		for (const TopicSlice& s : folded.slices) {
 			cat_data->AddDataset(wxChartsDoubleDataset::ptr(new wxChartsDoubleDataset(s.label, ToWxVector(std::vector<double>{ s.total }))));
 		}
-		EnsureDatasetThemesRegistered(cat_data->GetDatasets().size());
+		EnsureDatasetThemesRegistered(cat_data->GetDatasets().size(), m_dataset);
 		if (folded.has_others) {
 			RegisterDatasetTheme(cat_data->GetDatasets().size() - 1, OTHERS_COLOUR);
 		}
@@ -504,7 +369,7 @@ void ChartTabPanel::BuildCategoricalChart(const ChartData& chart, ChartWidgetKin
 	if (folded.has_others) {
 		cat_data->AddDataset(wxChartsDoubleDataset::ptr(new wxChartsDoubleDataset(folded.others.m_name, ToWxVector(folded.others.m_values))));
 	}
-	EnsureDatasetThemesRegistered(cat_data->GetDatasets().size());
+	EnsureDatasetThemesRegistered(cat_data->GetDatasets().size(), m_dataset);
 	if (folded.has_others) {
 		RegisterDatasetTheme(cat_data->GetDatasets().size() - 1, OTHERS_COLOUR);
 	}
@@ -536,29 +401,19 @@ ChartDialog::ChartDialog(wxWindow* parent, const ChartResult& data, ChartShape s
 	: wxFrame(parent, wxID_ANY, "Chart", wxDefaultPosition, wxSize(1000, 800)) {
 	SetMinSize(wxSize(700, 500)); // a topic-sum bar/pie can have dozens of categories - more room by default, still shrinkable
 	wxNotebook* notebook = new wxNotebook(this, wxID_ANY);
-	if (!data.m_summary.empty()) {
-		// No real aggregation topic (see ChartData.h's ChartResult comment) - one "Summary" tab
-		// instead of an Income/Expense pair; preferred_side has nothing to select between here.
-		notebook->AddPage(new ChartTabPanel(notebook, data.m_summary, shape, data.m_period_unit, preferred_kind), "Summary");
-	} else {
-		// Guarded independently (rather than assuming both are always non-empty together) - the
-		// common case does mirror the same currencies on both sides (see
-		// QuerySumByTopic::GetChartResult()/PeriodicQuery::GetChartResult()), but nothing here
-		// depends on that holding. Income always added first (tab order stays fixed/predictable
-		// regardless of preferred_side) - only which tab starts selected changes below.
-		int income_page = -1, expense_page = -1;
-		if (!data.m_income.empty()) {
-			notebook->AddPage(new ChartTabPanel(notebook, data.m_income, shape, data.m_period_unit, preferred_kind), "Income");
-			income_page = (int)notebook->GetPageCount() - 1;
+	// One tab per non-empty dataset, always in Net/Income/Expense order (tab order stays fixed and
+	// predictable regardless of preferred_side - only which tab starts selected changes below).
+	// Guarded independently rather than assuming all three are non-empty together.
+	ChartDataset wanted_side = ChartDataset::NET;
+	const bool has_wanted_side = ParseChartDataset(preferred_side, wanted_side);
+	for (ChartDataset dataset : CHART_DATASETS_IN_DISPLAY_ORDER) {
+		const ChartDataByCurrency& dataset_data = data.Get(dataset);
+		if (dataset_data.empty()) {
+			continue;
 		}
-		if (!data.m_expense.empty()) {
-			notebook->AddPage(new ChartTabPanel(notebook, data.m_expense, shape, data.m_period_unit, preferred_kind), "Expense");
-			expense_page = (int)notebook->GetPageCount() - 1;
-		}
-		if ((preferred_side == "expense") && (expense_page >= 0)) {
-			notebook->SetSelection(expense_page);
-		} else if ((preferred_side == "income") && (income_page >= 0)) {
-			notebook->SetSelection(income_page);
+		notebook->AddPage(new ChartTabPanel(notebook, dataset_data, shape, dataset, data.m_period_unit, preferred_kind), ChartDatasetLabel(dataset));
+		if (has_wanted_side && (dataset == wanted_side)) {
+			notebook->SetSelection(notebook->GetPageCount() - 1);
 		}
 	}
 

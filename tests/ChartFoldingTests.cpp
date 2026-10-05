@@ -70,4 +70,45 @@ TEST(ChartFoldingTest, FoldsTwoOrMoreTrailingPeriodicSeriesIntoOthers) {
     EXPECT_DOUBLE_EQ(result.others.m_values[1], 10.0);
 }
 
+
+TEST(ChartFoldingTest, NetSlicesRankByMagnitudeSoABigNegativeTopicIsKept) {
+    // Net values are signed - ranking by signed value would treat -900 as "smallest" and fold it
+    // into Others next to two near-zero topics. Magnitude ranking keeps it.
+    ChartData chart;
+    chart.m_currency = HUF;
+    chart.m_labels = { "Salary", "Rent", "Tiny+", "Tiny-" };
+    chart.m_series.push_back(ChartSeries{ "Sum", { 1000.0, -900.0, 5.0, -5.0 } });
+
+    FoldedTopicSlices folded = BuildFoldedTopicSlices(chart, ChartShape::TOPIC_SUM);
+    ASSERT_TRUE(folded.has_others);
+    bool has_rent = false;
+    for (const auto& slice : folded.slices) {
+        if (slice.label == "Rent") {
+            has_rent = true;
+            EXPECT_DOUBLE_EQ(slice.total, -900.0);
+        }
+        EXPECT_NE(slice.label, "Tiny+");
+        EXPECT_NE(slice.label, "Tiny-");
+    }
+    EXPECT_TRUE(has_rent);
+}
+
+TEST(ChartFoldingTest, NetPeriodicSeriesRankByMagnitude) {
+    ChartData chart;
+    chart.m_currency = HUF;
+    chart.m_labels = { "2020", "2021" };
+    chart.m_series.push_back(ChartSeries{ "Small+", { 10.0, 10.0 } });
+    chart.m_series.push_back(ChartSeries{ "Big-", { -5000.0, -5000.0 } });
+    chart.m_series.push_back(ChartSeries{ "Mid+", { 3000.0, 3000.0 } });
+
+    FoldedPeriodicSeries folded = BuildFoldedPeriodicSeries(chart);
+    bool has_big = false;
+    for (const ChartSeries* series : folded.series) {
+        if (series->m_name == "Big-") {
+            has_big = true;
+        }
+    }
+    EXPECT_TRUE(has_big); // the largest-magnitude series is never folded away for being negative
+}
+
 }

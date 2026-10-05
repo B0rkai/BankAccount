@@ -174,13 +174,14 @@ isn't the side/kind you actually want to see by default. Each favorite can now o
 }
 ```
 
-Both `side` (`"income"`|`"expense"`) and `kind` (`"pie"`|`"doughnut"`|`"polar_area"`|`"bar"`|
+Both `side` (`"net"`|`"income"`|`"expense"`) and `kind` (`"pie"`|`"doughnut"`|`"polar_area"`|`"bar"`|
 `"stacked_bar"`|`"line"`) are independently optional. Kept as plain strings on `FavoriteQueryDef`
 (not the GUI-side `ChartWidgetKind` enum) so the Core struct stays wx-GUI-header-free; `cMain`
 translates them right before constructing a `ChartDialog`, falling back to today's default
-(first available kind for the shape; Income tab if present else Expense) for anything empty,
-unrecognized, or not offered for that particular query's shape (e.g. requesting `"stacked_bar"`
-for a `TOPIC_SUM` result, which only offers Pie/Doughnut/Polar Area/Bar). For a manual,
+(the Net tab, with the first allowed kind for that shape/dataset - see `AllowedChartKinds()` in
+[include/ChartPresentation.h](../include/ChartPresentation.h)) for anything empty, unrecognized,
+or not offered for that particular query's shape/dataset (e.g. requesting `"stacked_bar"` for a
+`TOPIC_SUM` result, or `"pie"` for Net, which is never a slice chart). For a manual,
 UI-driven query, *whether* a chart shows at all is still governed by the "show chart" checkbox
 alone - but a favorite that explicitly names a `chart` preference auto-shows it regardless of
 that checkbox (added 2026-09-02, after the checkbox-gated version above shipped: a favorite

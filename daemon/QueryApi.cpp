@@ -2,6 +2,8 @@
 #include <numeric>
 #include <sstream>
 #include <nlohmann/json.hpp>
+#include "ChartConversion.h"
+#include "ChartPresentation.h"
 #include "Currency.h"
 #include "FavoriteQuery.h"
 #include "HtmlReport.h"
@@ -56,25 +58,54 @@ nlohmann::json ChartDataToJson(const ChartData& data) {
 	return j;
 }
 
-nlohmann::json ChartResultToJson(const ChartResult& result) {
+// One entry per non-empty dataset, in CHART_DATASETS_IN_DISPLAY_ORDER (Net first - the frontend's
+// default selection). Everything the frontend needs to stay consistent with the desktop dialog and
+// HTML reports is decided here, server-side, from the same ChartPresentation.h/ChartConversion.h
+// code: which kinds the dataset may be drawn as ("allowed_kinds", front() the default), its fixed
+// colour palette, and - when the dataset spans more than one currency - every currency's
+// "Convert all to this currency" merge, so the browser never needs exchange rates of its own.
+nlohmann::json ChartDatasetsToJson(const ChartResult& result, ChartShape shape) {
+	nlohmann::json datasets = nlohmann::json::array();
+	for (ChartDataset dataset : CHART_DATASETS_IN_DISPLAY_ORDER) {
+		const ChartDataByCurrency& by_currency = result.Get(dataset);
+		if (by_currency.empty()) {
+			continue;
+		}
+		nlohmann::json dj;
+		dj["key"] = ChartDatasetKey(dataset);
+		dj["label"] = ChartDatasetLabel(dataset);
+		dj["allowed_kinds"] = nlohmann::json::array();
+		for (ChartWidgetKind kind : AllowedChartKinds(shape, dataset)) {
+			dj["allowed_kinds"].push_back(ChartWidgetKindKey(kind));
+		}
+		dj["colour"] = ChartRgbToHex(ChartDatasetColour(dataset));
+		dj["default_currency"] = MakeCurrency(PickDefaultChartCurrency(by_currency))->GetShortName();
+		dj["native"] = nlohmann::json::array();
+		for (const auto& pair : by_currency) {
+			dj["native"].push_back(ChartDataToJson(pair.second));
+		}
+		// Only meaningful with something to merge - a single-currency dataset's "converted" view
+		// would just be its native one again.
+		dj["converted"] = nlohmann::json::array();
+		if (by_currency.size() > 1) {
+			for (const auto& pair : by_currency) {
+				dj["converted"].push_back(ChartDataToJson(MergeConvertedToCurrency(by_currency, pair.first, shape)));
+			}
+		}
+		datasets.push_back(std::move(dj));
+	}
+	return datasets;
+}
+
+nlohmann::json ChartResultToJson(const ChartResult& result, ChartShape shape) {
 	nlohmann::json j;
 	j["period_unit"] = Utf8(result.m_period_unit);
-	j["income"] = nlohmann::json::array();
-	for (const auto& pair : result.m_income) {
-		j["income"].push_back(ChartDataToJson(pair.second));
+	j["others_colour"] = ChartRgbToHex(CHART_OTHERS_COLOUR);
+	j["palette"] = nlohmann::json::array();
+	for (const ChartRgb& colour : ChartCategoricalPalette()) {
+		j["palette"].push_back(ChartRgbToHex(colour));
 	}
-	j["expense"] = nlohmann::json::array();
-	for (const auto& pair : result.m_expense) {
-		j["expense"].push_back(ChartDataToJson(pair.second));
-	}
-	// Populated instead of income/expense for a result with no real aggregation topic (see
-	// ChartData.h's ChartResult comment) - each entry already carries "Income"/"Expense" as its
-	// own series/labels, so the frontend renders it as one unsided chart per currency rather than
-	// an Income/Expense pair.
-	j["summary"] = nlohmann::json::array();
-	for (const auto& pair : result.m_summary) {
-		j["summary"].push_back(ChartDataToJson(pair.second));
-	}
+	j["datasets"] = ChartDatasetsToJson(result, shape);
 	return j;
 }
 
@@ -111,7 +142,7 @@ QueryApiResult RunQueryDef(const FavoriteQueryDef& def, const AccountManager& mg
 		sj["table"] = TableToJson(section.table);
 		if (!section.chart_data.IsEmpty()) {
 			sj["chart_shape"] = ChartShapeToString(section.chart_shape);
-			sj["chart"] = ChartResultToJson(section.chart_data);
+			sj["chart"] = ChartResultToJson(section.chart_data, section.chart_shape);
 		}
 		result.push_back(std::move(sj));
 	}

@@ -51,6 +51,8 @@ SRCS := \
 	src/RelativePeriod.cpp \
 	src/HtmlReport.cpp \
 	src/ChartFolding.cpp \
+	src/ChartPresentation.cpp \
+	src/ChartConversion.cpp \
 	src/Logger.cpp \
 	src/LogData.cpp \
 	src/AccountManager.cpp \

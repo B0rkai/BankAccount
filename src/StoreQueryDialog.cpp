@@ -1,4 +1,5 @@
 #include "StoreQueryDialog.h"
+#include "ChartData.h"
 
 namespace {
 	enum CTRL_IDs {
@@ -42,8 +43,7 @@ void StoreQueryDialog::ButtonClicked(wxCommandEvent& evt) {
 	if (m_chart_side_choice) {
 		int sel = m_chart_side_choice->GetSelection();
 		if (sel <= 0) m_chart_side_ref = cStringEmpty;
-		else if (sel == 1) m_chart_side_ref = "income";
-		else m_chart_side_ref = "expense";
+		else m_chart_side_ref = ChartDatasetKey(CHART_DATASETS_IN_DISPLAY_ORDER[sel - 1]);
 	}
 	if (m_chart_kind_choice) {
 		int sel = m_chart_kind_choice->GetSelection();
@@ -63,7 +63,8 @@ StoreQueryDialog::StoreQueryDialog(wxWindow* parent, bool show_chart_controls, S
 	int ok_y = VERTICAL_ALIGNMENT2;
 	if (show_chart_controls) {
 		wxArrayString sides;
-		sides.Add("(none)"); sides.Add("Income"); sides.Add("Expense");
+		sides.Add("(none)");
+		for (ChartDataset dataset : CHART_DATASETS_IN_DISPLAY_ORDER) sides.Add(ChartDatasetLabel(dataset));
 		new wxStaticText(this, wxID_ANY, "Chart side", wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT2 - 20));
 		m_chart_side_choice = new wxChoice(this, wxID_ANY, wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT2), cDefaultCtrlSize, sides);
 		m_chart_side_choice->SetSelection(0);

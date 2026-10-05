@@ -215,9 +215,9 @@ class cMain :
     wxBitmapButton* m_show_chart_btn = nullptr;
     // Chart display preference behind the query result currently shown - set from a favorite
     // query's own "chart" object (see FavoriteQuery.h) by FavoriteQuerySelected, and cleared
-    // (back to "no preference": today's default of Income-if-present then first available kind)
-    // by QueryButtonClicked, so a manual query never inherits a stale preference from an earlier
-    // favorite. Plain strings, not ChartWidgetKind/income-or-expense enums, since
+    // (back to "no preference": the Net tab, first available kind) by QueryButtonClicked, so a
+    // manual query never inherits a stale preference from an earlier favorite. Plain strings,
+    // not ChartWidgetKind/ChartDataset enums, since
     // FavoriteQueryDef itself only carries strings (a Core, wx-GUI-free struct) - translated to
     // the real enum in ShowOrRefreshChart(), the one place that actually builds a ChartDialog.
     String m_preferred_chart_side;

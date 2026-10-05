@@ -13,17 +13,17 @@
 struct FavoriteReportDef {
 	String name;           // report heading, and the Favorite Reports menu label
 	String favorite_query; // name of an existing FavoriteQueryDef (FavoriteQuery.h) to run as the data source
-	// Subset of "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line" (mirrors ChartWidgetKind,
-	// see ChartDialog.h) - which chart types to render for each report section. Empty = tables
-	// only, no charts. A kind not valid for a given section's ChartShape is silently skipped at
-	// render time (BuildHtmlReport, HtmlReport.h), same fallback contract as FavoriteQueryDef's
-	// own chart_kind.
+	// Subset of "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line" (see ChartPresentation.h's
+	// ChartWidgetKindKey()) - which chart types to render for each report section. Empty = tables
+	// only, no charts. A kind not allowed for a given section's dataset/shape (AllowedChartKinds())
+	// is skipped at render time, and a dataset none of the kinds suit falls back to its default
+	// kind (BuildHtmlReport, HtmlReport.h).
 	std::vector<String> chart_kinds;
-	// Subset of "income"/"expense" (same lowercase values as FavoriteQueryDef::chart_side) -
-	// restricts which side(s) get rendered as charts, e.g. ["expense"] for a spending-only report
-	// that would otherwise be cluttered with an unwanted income chart per section. Empty, or
-	// containing only unrecognized values, means no restriction - both sides are rendered, the
-	// pre-existing default - never an empty report.
+	// Subset of "net"/"income"/"expense" (same lowercase values as FavoriteQueryDef::chart_side) -
+	// restricts which dataset(s) get rendered as charts, e.g. ["expense"] for a spending-only report
+	// that would otherwise be cluttered with unwanted net/income charts per section. Empty, or
+	// containing only unrecognized values, means no restriction - every dataset is rendered (Net
+	// first) - never an empty report.
 	std::vector<String> chart_sides;
 };
 

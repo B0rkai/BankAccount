@@ -414,6 +414,45 @@ restriction (from a favorite report's `chart_sides`) narrows the dataset dropdow
 way it narrows `HtmlReport.cpp`'s side filter - "summary" is exempt from that restriction for the
 same "no real side to filter" reason.
 
+## Revision (2026-10-05): Net/Income/Expense datasets, server-side currency conversion
+
+Follows [html-reports-design.md](html-reports-design.md)'s "Net/Income/Expense datasets, never
+mixed in one chart" revision (the `"summary"` array above is gone). Each section's `chart` JSON is
+now:
+
+```json
+"chart": {
+  "period_unit": "month",
+  "others_colour": "#9e9e9e",
+  "palette": ["#4e79a7", "#f28e2b", ...],
+  "datasets": [
+    { "key": "net", "label": "Net", "allowed_kinds": ["bar", "line"],
+      "colour": "#8e24aa", "default_currency": "HUF",
+      "native":    [ {"currency": "HUF", "labels": [...], "series": [...]}, ... ],
+      "converted": [ {"currency": "HUF", ...}, {"currency": "EUR", ...} ] },
+    { "key": "income", ... }, { "key": "expense", ... }
+  ]
+}
+```
+
+- `datasets` is in display order (Net first) and only lists non-empty datasets.
+- `allowed_kinds`/`colour`/`palette`/`others_colour` come from `ChartPresentation.h`, so the
+  frontend carries no chart-kind rules or colours of its own: a dataset's `colour` is used when the
+  chart has a single entry, the shared categorical `palette` (by rank) when it has several topics.
+- `native` is one `ChartData` per currency present; `converted` (only when there's more than one
+  currency) is, per target currency, every currency's data exchanged into it at the static rates
+  and merged (`MergeConvertedToCurrency()` in the GUI-free
+  [include/ChartConversion.h](../include/ChartConversion.h) - the same code the desktop
+  `ChartTabPanel`'s "Convert all to this currency" checkbox uses). `default_currency` is HUF when
+  present, else the first currency (`PickDefaultChartCurrency()`).
+
+The frontend (`daemon/static/app.js`'s `renderChartsForSection()`) now renders **one card per
+section** with a Dataset dropdown (Net selected by default, or a favorite's `chart.side`; narrowed
+by a report's `chart_sides`), a Currency dropdown and "Convert all to this currency" checkbox (both
+hidden for a single-currency result), and a chart-kind dropdown filled from the dataset's
+`allowed_kinds` - all redrawing the same `Chart` instance in place, keeping the chosen currency/kind
+across dataset switches when still valid.
+
 ## Decisions (2026-09-10)
 
 - **Explicit "Run" button**, not live-as-you-type — matches the desktop's own model, no

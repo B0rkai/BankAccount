@@ -216,8 +216,14 @@ AMOUNT/CURRENCY/CLIENT/MEMO/CATEGORY/GENERAL/WRITE):
   not-yet-designed feature.
 
 **Chart display**: `ChartDialog`/`ChartTabPanel` ([include/ChartDialog.h](include/ChartDialog.h)/
-[src/ChartDialog.cpp](src/ChartDialog.cpp)) render one query's `ChartResult` as Income/Expense
-notebook tabs of pie/doughnut/polar-area/bar/stacked-bar/line wxCharts controls, shown non-modally
+[src/ChartDialog.cpp](src/ChartDialog.cpp)) render one query's `ChartResult` as Net/Income/Expense
+notebook tabs (Net selected by default) of pie/doughnut/polar-area/bar/stacked-bar/line wxCharts
+controls. A chart only ever draws exactly one dataset — Income and Expense are never mixed in one
+chart — and which kinds each dataset/shape offers (Net: never a slice or stacked chart), colours
+(a single-entry chart in its dataset's fixed colour — Income green, Expense red, Net purple; a
+multi-topic chart colourful from a categorical palette; "Others" always grey) and multi-currency
+"convert all" merging are GUI-free core code (`include/ChartPresentation.h`,
+`include/ChartConversion.h`) shared with HTML reports and the Linux daemon. Shown non-modally
 and reused across queries via `cMain::ShowOrRefreshChart()` (lazy-created/raised-if-already-open/
 nulled-on-close, same lifecycle as `LogViewerFrame`). The "show chart" checkbox
 (`m_show_chart_auto_chkb`, off by default) makes `QueryButtonClicked`/`FavoriteQuerySelected`

@@ -10,7 +10,7 @@ patch file to reapply. (Before 2026-09 these lived as a flat diff at
 every fresh clone; that file is retired now that the fork carries the changes directly.) See
 [build-setup.md](build-setup.md) for the wxCharts checkout/build steps.
 
-It covers seven things:
+It covers nine things:
 
 1. The library's own tooltip/axis-label code (`wxbarchart.cpp`, `wxcolumnchart.cpp`,
    `wxstackedcolumnchart.cpp`, `wxlinechart.cpp`, `wxchartslicedata.cpp`,
@@ -76,6 +76,27 @@ It covers seven things:
    unambiguous `(0, 2*M_PI)` full-circle form whenever that sweep is (within float tolerance) a
    full circle — which the existing `> 2*M_PI`/`< 0` clamps then leave untouched, since both `0`
    and `2*M_PI` are already fixed points of that normalization.
+8. `wxColumnChart` (the in-app Bar chart) drew every column standing on the x-axis (the bottom of
+   the grid) up to its value, and took the value axis' range straight from the data's min/max —
+   fine for all-positive data, but a Net chart (added 2026-10) is signed: a negative column was
+   drawn as an upward bar indistinguishable from a positive one, and an all-positive chart's axis
+   floor sat above zero so bar heights weren't proportional to their values. `GetMinValue()`/
+   `GetMaxValue()` now always include 0 in the range, and `DoFit()` hangs each column from the
+   zero line instead (top-left corner + non-negative height, so drawing/hit-testing are
+   unchanged) — negative values extend downward below it. `wxColumnChartOptions`' constructor
+   also no longer sets an explicit Y-axis start value of 0 (that pinned the axis floor at zero, so
+   negative columns hung below the plot area over the x-axis labels) — the range now comes purely
+   from `GetMinValue()`/`GetMaxValue()`. Matches the `beginAtZero` the HTML reports and the daemon
+   frontend set on their Chart.js bar/line charts.
+9. `wxLineChart` (the in-app Line chart) closed each dataset's fill path down to the x-axis — the
+   bottom of the plot — so the shaded area ran from the line to the bottom edge regardless of
+   sign, which reads as nonsense for a signed Net series (a negative period looked like a big
+   positive area). `DoDraw()` now closes the fill path at the zero line instead (the window y of
+   value 0), so only the area between the line and zero is shaded — above zero for positive
+   values, below it for negative ones. `GetMinValue()`/`GetMaxValue()` also always include 0 in
+   the range (same as item 8), so that zero line is always on the plot. A single-point dataset no
+   longer closes its fill to an uninitialized position. (The Chart.js line charts in HTML reports
+   and the daemon set no `fill`, so they need no counterpart.)
 
 Separately, application code (`ChartDialog.cpp`'s `EnsureDatasetThemesRegistered`) registers a
 solid, opaque colour into the process-wide `wxChartsDefaultTheme` for every dataset index a chart

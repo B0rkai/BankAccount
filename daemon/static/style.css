@@ -21,7 +21,9 @@ button { padding: 6px 14px; font-size: 14px; cursor: pointer; }
 .charts-container { display: flex; flex-wrap: wrap; gap: 20px; }
 .chart-card { flex: 1 1 320px; max-width: 480px; min-width: 0; border: 1px solid #eee; border-radius: 4px; padding: 8px; }
 .chart-title { font-weight: 600; margin-bottom: 4px; }
-.chart-card select { max-width: 160px; margin-bottom: 6px; }
+.chart-card select { max-width: 160px; }
+.chart-card .inline { margin-bottom: 6px; }
+.chart-card label { font-size: 13px; white-space: nowrap; }
 td.num, th.num, table.gridjs-table td.num, table.gridjs-table th.num { text-align: right; font-family: Consolas, 'Courier New', monospace; }
 /* gridjs.mermaid.min.css's own theme padding (12px/24px, 14px/24px) and table-layout:fixed are
    element+class/tag+class specificity (0,1,1) - a class-only override loses regardless of source

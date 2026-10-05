@@ -52,7 +52,7 @@ struct FavoriteReportDef {
     String name;                     // report heading AND Favorite Reports menu label
     String favorite_query;           // name of an existing FavoriteQueryDef to run as the data source
     std::vector<String> chart_kinds; // subset of "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line"
-    std::vector<String> chart_sides; // subset of "income"/"expense" - empty/unrecognized = both sides
+    std::vector<String> chart_sides; // subset of "net"/"income"/"expense" - empty/unrecognized = all datasets
 };
 ```
 
@@ -263,6 +263,47 @@ window) mirror the same split: a single "Summary" notebook tab instead of the In
 when `m_summary` is populated. `FavoriteQueryDef::chart_side` is unaffected - it still only picks
 which already-produced tab/chart starts selected, not how the data was produced.
 
+*Superseded by the 2026-10-05 revision below - `m_summary` no longer exists.*
+
+## Revision (2026-10-05): Net/Income/Expense datasets, never mixed in one chart
+
+The `UNSIDED` "Summary" chart above still drew Income and Expense together in one chart (and as a
+stacked bar, stacked one on top of the other - adding the two directions up into a meaningless
+total). Replaced by a stricter rule that holds for every query shape and every surface (in-app
+chart window, HTML reports, Linux daemon frontend): **a chart only ever draws exactly one dataset -
+Net, Income or Expense** (`ChartDataset` in [include/ChartData.h](../include/ChartData.h)).
+
+- **Data**: `ChartResult` has `m_net`/`m_income`/`m_expense` (`m_summary` is gone). `NET_SIGN`/
+  `SPLIT` routing of income/expense is unchanged; *every* mode now also fills `m_net` with each
+  topic's signed net sum (`TOPIC_SUM`) or per-period signed net series (`PERIODIC`). `UNSIDED`
+  (no aggregation topic) fills all three with one entry/series named after the dataset itself
+  ("Income"/"Expense"/"Net").
+- **Net is the default everywhere** - `CHART_DATASETS_IN_DISPLAY_ORDER` is Net, Income, Expense:
+  the in-app window's tabs, the daemon's dataset dropdown and a report section's charts all follow
+  it. A favorite's explicit `chart.side` (`"net"`/`"income"`/`"expense"`) still wins.
+- **Allowed kinds per dataset**: `AllowedChartKinds(shape, dataset)` in the GUI-free
+  [include/ChartPresentation.h](../include/ChartPresentation.h) is the single source of truth
+  (the daemon receives it as each dataset's `allowed_kinds`). Net is signed, so it never gets a
+  slice chart (pie/doughnut/polar area) or a stacked bar: Bar/Line for `PERIODIC`, Bar only for
+  `TOPIC_SUM`. Bar is Net's default. Income/Expense keep their previous per-shape lists.
+- **Report rendering**: one chart per requested kind, per dataset allowed by `chart_sides`, per
+  currency - titled `"<Dataset> (<CUR>) - <Kind>"`. A requested kind not valid for a dataset/shape
+  now falls back to that dataset's default kind (`AllowedChartKinds().front()`) instead of
+  silently dropping the dataset's chart (e.g. `["pie"]` still renders Net as a bar); only a
+  `chart_kinds` list with *no* recognized kind at all renders no charts.
+- **Colours**: a single-entry chart (no aggregation topic - just one "Income"/"Expense"/"Net"
+  slice/bar/series) uses its dataset's fixed colour - Income green (`#43a047`), Expense red
+  (`#e53935`), Net purple (`#8e24aa`) (`ChartDatasetColour()`) - so the colour alone says which
+  direction it shows. A multi-topic chart is colourful instead: each topic takes a categorical
+  palette colour by rank (`ChartCategoricalPalette()`, Tableau 10 minus its grey; `ChartEntryColour()`
+  picks between the two rules). "Others" is always grey `#9e9e9e` (`CHART_OTHERS_COLOUR`). The same
+  rules are used by `ChartDialog`, `HtmlReport.cpp` and the daemon (sent as each dataset's `colour`
+  plus the chart's `palette`/`others_colour`), so a chart looks the same on every surface.
+- **Zero baseline**: categorical (bar/line) charts always include 0 on the value axis
+  (`beginAtZero`), so negative Net bars visibly hang below a zero line. The in-app window gets the
+  same from a wxCharts fork patch (see [wxcharts-patches.md](wxcharts-patches.md)), which also
+  shades an in-app line chart only between the line and zero (the Chart.js lines have no fill).
+
 ## Folding many topics into "Others"
 
 A `TOPIC_SUM`/`PERIODIC` chart backing a report section can have as many topics (categories,
@@ -272,7 +313,8 @@ bar chart with 40 series is unreadable. `BuildHtmlReport()` applies the exact sa
 shared, wx-GUI-free `include/ChartFolding.h`/`src/ChartFolding.cpp` in `BankAccountCore` so both
 `ChartDialog.cpp` and `HtmlReport.cpp` apply identical logic): sorted descending by magnitude,
 working backward from the smallest topic/series, as many as fit within 5% of the chart's grand
-total get folded into one trailing "Others" slice/series - so Others can never end up bigger than
+total (of magnitudes - a Net chart's negative topics rank by size, not by sign) get folded into one
+trailing "Others" slice/series - so Others can never end up bigger than
 the real topics it absorbed the way a fixed-rank "top N" cutoff could, and a report chart never
 renders more wedges/bars than are actually legible.
 
@@ -282,7 +324,7 @@ renders more wedges/bars than are actually legible.
 legend convention (largest slice/series first). A static report reads more like its own table
 though - `QuerySumByTopic`/`PeriodicQuery` both sort their table rows ascending by amount (see
 `GetSortedSubQueries()` on each, in [include/Query.h](../include/Query.h)) - so
-`HtmlReport.cpp`'s `SliceLabelsAndValues()`/`CategoricalLabelsAndSeries()` re-sort the *already-
+`HtmlReport.cpp`'s `SliceLabelsAndValues()`/`FoldedColouredSeries()` re-sort the *already-
 folded* result ascending (smallest first) before handing it to Chart.js. "Others" is excluded from
 that sort and always kept as the last slice/series regardless of its own combined value - it's a
 grab-bag of many small, unrelated topics rather than a real one, so sorting it in by amount would

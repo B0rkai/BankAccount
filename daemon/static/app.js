@@ -108,16 +108,28 @@ function renderTable(container, table) {
 }
 
 // ---- chart folding (JS port of ChartFolding.h's "fold the smallest trailing tail, capped at 5%
-// of the grand total, into one Others entry" rule - same idea as the C++ original, independently
-// implemented since this runs client-side against already-delivered JSON, not against the typed
-// ChartData the C++ version folds) ----
+// of the grand magnitude, into one Others entry" rule - same idea as the C++ original,
+// independently implemented since this runs client-side against already-delivered JSON, not
+// against the typed ChartData the C++ version folds). Ranking and the fold budget both go by
+// magnitude (absolute value), not signed amount - a Net chart mixes positive and negative topics,
+// and a big negative one is just as significant as a big positive one. Each kept entry carries its
+// colour rank (largest first - the same order the C++ renderers assign colours in), then the result is re-sorted ascending for display with
+// "Others" pinned last (mirrors HtmlReport.cpp). ----
 var OTHERS_FOLD_TAIL_SHARE = 0.05;
+
+function pinOthersLast(isOthers, amount) {
+  return function(a, b) {
+    var aO = isOthers(a), bO = isOthers(b);
+    if (aO !== bO) { return aO ? 1 : -1; }
+    return amount(a) - amount(b);
+  };
+}
 
 function foldSlices(labels, values) {
   // Drop no-activity items first (mirrors ChartFolding.cpp skipping series.m_values[i] == 0.0) -
   // an item that never had any activity has nothing to show, let alone fold into "Others".
   var items = labels.map(function(l, i) { return { label: l, total: values[i] }; }).filter(function(it) { return it.total !== 0; });
-  items.sort(function(a, b) { return b.total - a.total; });
+  items.sort(function(a, b) { return Math.abs(b.total) - Math.abs(a.total); });
   var grandTotal = items.reduce(function(s, it) { return s + Math.abs(it.total); }, 0);
   var budget = grandTotal * OTHERS_FOLD_TAIL_SHARE;
   var cut = items.length, tail = 0;
@@ -129,61 +141,50 @@ function foldSlices(labels, values) {
   // Folding exactly one item into "Others" would just rename it - only worth it once there are
   // at least two items in the tail to actually collapse together.
   if (items.length - cut <= 1) { cut = items.length; }
-  var result = items.slice(0, cut);
+  var result = items.slice(0, cut).map(function(it, rank) { return { label: it.label, total: it.total, rank: rank }; });
   var folded = items.slice(cut);
   if (folded.length > 0) {
-    result.push({ label: 'Others', total: folded.reduce(function(s, it) { return s + it.total; }, 0) });
+    result.push({ label: 'Others', total: folded.reduce(function(s, it) { return s + it.total; }, 0), rank: -1 });
   }
-  result.sort(function(a, b) {
-    var aO = a.label === 'Others', bO = b.label === 'Others';
-    if (aO !== bO) { return aO ? 1 : -1; }
-    return a.total - b.total;
-  });
+  result.sort(pinOthersLast(function(x) { return x.label === 'Others'; }, function(x) { return x.total; }));
   return result;
 }
+
+function seriesMagnitude(values) { return values.reduce(function(a, b) { return a + Math.abs(b); }, 0); }
+function seriesTotal(values) { return values.reduce(function(a, b) { return a + b; }, 0); }
 
 function foldSeries(labels, series) {
   // Drop series with no activity in any period first (mirrors ChartFolding.cpp's
   // ChartSeriesAllZero filter) - a series that's zero everywhere has nothing to show, let alone
   // fold into "Others".
   var withTotal = series.map(function(s) {
-    return { name: s.name, values: s.values, total: s.values.reduce(function(a, b) { return a + Math.abs(b); }, 0) };
-  }).filter(function(s) { return s.total !== 0; });
-  withTotal.sort(function(a, b) { return b.total - a.total; });
-  var grandTotal = withTotal.reduce(function(s, it) { return s + it.total; }, 0);
+    return { name: s.name, values: s.values, magnitude: seriesMagnitude(s.values) };
+  }).filter(function(s) { return s.magnitude !== 0; });
+  withTotal.sort(function(a, b) { return b.magnitude - a.magnitude; });
+  var grandTotal = withTotal.reduce(function(s, it) { return s + it.magnitude; }, 0);
   var budget = grandTotal * OTHERS_FOLD_TAIL_SHARE;
   var cut = withTotal.length, tail = 0;
   for (var i = withTotal.length - 1; i >= 0; --i) {
-    var next = tail + withTotal[i].total;
+    var next = tail + withTotal[i].magnitude;
     if (next > budget) { break; }
     tail = next; cut = i;
   }
   // Folding exactly one series into "Others" would just rename it - only worth it once there are
   // at least two series in the tail to actually collapse together.
   if (withTotal.length - cut <= 1) { cut = withTotal.length; }
-  var kept = withTotal.slice(0, cut);
+  var result = withTotal.slice(0, cut).map(function(s, rank) { return { name: s.name, values: s.values, rank: rank }; });
   var folded = withTotal.slice(cut);
-  var result = kept.map(function(s) { return { name: s.name, values: s.values }; });
   if (folded.length > 0) {
     var combined = labels.map(function(_, idx) {
       return folded.reduce(function(sum, s) { return sum + (s.values[idx] || 0); }, 0);
     });
-    result.push({ name: 'Others', values: combined });
+    result.push({ name: 'Others', values: combined, rank: -1 });
   }
-  result.sort(function(a, b) {
-    var aO = a.name === 'Others', bO = b.name === 'Others';
-    if (aO !== bO) { return aO ? 1 : -1; }
-    var at = a.values.reduce(function(x, y) { return x + Math.abs(y); }, 0);
-    var bt = b.values.reduce(function(x, y) { return x + Math.abs(y); }, 0);
-    return at - bt;
-  });
+  result.sort(pinOthersLast(function(x) { return x.name === 'Others'; }, function(x) { return seriesTotal(x.values); }));
   return result;
 }
 
 // ---- Chart.js config building (mirrors HtmlReport.cpp's BuildSliceConfig/BuildCategoricalConfig) ----
-var KINDS_ALWAYS = ['pie', 'doughnut', 'polar_area', 'bar'];
-var KINDS_PERIODIC_ONLY = ['stacked_bar', 'line'];
-
 function chartTypeMeta(kind) {
   switch (kind) {
     case 'pie': return { jsType: 'pie', slice: true, stacked: false, label: 'Pie' };
@@ -196,131 +197,188 @@ function chartTypeMeta(kind) {
   }
 }
 
-function kindsForShape(shape) {
-  return (shape === 'periodic') ? KINDS_ALWAYS.concat(KINDS_PERIODIC_ONLY) : KINDS_ALWAYS.slice();
+function sliceOptions() {
+  return { responsive: true, plugins: { legend: { display: true } } };
 }
 
-function baseChartOptions(stacked) {
-  var opts = { responsive: true, plugins: { legend: { display: true } } };
-  if (stacked) { opts.scales = { x: { stacked: true }, y: { stacked: true } }; }
+// The value axis always includes zero, so a Net chart's negative bars visibly hang below it.
+function categoricalOptions(stacked) {
+  var opts = { responsive: true, plugins: { legend: { display: true } }, scales: { y: { beginAtZero: true } } };
+  if (stacked) { opts.scales.x = { stacked: true }; opts.scales.y.stacked = true; }
   return opts;
 }
 
-function buildChartConfig(kind, shape, currencyData) {
+// `colours` = { single: hex, palette: [...hex], others: hex } from the server (ChartPresentation.h's
+// ChartEntryColour() rule), so this frontend can't drift from the desktop dialog/HTML reports: a
+// chart with a single entry (no aggregation topic) uses the dataset's fixed colour, a multi-topic
+// chart the categorical palette by rank, and "Others" (rank -1) is always grey. `count` is how
+// many entries the chart draws, Others included.
+function colourFor(colours, rank, count) {
+  if (rank < 0) { return colours.others; }
+  if (count <= 1) { return colours.single; }
+  return colours.palette[rank % colours.palette.length];
+}
+
+function buildChartConfig(kind, shape, currencyData, colours) {
   var meta = chartTypeMeta(kind);
   if (!meta) { return null; }
   if (shape === 'periodic') {
     if (meta.slice) {
-      var totals = currencyData.series.map(function(s) { return s.values.reduce(function(a, b) { return a + b; }, 0); });
+      var totals = currencyData.series.map(function(s) { return seriesTotal(s.values); });
       var folded = foldSlices(currencyData.series.map(function(s) { return s.name; }), totals);
-      return { type: meta.jsType, data: { labels: folded.map(function(f) { return f.label; }), datasets: [{ data: folded.map(function(f) { return f.total; }) }] }, options: baseChartOptions(false) };
+      return {
+        type: meta.jsType,
+        data: { labels: folded.map(function(f) { return f.label; }), datasets: [{ data: folded.map(function(f) { return f.total; }), backgroundColor: folded.map(function(f) { return colourFor(colours, f.rank, folded.length); }) }] },
+        options: sliceOptions(),
+      };
     }
     var foldedSeries = foldSeries(currencyData.labels, currencyData.series);
     return {
       type: meta.jsType,
-      data: { labels: currencyData.labels, datasets: foldedSeries.map(function(s) { return { label: s.name, data: s.values }; }) },
-      options: baseChartOptions(meta.stacked),
+      data: {
+        labels: currencyData.labels,
+        datasets: foldedSeries.map(function(s) {
+          var c = colourFor(colours, s.rank, foldedSeries.length);
+          return { label: s.name, data: s.values, backgroundColor: c, borderColor: c };
+        }),
+      },
+      options: categoricalOptions(meta.stacked),
     };
   }
-  // topic_sum: one "Sum" series
+  // topic_sum: one "Sum" series, one slice/bar per topic
   var sumSeries = currencyData.series[0] || { values: [] };
   var foldedTopics = foldSlices(currencyData.labels, sumSeries.values);
+  var topicLabels = foldedTopics.map(function(f) { return f.label; });
+  var topicValues = foldedTopics.map(function(f) { return f.total; });
+  var topicColours = foldedTopics.map(function(f) { return colourFor(colours, f.rank, foldedTopics.length); });
   if (meta.slice) {
-    return { type: meta.jsType, data: { labels: foldedTopics.map(function(f) { return f.label; }), datasets: [{ data: foldedTopics.map(function(f) { return f.total; }) }] }, options: baseChartOptions(false) };
+    return { type: meta.jsType, data: { labels: topicLabels, datasets: [{ data: topicValues, backgroundColor: topicColours }] }, options: sliceOptions() };
   }
   return {
     type: meta.jsType,
-    data: { labels: foldedTopics.map(function(f) { return f.label; }), datasets: [{ label: 'Sum', data: foldedTopics.map(function(f) { return f.total; }) }] },
-    options: baseChartOptions(meta.stacked),
+    data: { labels: topicLabels, datasets: [{ label: 'Sum', data: topicValues, backgroundColor: topicColours, borderColor: topicColours }] },
+    options: categoricalOptions(meta.stacked),
   };
 }
 
-// One card, one visible chart per currency - rather than a separate card per (side, currency)
-// combination, every dataset available for a currency (its "Summary" chart, or its "Income"/
-// "Expense" charts - the two are mutually exclusive, see ChartData.h's ChartResult comment on the
-// C++ side) shares one canvas, switched via a "Dataset" dropdown alongside the existing chart-kind
-// dropdown. Keeps the page from growing 4+ cards per section once an account/type breakdown can
-// legitimately have both an Income and an Expense chart for the same currency.
-var DATASET_ORDER = ['summary', 'income', 'expense'];
-var DATASET_LABELS = { summary: 'Summary', income: 'Income', expense: 'Expense' };
+function addOption(select, value, text) {
+  var opt = document.createElement('option');
+  opt.value = value; opt.textContent = text;
+  select.appendChild(opt);
+}
 
+// The kinds to offer for one dataset: the server's allowed_kinds (AllowedChartKinds(), the single
+// source of truth), narrowed by a report's chart_kinds when given - falling back to the dataset's
+// own default kind when none of the requested kinds suit it (e.g. a report asking only for "pie",
+// which Net can never be drawn as), the same rule HtmlReport.cpp's KindsForDataset() applies.
+function kindsForDataset(dataset, restriction) {
+  var allowed = dataset.allowed_kinds || [];
+  if (!restriction || !restriction.kinds || !restriction.kinds.length) { return allowed; }
+  var recognized = restriction.kinds.filter(function(k) { return chartTypeMeta(k) !== null; });
+  if (!recognized.length) { return allowed; }
+  var narrowed = allowed.filter(function(k) { return recognized.indexOf(k) !== -1; });
+  return narrowed.length ? narrowed : allowed.slice(0, 1);
+}
+
+// One card per section. Every chart draws exactly one dataset - Net, Income or Expense, never two
+// of them together (see ChartData.h's ChartDataset on the C++ side) - picked from a "Dataset"
+// dropdown, Net first and selected by default (or a favorite's own chart side, when it names one).
+// A dataset spanning more than one currency also gets a Currency dropdown plus a "Convert all to
+// this currency" checkbox, mirroring the desktop ChartTabPanel: unchecked shows only the selected
+// currency's own transactions, checked shows every currency exchanged into it and merged
+// (pre-computed server-side, see QueryApi.cpp - the browser never needs exchange rates).
 function renderChartsForSection(container, section, restriction) {
   if (typeof Chart === 'undefined') { return; }
   var shape = section.chart_shape;
   var chart = section.chart;
-
-  var byCurrency = {}; // currency code -> { summary: data, income: data, expense: data } (sparse)
-  DATASET_ORDER.forEach(function(key) {
-    (chart[key] || []).forEach(function(data) {
-      byCurrency[data.currency] = byCurrency[data.currency] || {};
-      byCurrency[data.currency][key] = data;
-    });
-  });
-
-  var datasetOrder = DATASET_ORDER;
+  var datasets = chart.datasets || [];
   if (restriction && restriction.sides && restriction.sides.length) {
-    // "summary" has no side to restrict (see the C++ side_allowed() contract HtmlReport.cpp
-    // mirrors) - a chart_sides restriction only ever narrows which of income/expense show.
-    datasetOrder = datasetOrder.filter(function(k) { return (k === 'summary') || (restriction.sides.indexOf(k) !== -1); });
+    // Unrecognized-only sides mean "no restriction", never an empty chart area (same contract as
+    // HtmlReport.cpp's BuildDatasetFilter()).
+    var narrowed = datasets.filter(function(d) { return restriction.sides.indexOf(d.key) !== -1; });
+    if (narrowed.length) { datasets = narrowed; }
   }
-  var defaultKinds = kindsForShape(shape);
-  var availableKinds = defaultKinds;
-  if (restriction && restriction.kinds && restriction.kinds.length) {
-    var narrowed = defaultKinds.filter(function(k) { return restriction.kinds.indexOf(k) !== -1; });
-    if (narrowed.length) { availableKinds = narrowed; }
+  if (!datasets.length) { return; }
+  var colours = function(d) { return { single: d.colour, palette: chart.palette, others: chart.others_colour }; };
+
+  var card = document.createElement('div');
+  card.className = 'chart-card';
+  var title = document.createElement('div');
+  title.className = 'chart-title';
+  card.appendChild(title);
+
+  var controls = document.createElement('div');
+  controls.className = 'inline';
+  var datasetSelect = document.createElement('select');
+  datasets.forEach(function(d) { addOption(datasetSelect, d.key, d.label); });
+  var preferredSide = restriction && restriction.preferredSide;
+  if (preferredSide && datasets.some(function(d) { return d.key === preferredSide; })) {
+    datasetSelect.value = preferredSide;
+  }
+  // Only shown when there's an actual choice - a single-dataset section just states its dataset
+  // in the title instead of a lone one-item dropdown.
+  if (datasets.length > 1) { controls.appendChild(datasetSelect); }
+  var currencySelect = document.createElement('select');
+  controls.appendChild(currencySelect);
+  var convertLabel = document.createElement('label');
+  var convertCheckbox = document.createElement('input');
+  convertCheckbox.type = 'checkbox';
+  convertLabel.appendChild(convertCheckbox);
+  convertLabel.appendChild(document.createTextNode(' Convert all to this currency'));
+  controls.appendChild(convertLabel);
+  var kindSelect = document.createElement('select');
+  controls.appendChild(kindSelect);
+  card.appendChild(controls);
+
+  var canvas = document.createElement('canvas');
+  card.appendChild(canvas);
+  container.appendChild(card);
+
+  var chartInstance = null;
+  // Kept across dataset switches (when the newly selected dataset has them too), so flipping
+  // between Net/Income/Expense compares like with like.
+  var chosenCurrency = null;
+  var chosenKind = (restriction && restriction.preferredKind) || null;
+
+  function currentDataset() {
+    return datasets.filter(function(d) { return d.key === datasetSelect.value; })[0] || datasets[0];
   }
 
-  Object.keys(byCurrency).forEach(function(currencyCode) {
-    var datasets = byCurrency[currencyCode];
-    var availableDatasetKeys = datasetOrder.filter(function(k) { return datasets[k]; });
-    if (!availableDatasetKeys.length) { return; }
+  function syncControls() {
+    var d = currentDataset();
+    var currencies = d.native.map(function(n) { return n.currency; });
+    if (currencies.indexOf(chosenCurrency) === -1) { chosenCurrency = d.default_currency || currencies[0]; }
+    currencySelect.innerHTML = '';
+    currencies.forEach(function(c) { addOption(currencySelect, c, c); });
+    currencySelect.value = chosenCurrency;
+    var multiCurrency = currencies.length > 1;
+    currencySelect.style.display = multiCurrency ? '' : 'none';
+    convertLabel.style.display = multiCurrency ? '' : 'none';
 
-    var card = document.createElement('div');
-    card.className = 'chart-card';
-    var title = document.createElement('div');
-    title.className = 'chart-title';
-    card.appendChild(title);
+    var kinds = kindsForDataset(d, restriction);
+    if (kinds.indexOf(chosenKind) === -1) { chosenKind = kinds[0]; }
+    kindSelect.innerHTML = '';
+    kinds.forEach(function(k) { addOption(kindSelect, k, chartTypeMeta(k).label); });
+    kindSelect.value = chosenKind;
+  }
 
-    var controls = document.createElement('div');
-    controls.className = 'inline';
-    var datasetSelect = null;
-    // Only offered when there's an actual choice - a Summary-only or single-side currency just
-    // states its dataset in the title instead of a lone one-item dropdown.
-    if (availableDatasetKeys.length > 1) {
-      datasetSelect = document.createElement('select');
-      availableDatasetKeys.forEach(function(k) {
-        var opt = document.createElement('option');
-        opt.value = k; opt.textContent = DATASET_LABELS[k];
-        datasetSelect.appendChild(opt);
-      });
-      controls.appendChild(datasetSelect);
-    }
-    var kindSelect = document.createElement('select');
-    availableKinds.forEach(function(k) {
-      var opt = document.createElement('option');
-      opt.value = k; opt.textContent = chartTypeMeta(k).label;
-      kindSelect.appendChild(opt);
-    });
-    controls.appendChild(kindSelect);
-    card.appendChild(controls);
+  function redraw() {
+    var d = currentDataset();
+    var converted = convertCheckbox.checked && d.converted && d.converted.length;
+    var source = converted ? d.converted : d.native;
+    var data = source.filter(function(n) { return n.currency === chosenCurrency; })[0] || source[0];
+    title.textContent = d.label + ' (' + (converted ? 'all in ' : '') + data.currency + ')';
+    if (chartInstance) { chartInstance.destroy(); }
+    var cfg = buildChartConfig(chosenKind, shape, data, colours(d));
+    chartInstance = cfg ? new Chart(canvas, cfg) : null;
+  }
 
-    var canvas = document.createElement('canvas');
-    card.appendChild(canvas);
-    container.appendChild(card);
-
-    var chartInstance = null;
-    function currentKey() { return datasetSelect ? datasetSelect.value : availableDatasetKeys[0]; }
-    function redraw() {
-      var key = currentKey();
-      title.textContent = DATASET_LABELS[key] + ' (' + currencyCode + ')';
-      if (chartInstance) { chartInstance.destroy(); }
-      var cfg = buildChartConfig(kindSelect.value, shape, datasets[key]);
-      if (cfg) { chartInstance = new Chart(canvas, cfg); }
-    }
-    if (datasetSelect) { datasetSelect.addEventListener('change', redraw); }
-    kindSelect.addEventListener('change', redraw);
-    redraw();
-  });
+  datasetSelect.addEventListener('change', function() { syncControls(); redraw(); });
+  currencySelect.addEventListener('change', function() { chosenCurrency = currencySelect.value; redraw(); });
+  convertCheckbox.addEventListener('change', redraw);
+  kindSelect.addEventListener('change', function() { chosenKind = kindSelect.value; redraw(); });
+  syncControls();
+  redraw();
 }
 
 function renderSections(sections, restriction) {
@@ -373,7 +431,11 @@ qs('runFavQuery').addEventListener('click', function() {
     .then(function(result) {
       if (!result.ok) { setStatus('Error: ' + (result.data.error || result.status)); return; }
       setStatus('');
-      renderSections(result.data, null);
+      // A favorite's own chart preference (FavoriteQueryDef::chart_side/chart_kind) picks the
+      // initially shown dataset/kind, same as the desktop app's ChartDialog.
+      var fav = (window.__favoriteQueries || []).filter(function(f) { return f.name === name; })[0];
+      var chartPref = (fav && fav.chart) || {};
+      renderSections(result.data, { preferredSide: chartPref.side || null, preferredKind: chartPref.kind || null });
     })
     .catch(function(e) { setStatus('Request failed: ' + e.message); });
 });
@@ -412,6 +474,7 @@ function loadMeta() {
       accContainer.appendChild(label);
     });
 
+    window.__favoriteQueries = favQueries;
     window.__favoriteReports = favReports;
     var favQSelect = qs('favQuerySelect');
     favQueries.forEach(function(f) {

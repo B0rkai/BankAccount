@@ -36,9 +36,7 @@ constexpr int cREPORT_GRID_CELL_PADDING_H_PX = 12;   // .gridjs-td/.gridjs-th ho
 struct ReportSection {
 	String heading;          // from Query.h's DescribeQueryElement()
 	StringTable table;
-	ChartResult chart_data;  // empty/IsEmpty() for a plain transaction-list section; a "Currency
-	                         // Summary" section (no real aggregation topic) populates m_summary
-	                         // instead of m_income/m_expense - see ChartData.h
+	ChartResult chart_data;  // empty/IsEmpty() for a plain transaction-list section - see ChartData.h
 	ChartShape chart_shape = ChartShape::NONE;
 };
 
@@ -62,23 +60,25 @@ String LoadGridJsSource();
 String LoadGridJsCss();
 
 // Builds one self-contained HTML document: `title` as the page heading, one section per
-// `sections` entry (a table, plus - for each of `chart_kinds` that's valid for that section's
-// ChartShape, for each income/expense side allowed by `chart_sides` and present in the data, for
-// each currency present in that side's ChartDataByCurrency - one Chart.js <canvas>). A section
-// with no real aggregation topic (ChartResult::m_summary non-empty rather than m_income/m_expense
-// - see ChartData.h) renders a single "Summary" chart per currency instead, unaffected by
-// `chart_sides` (there's no side to filter). Each chart's topics/series are folded via
+// `sections` entry (a table, plus one Chart.js <canvas> per dataset x kind x currency present in
+// that section's ChartResult). Datasets come in CHART_DATASETS_IN_DISPLAY_ORDER (Net, then Income,
+// then Expense) and every chart draws exactly one of them - income and expense never share a
+// chart. Each dataset is drawn in its fixed palette (ChartPresentation.h: Income green, Expense
+// red, Net purple, "Others" grey). Each chart's topics/series are folded via
 // BuildFoldedTopicSlices()/BuildFoldedPeriodicSeries() (ChartFolding.h) exactly like the live
 // wxCharts dialog, so a chart with dozens of categories/clients renders as a handful of
-// slices/bars plus one trailing "Others" rather than an unreadable wall of them. `chart_kinds` is
-// a subset of "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line" (mirrors ChartWidgetKind,
-// see ChartDialog.h); an unrecognized string, or a kind not valid for a given section's shape
-// (TOPIC_SUM: pie/doughnut/polar_area/bar only - a single-series shape can't stack or trend;
-// PERIODIC: all six, matching ChartTabPanel::PopulateKindChoices()), is silently skipped for that
-// section - same "skip rather than fail" contract as FavoriteQueryDef's own chart_kind.
-// `chart_sides` is a subset of "income"/"expense" (matching FavoriteQueryDef::chart_side's own
-// lowercase convention); empty, or containing only unrecognized values, means no restriction (both
-// sides rendered, the pre-existing default) - never an empty report. `chartjs_source` (see LoadChartJsSource()) is inlined verbatim into one
+// slices/bars plus one trailing "Others" rather than an unreadable wall of them.
+//
+// `chart_kinds` is a subset of "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line" (see
+// ChartWidgetKindKey()); each dataset gets those of them AllowedChartKinds() permits for it (Net:
+// bar/line only). An unrecognized string is silently skipped - same "skip rather than fail"
+// contract as FavoriteQueryDef's own chart_kind - and when none of the recognized kinds suit a
+// dataset, that dataset falls back to its default kind (AllowedChartKinds().front()) rather than
+// vanishing. An empty (or all-unrecognized) `chart_kinds` means tables only.
+//
+// `chart_sides` is a subset of "net"/"income"/"expense" (see ParseChartDataset()); empty, or
+// containing only unrecognized values, means no restriction (every dataset rendered) - never an
+// empty report. `chartjs_source` (see LoadChartJsSource()) is inlined verbatim into one
 // <script> block so the output file has zero external references; passing an empty string omits
 // chart rendering entirely (tables only). `gridjs_source`/`gridjs_css` (see LoadGridJsSource()/
 // LoadGridJsCss()) are likewise inlined verbatim and, when non-empty, make every section's table

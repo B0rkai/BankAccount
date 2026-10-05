@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "HtmlReport.h"
+#include "ChartPresentation.h"
 #include "AccountManager.h"
 #include "Journal.h"
 #include "Query.h"
@@ -152,28 +153,44 @@ std::vector<ReportSection> BothSidesSection() {
     return { section };
 }
 
-// A "Currency Summary" section (no real aggregation topic - see ChartData.h's ChartResult
-// comment) populates m_summary instead of m_income/m_expense.
-ChartResult MakeSummaryChartResult() {
-    ChartResult result;
+ChartData MakeOneEntryChartData(const String& label, double value) {
     ChartData data;
     data.m_currency = HUF;
-    data.m_labels = { "Income", "Expense" };
+    data.m_labels = { label };
     ChartSeries series;
     series.m_name = "Sum";
-    series.m_values = { 9000.0, 2000.0 };
+    series.m_values = { value };
     data.m_series.push_back(series);
-    result.m_summary[HUF] = data;
+    return data;
+}
+
+// A "Currency Summary" section (no real aggregation topic - see QuerySumByTopic::GetChartResult()'s
+// UNSIDED mode): each dataset holds one entry named after itself, Net signed.
+ChartResult MakeNoTopicChartResult() {
+    ChartResult result;
+    result.m_income[HUF] = MakeOneEntryChartData("Income", 9000.0);
+    result.m_expense[HUF] = MakeOneEntryChartData("Expense", 2000.0);
+    result.m_net[HUF] = MakeOneEntryChartData("Net", 7000.0);
     return result;
 }
 
-std::vector<ReportSection> SummarySection() {
+std::vector<ReportSection> NoTopicSection() {
     ReportSection section;
     section.heading = "Currency Summary";
     section.table = MakeTwoColumnTable();
-    section.chart_data = MakeSummaryChartResult();
+    section.chart_data = MakeNoTopicChartResult();
     section.chart_shape = ChartShape::TOPIC_SUM;
     return { section };
+}
+
+size_t CountCanvases(const String& html) {
+    size_t count = 0;
+    size_t pos = 0;
+    while ((pos = html.find("<canvas", pos)) != wxString::npos) {
+        ++count;
+        pos += 7;
+    }
+    return count;
 }
 
 TEST(BuildHtmlReportTest, TableCellsAppearInOutput) {
@@ -205,21 +222,23 @@ TEST(BuildHtmlReportTest, RequestedKindProducesOneCanvasPerCurrencyAndSide) {
     // MakeTopicSumChartResult() only populates the expense side, one currency (HUF) - one "pie"
     // request should yield exactly one <canvas>.
     String html = BuildHtmlReport("My Report", OneTopicSumSection(), { "pie" }, {}, "/* fake chartjs */");
-    size_t count = 0;
-    size_t pos = 0;
-    while ((pos = html.find("<canvas", pos)) != wxString::npos) {
-        ++count;
-        pos += 7;
-    }
-    EXPECT_EQ(count, 1u);
+    EXPECT_EQ(CountCanvases(html), 1u);
     EXPECT_NE(html.Find("\"type\":\"pie\""), wxNOT_FOUND);
 }
 
-TEST(BuildHtmlReportTest, KindInvalidForTopicSumShapeIsSkipped) {
+TEST(BuildHtmlReportTest, KindInvalidForShapeFallsBackToTheDatasetsDefaultKind) {
     // "line" is PERIODIC-only (a TOPIC_SUM chart only ever has one "Sum" series - see
-    // QuerySumByTopic::GetChartResult() - so a trend line means nothing) - requesting it for a
-    // TOPIC_SUM section must not produce a canvas.
+    // QuerySumByTopic::GetChartResult() - so a trend line means nothing). Rather than silently
+    // dropping the dataset's chart, it falls back to that dataset's default kind
+    // (AllowedChartKinds().front() - Pie for Expense/TOPIC_SUM).
     String html = BuildHtmlReport("My Report", OneTopicSumSection(), { "line" }, {}, "/* fake chartjs */");
+    EXPECT_EQ(CountCanvases(html), 1u);
+    EXPECT_NE(html.Find("\"type\":\"pie\""), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("\"type\":\"line\""), wxNOT_FOUND);
+}
+
+TEST(BuildHtmlReportTest, UnrecognizedKindsOnlyProduceNoCharts) {
+    String html = BuildHtmlReport("My Report", OneTopicSumSection(), { "bogus" }, {}, "/* fake chartjs */");
     EXPECT_EQ(html.Find("<canvas"), wxNOT_FOUND);
 }
 
@@ -305,7 +324,7 @@ TEST(BuildHtmlReportTest, OthersSliceIsPinnedLastEvenWhenSmallerThanARealSlice) 
 TEST(BuildHtmlReportTest, OthersSeriesIsPinnedLastEvenWhenSmallerThanARealSeriesInBarChart) {
     // Same "Others totals less than the smallest surviving real topic" shape as
     // OthersSliceIsPinnedLastEvenWhenSmallerThanARealSlice(), as PERIODIC series instead of
-    // TOPIC_SUM slices, to exercise CategoricalLabelsAndSeries()'s separate PERIODIC sort.
+    // TOPIC_SUM slices, to exercise FoldedColouredSeries()'s separate PERIODIC sort.
     ChartResult chart_result;
     ChartData data;
     data.m_currency = HUF;
@@ -359,19 +378,59 @@ TEST(BuildHtmlReportTest, UnrecognizedChartSidesValueIsIgnoredNotTreatedAsExclus
     EXPECT_NE(html.Find("Income ("), wxNOT_FOUND);
 }
 
-TEST(BuildHtmlReportTest, SummarySectionRendersAsOneUnsidedChartNotIncomeExpenseTabs) {
-    String html = BuildHtmlReport("My Report", SummarySection(), { "pie" }, {}, "/* fake chartjs */");
-    EXPECT_NE(html.Find("Summary ("), wxNOT_FOUND);
-    EXPECT_EQ(html.Find("Income ("), wxNOT_FOUND);
-    EXPECT_EQ(html.Find("Expense ("), wxNOT_FOUND);
+TEST(BuildHtmlReportTest, NoTopicSectionRendersSeparateNetIncomeExpenseChartsNetFirst) {
+    // Income and Expense are never drawn together in one chart - each dataset gets its own chart,
+    // Net first (the default everywhere).
+    String html = BuildHtmlReport("My Report", NoTopicSection(), { "bar" }, {}, "/* fake chartjs */");
+    EXPECT_EQ(CountCanvases(html), 3u);
+    int net_pos = html.Find("Net (HUF)");
+    int income_pos = html.Find("Income (HUF)");
+    int expense_pos = html.Find("Expense (HUF)");
+    ASSERT_NE(net_pos, wxNOT_FOUND);
+    ASSERT_NE(income_pos, wxNOT_FOUND);
+    ASSERT_NE(expense_pos, wxNOT_FOUND);
+    EXPECT_LT(net_pos, income_pos);
+    EXPECT_LT(income_pos, expense_pos);
 }
 
-TEST(BuildHtmlReportTest, ChartSidesRestrictionDoesNotSuppressASummarySection) {
-    // "Summary" has no side to filter (see AppendChartsForKind's side_allowed() contract) - a
-    // chart_sides restriction meant for Income/Expense sections must never silently blank out an
-    // unsided one.
-    String html = BuildHtmlReport("My Report", SummarySection(), { "pie" }, { "expense" }, "/* fake chartjs */");
-    EXPECT_NE(html.Find("Summary ("), wxNOT_FOUND);
+TEST(BuildHtmlReportTest, NetIsNeverASliceChartAndFallsBackToBar) {
+    // Net mixes signs - a pie of signed values means nothing. Asking only for "pie" still renders
+    // Income/Expense as pies, but Net as its default kind (Bar) instead.
+    String html = BuildHtmlReport("My Report", NoTopicSection(), { "pie" }, { "net" }, "/* fake chartjs */");
+    EXPECT_EQ(CountCanvases(html), 1u);
+    EXPECT_NE(html.Find("Net (HUF)"), wxNOT_FOUND);
+    EXPECT_NE(html.Find("\"type\":\"bar\""), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("\"type\":\"pie\""), wxNOT_FOUND);
+}
+
+TEST(BuildHtmlReportTest, ChartSidesNetFiltersToOnlyNet) {
+    String html = BuildHtmlReport("My Report", NoTopicSection(), { "bar" }, { "net" }, "/* fake chartjs */");
+    EXPECT_NE(html.Find("Net (HUF)"), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("Income (HUF)"), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("Expense (HUF)"), wxNOT_FOUND);
+}
+
+TEST(BuildHtmlReportTest, SingleEntryChartsUseTheirDatasetsFixedColour) {
+    String html = BuildHtmlReport("My Report", NoTopicSection(), { "bar" }, {}, "/* fake chartjs */");
+    EXPECT_NE(html.Find("#8e24aa"), wxNOT_FOUND); // Net purple
+    EXPECT_NE(html.Find("#43a047"), wxNOT_FOUND); // Income green
+    EXPECT_NE(html.Find("#e53935"), wxNOT_FOUND); // Expense red
+}
+
+TEST(BuildHtmlReportTest, OthersIsAlwaysGrey) {
+    String html = BuildHtmlReport("My Report", ManyTopicSumSection(), { "pie" }, {}, "/* fake chartjs */");
+    EXPECT_NE(html.Find("#9e9e9e"), wxNOT_FOUND);
+    // multi-topic: colourful, "Big" (the largest topic) gets the categorical palette's first colour,
+    // not the dataset's fixed green
+    EXPECT_NE(html.Find(wxString(ChartRgbToHex(ChartCategoricalPalette()[0]))), wxNOT_FOUND);
+    EXPECT_EQ(html.Find("#43a047"), wxNOT_FOUND);
+}
+
+TEST(BuildHtmlReportTest, CategoricalChartsAlwaysIncludeZeroOnTheValueAxis) {
+    // A Net chart's negative bars must visibly hang below a zero line, never float on an axis
+    // starting at the smallest value.
+    String html = BuildHtmlReport("My Report", NoTopicSection(), { "bar" }, { "net" }, "/* fake chartjs */");
+    EXPECT_NE(html.Find("\"beginAtZero\":true"), wxNOT_FOUND);
 }
 
 TEST(BuildHtmlReportTest, EmptyGridJsSourceRendersPlainStaticTable) {

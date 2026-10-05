@@ -450,7 +450,6 @@ TEST(QuerySumByTopicTest, AccountSplitsIncomeAndExpenseLegsIndependentlyUnlikeCa
     Check(&q, &rent);
 
     ChartResult result = q.GetChartResult();
-    EXPECT_TRUE(result.m_summary.empty());
     ASSERT_TRUE(result.m_income.count(HUF));
     ASSERT_TRUE(result.m_expense.count(HUF));
 
@@ -463,6 +462,13 @@ TEST(QuerySumByTopicTest, AccountSplitsIncomeAndExpenseLegsIndependentlyUnlikeCa
     ASSERT_EQ(expense.m_labels.size(), 1u);
     EXPECT_EQ(expense.m_labels[0], "Acc");
     EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[0], 2000.0); // the expense leg only, not the 7000 net
+
+    // ...while the Net dataset shows the signed net, under the same topic name.
+    ASSERT_TRUE(result.m_net.count(HUF));
+    const ChartData& net = result.m_net.at(HUF);
+    ASSERT_EQ(net.m_labels.size(), 1u);
+    EXPECT_EQ(net.m_labels[0], "Acc");
+    EXPECT_DOUBLE_EQ(net.m_series[0].m_values[0], 7000.0);
 }
 
 TEST(QuerySumByTopicTest, ClientRoutesByNetSignJustLikeCategory) {
@@ -482,17 +488,53 @@ TEST(QuerySumByTopicTest, ClientRoutesByNetSignJustLikeCategory) {
     Check(&q, &purchase);
 
     ChartResult result = q.GetChartResult();
-    EXPECT_TRUE(result.m_summary.empty());
     ASSERT_EQ(result.m_income.size(), 1u); // net is +600 - routed entirely to income, never expense
     EXPECT_EQ(result.m_expense.size(), 0u);
     EXPECT_DOUBLE_EQ(result.m_income.at(HUF).m_series[0].m_values[0], 600.0);
+    ASSERT_TRUE(result.m_net.count(HUF));
+    EXPECT_DOUBLE_EQ(result.m_net.at(HUF).m_series[0].m_values[0], 600.0);
 }
 
-TEST(QuerySumByTopicTest, NoAggregationTopicProducesAnUnsidedSummaryChart) {
+TEST(QuerySumByTopicTest, NetDatasetKeepsNegativeTopicsSignedAlongsidePositiveOnes) {
+    // Category is NET_SIGN-routed, so each topic lands on exactly one of income/expense - but the
+    // Net dataset carries every topic at once, each with its own signed net.
+    FakeAccount acc(Id(0), "Acc");
+    Transaction salary(&acc, Money(HUF, 9000), 45000, Id(0), Id(0));
+    salary.GetCategoryId() = Id(9);
+    Transaction rent(&acc, Money(HUF, -2000), 45000, Id(0), Id(0));
+    rent.GetCategoryId() = Id(7);
+
+    FakeNameResolve resolve;
+    resolve.SetName(Id(9), "Salary");
+    resolve.SetName(Id(7), "Rent");
+    QueryResolveScope scope(&resolve);
+
+    QueryCategorySum q;
+    Check(&q, &salary);
+    Check(&q, &rent);
+
+    ChartResult result = q.GetChartResult();
+    ASSERT_TRUE(result.m_net.count(HUF));
+    const ChartData& net = result.m_net.at(HUF);
+    ASSERT_EQ(net.m_labels.size(), 2u);
+    ASSERT_EQ(net.m_series.size(), 1u);
+    for (size_t i = 0; i < net.m_labels.size(); ++i) {
+        if (net.m_labels[i] == "Salary") {
+            EXPECT_DOUBLE_EQ(net.m_series[0].m_values[i], 9000.0);
+        } else {
+            EXPECT_EQ(net.m_labels[i], "Rent");
+            EXPECT_DOUBLE_EQ(net.m_series[0].m_values[i], -2000.0);
+        }
+    }
+    EXPECT_EQ(result.Get(ChartDataset::NET).size(), 1u);
+    EXPECT_EQ(result.Get(ChartDataset::INCOME).size(), 1u);
+    EXPECT_EQ(result.Get(ChartDataset::EXPENSE).size(), 1u);
+}
+
+TEST(QuerySumByTopicTest, NoAggregationTopicKeepsIncomeExpenseAndNetSeparate) {
     // BuildQueryFromFavorite() pushes a bare QuerySumByTopic (GetTopic() falls back to CURRENCY)
-    // when no aggregate_by topic was chosen - a plain "how much came in/went out" total has no
-    // real topic to split by side, so it should render as one unsided Income-vs-Expense chart per
-    // currency instead of routing into m_income/m_expense.
+    // when no aggregation topic was chosen. Income and expense must still never end up in the same
+    // chart: each dataset gets one entry named after itself, plus a signed "Net" entry.
     FakeAccount acc(Id(0), "Acc");
     Transaction salary(&acc, Money(HUF, 9000), 45000, Id(0), Id(0));
     Transaction rent(&acc, Money(HUF, -2000), 45000, Id(0), Id(0));
@@ -505,16 +547,24 @@ TEST(QuerySumByTopicTest, NoAggregationTopicProducesAnUnsidedSummaryChart) {
     Check(&q, &rent);
 
     ChartResult result = q.GetChartResult();
-    EXPECT_TRUE(result.m_income.empty());
-    EXPECT_TRUE(result.m_expense.empty());
-    ASSERT_TRUE(result.m_summary.count(HUF));
+    ASSERT_TRUE(result.m_income.count(HUF));
+    ASSERT_TRUE(result.m_expense.count(HUF));
+    ASSERT_TRUE(result.m_net.count(HUF));
 
-    const ChartData& summary = result.m_summary.at(HUF);
-    ASSERT_EQ(summary.m_labels.size(), 2u);
-    EXPECT_EQ(summary.m_labels[0], "Income");
-    EXPECT_EQ(summary.m_labels[1], "Expense");
-    EXPECT_DOUBLE_EQ(summary.m_series[0].m_values[0], 9000.0);
-    EXPECT_DOUBLE_EQ(summary.m_series[0].m_values[1], 2000.0);
+    const ChartData& income = result.m_income.at(HUF);
+    ASSERT_EQ(income.m_labels.size(), 1u);
+    EXPECT_EQ(income.m_labels[0], "Income");
+    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[0], 9000.0);
+
+    const ChartData& expense = result.m_expense.at(HUF);
+    ASSERT_EQ(expense.m_labels.size(), 1u);
+    EXPECT_EQ(expense.m_labels[0], "Expense");
+    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[0], 2000.0);
+
+    const ChartData& net = result.m_net.at(HUF);
+    ASSERT_EQ(net.m_labels.size(), 1u);
+    EXPECT_EQ(net.m_labels[0], "Net");
+    EXPECT_DOUBLE_EQ(net.m_series[0].m_values[0], 7000.0);
 }
 
 TEST(PeriodicQueryTest, AccountSplitsIncomeAndExpenseSeriesIndependentlyAcrossPeriods) {
@@ -535,9 +585,16 @@ TEST(PeriodicQueryTest, AccountSplitsIncomeAndExpenseSeriesIndependentlyAcrossPe
     Check(&q, &rent_2021);
 
     ChartResult result = q.GetChartResult();
-    EXPECT_TRUE(result.m_summary.empty());
     ASSERT_TRUE(result.m_income.count(HUF));
     ASSERT_TRUE(result.m_expense.count(HUF));
+    ASSERT_TRUE(result.m_net.count(HUF));
+
+    const ChartData& net = result.m_net.at(HUF);
+    ASSERT_EQ(net.m_series.size(), 1u);
+    EXPECT_EQ(net.m_series[0].m_name, "Acc");
+    ASSERT_EQ(net.m_series[0].m_values.size(), 2u);
+    EXPECT_DOUBLE_EQ(net.m_series[0].m_values[0], 9000.0);
+    EXPECT_DOUBLE_EQ(net.m_series[0].m_values[1], -2000.0); // signed, per period
 
     const ChartData& income = result.m_income.at(HUF);
     ASSERT_EQ(income.m_series.size(), 1u);
@@ -554,7 +611,7 @@ TEST(PeriodicQueryTest, AccountSplitsIncomeAndExpenseSeriesIndependentlyAcrossPe
     EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[1], 2000.0); // 2021's expense leg
 }
 
-TEST(PeriodicQueryTest, NoAggregationTopicProducesUnsidedSummarySeriesAcrossPeriods) {
+TEST(PeriodicQueryTest, NoAggregationTopicKeepsIncomeExpenseAndNetSeriesSeparate) {
     FakeAccount acc(Id(0), "Acc");
     uint16_t date_2020 = (uint16_t)DMYToExcelSerialDate(1, 1, 2020);
     uint16_t date_2021 = (uint16_t)DMYToExcelSerialDate(1, 1, 2021);
@@ -571,28 +628,29 @@ TEST(PeriodicQueryTest, NoAggregationTopicProducesUnsidedSummarySeriesAcrossPeri
     Check(&q, &rent_2021);
 
     ChartResult result = q.GetChartResult();
-    EXPECT_TRUE(result.m_income.empty());
-    EXPECT_TRUE(result.m_expense.empty());
-    ASSERT_TRUE(result.m_summary.count(HUF));
+    ASSERT_TRUE(result.m_income.count(HUF));
+    ASSERT_TRUE(result.m_expense.count(HUF));
+    ASSERT_TRUE(result.m_net.count(HUF));
 
-    auto find_series = [](const ChartData& chart, const String& name) -> const ChartSeries* {
-        for (const ChartSeries& s : chart.m_series) {
-            if (s.m_name == name) {
-                return &s;
-            }
-        }
-        return nullptr;
-    };
-    const ChartData& summary = result.m_summary.at(HUF);
-    const ChartSeries* income_series = find_series(summary, "Income");
-    ASSERT_NE(income_series, nullptr);
-    EXPECT_DOUBLE_EQ(income_series->m_values[0], 9000.0);
-    EXPECT_DOUBLE_EQ(income_series->m_values[1], 0.0);
+    // one series per dataset, each named after its own dataset - never Income and Expense
+    // together in one chart.
+    const ChartData& income = result.m_income.at(HUF);
+    ASSERT_EQ(income.m_series.size(), 1u);
+    EXPECT_EQ(income.m_series[0].m_name, "Income");
+    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[0], 9000.0);
+    EXPECT_DOUBLE_EQ(income.m_series[0].m_values[1], 0.0);
 
-    const ChartSeries* expense_series = find_series(summary, "Expense");
-    ASSERT_NE(expense_series, nullptr);
-    EXPECT_DOUBLE_EQ(expense_series->m_values[0], 0.0);
-    EXPECT_DOUBLE_EQ(expense_series->m_values[1], 2000.0);
+    const ChartData& expense = result.m_expense.at(HUF);
+    ASSERT_EQ(expense.m_series.size(), 1u);
+    EXPECT_EQ(expense.m_series[0].m_name, "Expense");
+    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[0], 0.0);
+    EXPECT_DOUBLE_EQ(expense.m_series[0].m_values[1], 2000.0);
+
+    const ChartData& net = result.m_net.at(HUF);
+    ASSERT_EQ(net.m_series.size(), 1u);
+    EXPECT_EQ(net.m_series[0].m_name, "Net");
+    EXPECT_DOUBLE_EQ(net.m_series[0].m_values[0], 9000.0);
+    EXPECT_DOUBLE_EQ(net.m_series[0].m_values[1], -2000.0);
 }
 
 }

@@ -3,6 +3,7 @@
 #include "wx/frame.h"
 #include "wx/panel.h"
 #include "ChartData.h"
+#include "ChartPresentation.h" // ChartWidgetKind/AllowedChartKinds/palettes - shared with HtmlReport and the daemon
 
 class wxBoxSizer;
 class wxChoice;
@@ -10,42 +11,17 @@ class wxCheckBox;
 class wxStaticText;
 class wxButton;
 
-// Which wxCharts widget currently draws a tab's data - distinct from ChartShape (see
-// ChartData.h), which says what the underlying data *is*.
-//
-// PIE/DOUGHNUT/POLAR_AREA all draw from the same per-slice data (see BuildSliceChart()) and are
-// available for both shapes: for TOPIC_SUM they show one slice per topic directly; for PERIODIC
-// they aggregate each topic's periods into one total first (a topic's total-across-periods and
-// its average-per-period are proportional by the same constant - the period count - so one
-// slice chart by total already shows the right proportions, and BuildSliceChart()'s tooltip adds
-// the average alongside it).
-//
-// BAR/STACKED_BAR/LINE all draw from the same per-series categorical data (see
-// BuildCategoricalChart()), one series per topic - wxCharts colours these per series, not per
-// bar/point, so each topic reads as one consistent colour across its bar(s)/line, the same way a
-// slice chart colours a topic's whole wedge. STACKED_BAR/LINE are PERIODIC-only - both need more
-// than one x-axis group (period) to mean anything, which a TOPIC_SUM chart doesn't have. BAR is
-// available for both shapes: for PERIODIC it's the usual one x-axis group per period; for
-// TOPIC_SUM (no periods to group by) it's a single x-axis group with one coloured bar per topic
-// side by side instead of one pie slice - see PopulateKindChoices() and
-// BuildCategoricalChart()'s TOPIC_SUM branch.
-enum class ChartWidgetKind {
-	PIE,
-	DOUGHNUT,
-	POLAR_AREA,
-	BAR,
-	STACKED_BAR,
-	LINE
-};
-
 // One notebook tab's worth of chart UI: a currency selector (only shown when the data spans more
 // than one currency), a chart-type switcher, and the actual chart+legend controls for one
-// ChartDataByCurrency (the Income side, the Expense side, or the unsided Summary of a ChartResult
-// - see ChartDialog). Switching chart type, currency, or the convert-currencies checkbox never
+// ChartDataByCurrency - exactly one of a ChartResult's Net/Income/Expense datasets (see
+// ChartDialog), never two of them mixed. Which chart kinds are offered comes from
+// AllowedChartKinds(shape, dataset), and colours from the dataset's own palette (see
+// ChartPresentation.h). Switching chart type, currency, or the convert-currencies checkbox never
 // re-runs the query, it just rebuilds the wxCharts controls from the same already-computed data.
 class ChartTabPanel : public wxPanel {
 	ChartDataByCurrency m_data;
 	ChartShape m_shape;
+	ChartDataset m_dataset;
 	CurrencyType m_currency; // the currency currently being viewed, or converted into - see m_convert_to_selected
 	std::vector<CurrencyType> m_currencies; // every currency present in m_data, in m_currency_choice's order
 	String m_period_unit; // "year"/"month"/"day" - only meaningful (and only used) when m_shape == PERIODIC
@@ -68,19 +44,17 @@ class ChartTabPanel : public wxPanel {
 	std::vector<ChartWidgetKind> m_available_kinds;
 	wxButton* m_export_button = nullptr;
 
-	void PopulateKindChoices();
 	// Resolves the wxChoice's current selection back to a ChartWidgetKind - falls back to
 	// m_available_kinds.front() when there's no dropdown at all (a single-kind tab, e.g. a
-	// single-currency TOPIC_SUM tab's Pie-only case doesn't build one - see the constructor).
+	// Net TOPIC_SUM tab's Bar-only case doesn't build one - see the constructor).
 	ChartWidgetKind GetSelectedKind() const;
 	// Returns m_currency's own ChartData unchanged, or - when m_convert_to_selected is set and
 	// more than one currency is present - every currency's data exchanged into m_currency and
 	// merged (topic-by-topic, period-by-period) into one combined ChartData.
 	ChartData GetActiveChartData() const;
 	void BuildChart(ChartWidgetKind kind);
-	// A pie slice's size, and a bar/line series' axis position, can't represent a topic that
-	// never had any activity in this direction (income or expense) at all - every point across
-	// the whole series would just be 0. Rather than clutter the legend with a colour nobody
+	// A topic that never had any activity in this dataset at all - every point across the whole
+	// series would just be 0 - isn't worth a legend colour. Rather than clutter the legend with a colour nobody
 	// needs, BuildChart() drops those entirely: a whole slice, or a whole Bar/Stacked Bar/Line
 	// series.
 	void BuildSliceChart(const ChartData& chart, ChartWidgetKind kind);
@@ -96,17 +70,16 @@ class ChartTabPanel : public wxPanel {
 public:
 	// `preferred_kind` is a favorite query's optional "chart.kind" string (see FavoriteQuery.h) -
 	// "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line", or empty for no preference. Falls
-	// back to today's default (first available kind for this shape) when empty, unrecognized, or
-	// not offered for this tab's shape (e.g. "stacked_bar" requested for a TOPIC_SUM chart).
-	ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, const String& period_unit, const String& preferred_kind = cStringEmpty);
+	// back to the default (AllowedChartKinds(shape, dataset).front()) when empty, unrecognized, or
+	// not allowed for this tab (e.g. "stacked_bar" for a TOPIC_SUM chart, or "pie" for Net).
+	ChartTabPanel(wxWindow* parent, const ChartDataByCurrency& data, ChartShape shape, ChartDataset dataset, const String& period_unit, const String& preferred_kind = cStringEmpty);
 };
 
 // Shows one query's ChartResult in a separate window alongside the result grid (never replacing
-// it), as either two notebook tabs (Income/Expense - never merged into one signed chart, since a
-// pie slice/bar-chart axis can't represent a negative magnitude and a merged net trend obscures
-// which direction actually moved) or, for a result with no real aggregation topic (ChartResult::
-// m_summary non-empty - see ChartData.h), a single "Summary" tab instead. Only opened when
-// ChartResult::IsEmpty() is false - see cMain::ShowChartClicked/ShowOrRefreshChart.
+// it), as up to three notebook tabs - Net, Income, Expense, in that order, one per non-empty
+// dataset - each drawing only its own dataset, so income and expense never share one chart. Net
+// starts selected unless a favorite asks for another side. Only opened when ChartResult::IsEmpty()
+// is false - see cMain::ShowChartClicked/ShowOrRefreshChart.
 //
 // A wxFrame, not a wxDialog, despite the class's name (kept to avoid an unrelated file-rename
 // churn) - cMain::ShowOrRefreshChart() shows it non-modally and reuses/rebuilds it across
@@ -116,9 +89,9 @@ public:
 class ChartDialog : public wxFrame {
 public:
 	// `preferred_side`/`preferred_kind` are a favorite query's optional "chart" object (see
-	// FavoriteQuery.h) - preferred_side is "income"|"expense" (which notebook tab starts
-	// selected; falls back to today's default, Income if present else Expense, when empty or
-	// that side has no data at all), preferred_kind is passed through to both tabs' ChartTabPanel
-	// unchanged (see its own constructor for how an empty/unavailable value falls back).
+	// FavoriteQuery.h) - preferred_side is "net"|"income"|"expense" (which notebook tab starts
+	// selected; falls back to the first tab - Net whenever it has data - when empty, unrecognized
+	// or that side has no data at all), preferred_kind is passed through to every tab's
+	// ChartTabPanel unchanged (see its own constructor for how an empty/unallowed value falls back).
 	ChartDialog(wxWindow* parent, const ChartResult& data, ChartShape shape, const String& preferred_side = cStringEmpty, const String& preferred_kind = cStringEmpty);
 };

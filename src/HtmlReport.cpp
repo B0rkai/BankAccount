@@ -9,6 +9,7 @@
 #include "Currency.h"
 #include "Logger.h"
 #include "ChartFolding.h"
+#include "ChartPresentation.h"
 #include <nlohmann/json.hpp>
 
 std::vector<ReportSection> BuildReportSections(Query& q, const AccountManager& mgr) {
@@ -93,44 +94,16 @@ namespace {
 		return out;
 	}
 
-	// TOPIC_SUM: single-series shape (only ever one "Sum" series - see QuerySumByTopic::
-	// GetChartResult()) - stacking/trending a single series means nothing, so only the
-	// slice kinds plus a plain Bar are offered. PERIODIC gets all six, mirroring
-	// ChartTabPanel::PopulateKindChoices() exactly (a PERIODIC chart can also be shown as a
-	// slice chart - see BuildSliceChart()'s "topic's total-across-periods" aggregation below).
-	bool ShapeAllowsKind(ChartShape shape, const String& kind) {
-		static const std::set<String> always = { "pie", "doughnut", "polar_area", "bar" };
-		static const std::set<String> periodic_only = { "stacked_bar", "line" };
-		if (always.count(kind)) {
-			return true;
+	// Chart.js `type` string for a chart kind, and whether it needs stacked scales.
+	std::string ChartJsType(ChartWidgetKind kind, bool& stacked) {
+		stacked = (kind == ChartWidgetKind::STACKED_BAR);
+		switch (kind) {
+		case ChartWidgetKind::PIE: return "pie";
+		case ChartWidgetKind::DOUGHNUT: return "doughnut";
+		case ChartWidgetKind::POLAR_AREA: return "polarArea";
+		case ChartWidgetKind::LINE: return "line";
+		default: return "bar";
 		}
-		return (shape == ChartShape::PERIODIC) && periodic_only.count(kind) > 0;
-	}
-
-	bool IsSliceKind(const String& kind) {
-		return (kind == "pie") || (kind == "doughnut") || (kind == "polar_area");
-	}
-
-	// Chart.js `type` string for a report chart_kinds entry, and whether it needs stacked scales.
-	bool ResolveChartJsType(const String& kind, std::string& js_type, bool& stacked) {
-		stacked = false;
-		if (kind == "pie") { js_type = "pie"; return true; }
-		if (kind == "doughnut") { js_type = "doughnut"; return true; }
-		if (kind == "polar_area") { js_type = "polarArea"; return true; }
-		if (kind == "bar") { js_type = "bar"; return true; }
-		if (kind == "stacked_bar") { js_type = "bar"; stacked = true; return true; }
-		if (kind == "line") { js_type = "line"; return true; }
-		return false;
-	}
-
-	String KindDisplayName(const String& kind) {
-		if (kind == "pie") return "Pie";
-		if (kind == "doughnut") return "Doughnut";
-		if (kind == "polar_area") return "Polar Area";
-		if (kind == "bar") return "Bar";
-		if (kind == "stacked_bar") return "Stacked Bar";
-		if (kind == "line") return "Line";
-		return kind;
 	}
 
 	// BuildFoldedTopicSlices()/BuildFoldedPeriodicSeries() (ChartFolding.h) sort largest-first,
@@ -141,75 +114,83 @@ namespace {
 	// combined into "Others") is unaffected - only the final presentation order is. "Others" is a
 	// grab-bag of many small, unrelated topics rather than a real one, so it's kept pinned as the
 	// last slice/series regardless of its own combined value, rather than sorted in by amount.
-	bool IsOthersSlice(const TopicSlice& s) { return s.label == "Others"; }
-	bool IsOthersSeries(const ChartSeries& s) { return s.m_name == "Others"; }
+	//
+	// Colours, on the other hand, are assigned in the fold's own largest-first order *before* that
+	// re-sort (ChartEntryColour() - the dataset's fixed colour for a single-entry chart, otherwise
+	// categorical palette index 0 to the largest topic), the same way ChartDialog assigns them, so
+	// the same topic gets the same colour in both renderers.
+	bool IsOthersLabel(const String& label) { return label == "Others"; }
 
-	void SortSlicesAscending(std::vector<TopicSlice>& slices) {
-		std::sort(slices.begin(), slices.end(), [](const TopicSlice& a, const TopicSlice& b) {
-			bool a_others = IsOthersSlice(a);
-			bool b_others = IsOthersSlice(b);
+	std::string ColourFor(ChartDataset dataset, const String& label, size_t rank, size_t entry_count) {
+		return ChartRgbToHex(IsOthersLabel(label) ? CHART_OTHERS_COLOUR : ChartEntryColour(dataset, rank, entry_count));
+	}
+
+	struct ColouredSlice {
+		TopicSlice slice;
+		std::string colour;
+	};
+
+	struct ColouredSeries {
+		ChartSeries series;
+		std::string colour;
+	};
+
+	// One slice per topic, folded via BuildFoldedTopicSlices (ChartFolding.h) - the same fold the
+	// live wxCharts dialog applies - so a report chart with dozens of categories/clients doesn't
+	// render as an unreadable wall of wedges/bars. For PERIODIC data each topic's series is
+	// aggregated into its total-across-periods first (the same simplification ChartTabPanel::
+	// BuildSliceChart uses: a topic's total and its average-per-period are proportional by the same
+	// constant, the period count, so one slice by total already shows the right proportions).
+	std::vector<ColouredSlice> FoldedColouredSlices(const ChartData& data, ChartShape shape, ChartDataset dataset) {
+		FoldedTopicSlices folded = BuildFoldedTopicSlices(data, shape);
+		std::vector<ColouredSlice> slices;
+		for (size_t i = 0; i < folded.slices.size(); ++i) {
+			const TopicSlice& s = folded.slices[i];
+			slices.push_back({ s, ColourFor(dataset, s.label, i, folded.slices.size()) });
+		}
+		std::stable_sort(slices.begin(), slices.end(), [](const ColouredSlice& a, const ColouredSlice& b) {
+			bool a_others = IsOthersLabel(a.slice.label);
+			bool b_others = IsOthersLabel(b.slice.label);
 			if (a_others != b_others) {
 				return b_others;
 			}
-			return a.total < b.total;
+			return a.slice.total < b.slice.total;
 		});
+		return slices;
 	}
 
-	// One slice per topic - for PERIODIC data this aggregates each topic's series into its
-	// total-across-periods first (the same simplification ChartTabPanel::BuildSliceChart uses:
-	// a topic's total and its average-per-period are proportional by the same constant, the
-	// period count, so one slice by total already shows the right proportions). Folds the
-	// smallest trailing topics into one "Others" slice via BuildFoldedTopicSlices (ChartFolding.h)
-	// - the same fold the live wxCharts dialog applies - so a report chart with dozens of
-	// categories/clients doesn't render as an unreadable wall of wedges/bars.
-	void SliceLabelsAndValues(const ChartData& data, ChartShape shape, StringVector& labels, std::vector<double>& values) {
-		FoldedTopicSlices folded = BuildFoldedTopicSlices(data, shape);
-		SortSlicesAscending(folded.slices);
-		for (const TopicSlice& s : folded.slices) {
-			labels.push_back(s.label);
-			values.push_back(s.total);
-		}
-	}
-
-	// Builds the x-axis labels and dataset list for a categorical (bar/stacked_bar/line) chart,
-	// folded the same way as SliceLabelsAndValues(): TOPIC_SUM data has only ever the one "Sum"
-	// series (one value per topic, same shape as a slice chart), so the topics themselves are the
-	// x-axis and get folded via BuildFoldedTopicSlices into a single synthetic series; PERIODIC
-	// data keeps its period axis untouched and instead folds its one-series-per-topic list via
+	// PERIODIC data keeps its period axis untouched and folds its one-series-per-topic list via
 	// BuildFoldedPeriodicSeries into the smallest-topics-combined "Others" series.
-	void CategoricalLabelsAndSeries(const ChartData& data, ChartShape shape, StringVector& labels, std::vector<ChartSeries>& series) {
-		if (shape == ChartShape::PERIODIC) {
-			labels = data.m_labels;
-			FoldedPeriodicSeries folded = BuildFoldedPeriodicSeries(data);
-			std::vector<const ChartSeries*> ordered = folded.series;
-			if (folded.has_others) {
-				ordered.push_back(&folded.others);
-			}
-			// same "re-sort ascending for the static report, Others pinned last" reasoning as
-			// SortSlicesAscending() - each series' total across every period is its amount here,
-			// since the period axis itself (the x labels) is untouched.
-			std::sort(ordered.begin(), ordered.end(), [](const ChartSeries* a, const ChartSeries* b) {
-				bool a_others = IsOthersSeries(*a);
-				bool b_others = IsOthersSeries(*b);
-				if (a_others != b_others) {
-					return b_others;
-				}
-				return ChartSeriesTotal(*a) < ChartSeriesTotal(*b);
-			});
-			for (const ChartSeries* s : ordered) {
-				series.push_back(*s);
-			}
-		} else {
-			FoldedTopicSlices folded = BuildFoldedTopicSlices(data, shape);
-			SortSlicesAscending(folded.slices);
-			ChartSeries sum;
-			sum.m_name = "Sum";
-			for (const TopicSlice& s : folded.slices) {
-				labels.push_back(s.label);
-				sum.m_values.push_back(s.total);
-			}
-			series.push_back(std::move(sum));
+	std::vector<ColouredSeries> FoldedColouredSeries(const ChartData& data, ChartDataset dataset) {
+		FoldedPeriodicSeries folded = BuildFoldedPeriodicSeries(data);
+		std::vector<ColouredSeries> series;
+		const size_t entry_count = folded.series.size() + (folded.has_others ? 1 : 0);
+		for (size_t i = 0; i < folded.series.size(); ++i) {
+			series.push_back({ *folded.series[i], ColourFor(dataset, folded.series[i]->m_name, i, entry_count) });
 		}
+		if (folded.has_others) {
+			series.push_back({ folded.others, ChartRgbToHex(CHART_OTHERS_COLOUR) });
+		}
+		// same "re-sort ascending for the static report, Others pinned last" reasoning as
+		// FoldedColouredSlices() - each series' total across every period is its amount here,
+		// since the period axis itself (the x labels) is untouched.
+		std::stable_sort(series.begin(), series.end(), [](const ColouredSeries& a, const ColouredSeries& b) {
+			bool a_others = IsOthersLabel(a.series.m_name);
+			bool b_others = IsOthersLabel(b.series.m_name);
+			if (a_others != b_others) {
+				return b_others;
+			}
+			return ChartSeriesTotal(a.series) < ChartSeriesTotal(b.series);
+		});
+		return series;
+	}
+
+	nlohmann::json JsonLabels(const StringVector& labels) {
+		nlohmann::json out = nlohmann::json::array();
+		for (const String& l : labels) {
+			out.push_back(Utf8(l));
+		}
+		return out;
 	}
 
 	nlohmann::json BaseChartOptions(const String& title) {
@@ -220,38 +201,66 @@ namespace {
 		return options;
 	}
 
-	nlohmann::json BuildSliceConfig(const std::string& js_type, const StringVector& labels, const std::vector<double>& values, const String& title) {
-		nlohmann::json config;
-		config["type"] = js_type;
-		nlohmann::json data_labels = nlohmann::json::array();
-		for (const String& l : labels) {
-			data_labels.push_back(Utf8(l));
+	nlohmann::json BuildSliceConfig(const std::string& js_type, const std::vector<ColouredSlice>& slices, const String& title) {
+		StringVector labels;
+		nlohmann::json values = nlohmann::json::array();
+		nlohmann::json colours = nlohmann::json::array();
+		for (const ColouredSlice& s : slices) {
+			labels.push_back(s.slice.label);
+			values.push_back(s.slice.total);
+			colours.push_back(s.colour);
 		}
 		nlohmann::json dataset;
 		dataset["data"] = values;
-		config["data"]["labels"] = data_labels;
+		dataset["backgroundColor"] = colours;
+		nlohmann::json config;
+		config["type"] = js_type;
+		config["data"]["labels"] = JsonLabels(labels);
 		config["data"]["datasets"] = nlohmann::json::array({ dataset });
 		config["options"] = BaseChartOptions(title);
 		return config;
 	}
 
-	nlohmann::json BuildCategoricalConfig(const std::string& js_type, bool stacked, const StringVector& labels, const std::vector<ChartSeries>& series, const String& title) {
-		nlohmann::json config;
-		config["type"] = js_type;
-		nlohmann::json data_labels = nlohmann::json::array();
-		for (const String& l : labels) {
-			data_labels.push_back(Utf8(l));
-		}
+	// A categorical (bar/stacked_bar/line) chart. TOPIC_SUM data has only ever the one "Sum" series
+	// (one value per topic, same shape as a slice chart), so the topics themselves are the x-axis,
+	// folded like a slice chart and drawn as one dataset with a per-bar colour; PERIODIC data gets
+	// one dataset per (folded) topic series, each in its own colour. The value axis always includes
+	// zero, so a Net chart's negative bars visibly hang below it rather than the axis starting at
+	// the smallest value.
+	nlohmann::json BuildCategoricalConfig(const std::string& js_type, bool stacked, const ChartData& data, ChartShape shape, ChartDataset dataset, const String& title) {
+		StringVector labels;
 		nlohmann::json datasets = nlohmann::json::array();
-		for (const ChartSeries& s : series) {
+		if (shape == ChartShape::PERIODIC) {
+			labels = data.m_labels;
+			for (const ColouredSeries& s : FoldedColouredSeries(data, dataset)) {
+				nlohmann::json ds;
+				ds["label"] = Utf8(s.series.m_name);
+				ds["data"] = s.series.m_values;
+				ds["backgroundColor"] = s.colour;
+				ds["borderColor"] = s.colour;
+				datasets.push_back(ds);
+			}
+		} else {
+			nlohmann::json values = nlohmann::json::array();
+			nlohmann::json colours = nlohmann::json::array();
+			for (const ColouredSlice& s : FoldedColouredSlices(data, shape, dataset)) {
+				labels.push_back(s.slice.label);
+				values.push_back(s.slice.total);
+				colours.push_back(s.colour);
+			}
 			nlohmann::json ds;
-			ds["label"] = Utf8(s.m_name);
-			ds["data"] = s.m_values;
+			ds["label"] = "Sum";
+			ds["data"] = values;
+			ds["backgroundColor"] = colours;
+			ds["borderColor"] = colours;
 			datasets.push_back(ds);
 		}
-		config["data"]["labels"] = data_labels;
+		nlohmann::json config;
+		config["type"] = js_type;
+		config["data"]["labels"] = JsonLabels(labels);
 		config["data"]["datasets"] = datasets;
 		nlohmann::json options = BaseChartOptions(title);
+		options["scales"]["y"]["beginAtZero"] = true;
 		if (stacked) {
 			options["scales"]["x"]["stacked"] = true;
 			options["scales"]["y"]["stacked"] = true;
@@ -339,73 +348,82 @@ namespace {
 		out << "</tbody></table>\n";
 	}
 
-	// Appends one <canvas>+config for every (side, currency) combination present for `kind` in
-	// `chart_data`, given it's valid for `shape` and `side_allowed` accepts that side's label.
-	// Returns the configs appended (canvas id -> JSON config), for the caller's single trailing
-	// <script> block.
-	void AppendChartsForKind(const String& kind, const ChartResult& chart_data, ChartShape shape, const std::function<bool(const String&)>& side_allowed, std::ostringstream& canvases, std::vector<std::pair<std::string, nlohmann::json>>& configs, int& next_id) {
-		if (!ShapeAllowsKind(shape, kind)) {
-			return;
-		}
-		std::string js_type;
-		bool stacked;
-		if (!ResolveChartJsType(kind, js_type, stacked)) {
-			return; // unrecognized chart_kinds entry - skip silently, same contract as FavoriteQueryDef::chart_kind
-		}
-		struct Side { const char* label; const ChartDataByCurrency* data; };
-		// "Summary" (ChartResult::m_summary - a result with no real aggregation topic, see
-		// ChartData.h) is mutually exclusive with Income/Expense, and side_allowed() only ever
-		// filters "Income"/"Expense" labels (see BuildSideFilter()) - so a chart_sides restriction
-		// never suppresses a Summary chart, matching the "no real side to filter" contract.
-		const Side sides[] = { {"Summary", &chart_data.m_summary}, {"Income", &chart_data.m_income}, {"Expense", &chart_data.m_expense} };
-		for (const Side& side : sides) {
-			if (!side_allowed(side.label)) {
+	// The kinds to draw `dataset` as: every recognized `chart_kinds` entry that AllowedChartKinds()
+	// permits for this dataset/shape, in request order. When the report asked for real kinds but none
+	// of them suit this dataset (e.g. only "pie" requested, which Net can never be drawn as), falls
+	// back to the dataset's own default kind rather than silently dropping it. Unrecognized entries
+	// are skipped silently (same contract as FavoriteQueryDef::chart_kind), and a list with no
+	// recognized entries at all still means "tables only".
+	std::vector<ChartWidgetKind> KindsForDataset(const std::vector<String>& chart_kinds, ChartShape shape, ChartDataset dataset) {
+		std::vector<ChartWidgetKind> kinds;
+		bool any_recognized = false;
+		for (const String& key : chart_kinds) {
+			std::optional<ChartWidgetKind> kind = ParseChartWidgetKind(key);
+			if (!kind) {
 				continue;
 			}
-			for (const auto& currency_pair : *side.data) {
-				const ChartData& data = currency_pair.second;
-				String currency_name = MakeCurrency(currency_pair.first)->GetShortName();
-				// wxString::FromUTF8, not a raw literal: a bare "—" narrow-char literal gets decoded via
-				// the current locale/ANSI codepage by wxString's implicit const-char* constructor,
-				// mangling it into "â€"" in the rendered HTML.
-				String title = String(side.label) + " (" + currency_name + ") " + wxString::FromUTF8("\xE2\x80\x94") + " " + KindDisplayName(kind);
-				nlohmann::json config;
-				if (IsSliceKind(kind)) {
-					StringVector labels;
-					std::vector<double> values;
-					SliceLabelsAndValues(data, shape, labels, values);
-					config = BuildSliceConfig(js_type, labels, values, title);
-				} else {
-					StringVector labels;
-					std::vector<ChartSeries> series;
-					CategoricalLabelsAndSeries(data, shape, labels, series);
-					config = BuildCategoricalConfig(js_type, stacked, labels, series, title);
+			any_recognized = true;
+			if (IsChartKindAllowed(shape, dataset, *kind) && (std::find(kinds.begin(), kinds.end(), *kind) == kinds.end())) {
+				kinds.push_back(*kind);
+			}
+		}
+		if (kinds.empty() && any_recognized) {
+			std::vector<ChartWidgetKind> allowed = AllowedChartKinds(shape, dataset);
+			if (!allowed.empty()) {
+				kinds.push_back(allowed.front());
+			}
+		}
+		return kinds;
+	}
+
+	// Appends one <canvas>+config per (dataset, kind, currency) combination present in `chart_data`,
+	// dataset-major in CHART_DATASETS_IN_DISPLAY_ORDER (Net first), skipping datasets `dataset_allowed`
+	// rejects. Every chart draws exactly one dataset - income and expense never share a chart.
+	// Returns the configs appended (canvas id -> JSON config), for the caller's single trailing
+	// <script> block.
+	void AppendSectionCharts(const ChartResult& chart_data, ChartShape shape, const std::vector<String>& chart_kinds, const std::function<bool(ChartDataset)>& dataset_allowed, std::ostringstream& canvases, std::vector<std::pair<std::string, nlohmann::json>>& configs, int& next_id) {
+		for (ChartDataset dataset : CHART_DATASETS_IN_DISPLAY_ORDER) {
+			const ChartDataByCurrency& by_currency = chart_data.Get(dataset);
+			if (by_currency.empty() || !dataset_allowed(dataset)) {
+				continue;
+			}
+			for (ChartWidgetKind kind : KindsForDataset(chart_kinds, shape, dataset)) {
+				bool stacked;
+				std::string js_type = ChartJsType(kind, stacked);
+				for (const auto& currency_pair : by_currency) {
+					const ChartData& data = currency_pair.second;
+					String currency_name = MakeCurrency(currency_pair.first)->GetShortName();
+					// wxString::FromUTF8, not a raw literal: a bare "—" narrow-char literal gets decoded via
+					// the current locale/ANSI codepage by wxString's implicit const-char* constructor,
+					// mangling it into "â€"" in the rendered HTML.
+					String title = String(ChartDatasetLabel(dataset)) + " (" + currency_name + ") " + wxString::FromUTF8("\xE2\x80\x94") + " " + ChartWidgetKindLabel(kind);
+					nlohmann::json config = IsSliceChartKind(kind)
+						? BuildSliceConfig(js_type, FoldedColouredSlices(data, shape, dataset), title)
+						: BuildCategoricalConfig(js_type, stacked, data, shape, dataset, title);
+					std::string id = "chart" + std::to_string(next_id++);
+					canvases << "<canvas id=\"" << id << "\"></canvas>\n";
+					configs.emplace_back(id, std::move(config));
 				}
-				std::string id = "chart" + std::to_string(next_id++);
-				canvases << "<canvas id=\"" << id << "\"></canvas>\n";
-				configs.emplace_back(id, std::move(config));
 			}
 		}
 	}
 
-	// "income"/"expense" (case-sensitive, matching FavoriteQueryDef::chart_side's own convention)
-	// filtered down to only the recognized values - an empty or all-unrecognized list means "no
-	// restriction", not "render nothing", so a report author who leaves chart_sides out (or typos
-	// it) still gets the pre-existing both-sides behavior rather than a silently empty report.
-	std::function<bool(const String&)> BuildSideFilter(const std::vector<String>& chart_sides) {
-		bool wants_income = false, wants_expense = false;
+	// "net"/"income"/"expense" (case-sensitive, see ParseChartDataset()) filtered down to only the
+	// recognized values - an empty or all-unrecognized list means "no restriction", not "render
+	// nothing", so a report author who leaves chart_sides out (or typos it) still gets every dataset
+	// rather than a silently empty report.
+	std::function<bool(ChartDataset)> BuildDatasetFilter(const std::vector<String>& chart_sides) {
+		std::set<ChartDataset> wanted;
 		for (const String& s : chart_sides) {
-			if (s == "income") wants_income = true;
-			else if (s == "expense") wants_expense = true;
+			ChartDataset dataset;
+			if (ParseChartDataset(s, dataset)) {
+				wanted.insert(dataset);
+			}
 		}
-		if (!wants_income && !wants_expense) {
-			return [](const String&) { return true; };
+		if (wanted.empty()) {
+			return [](ChartDataset) { return true; };
 		}
-		return [wants_income, wants_expense](const String& side_label) {
-			if (side_label == "Income") return wants_income;
-			if (side_label == "Expense") return wants_expense;
-			return true;
-		};
+		return [wanted](ChartDataset dataset) { return wanted.count(dataset) > 0; };
 	}
 }
 
@@ -463,7 +481,7 @@ String BuildHtmlReport(const String& title, const std::vector<ReportSection>& se
 	int next_id = 0;
 	int next_table_id = 0;
 	bool has_charts = !chartjs_source.empty();
-	std::function<bool(const String&)> side_allowed = BuildSideFilter(chart_sides);
+	std::function<bool(ChartDataset)> dataset_allowed = BuildDatasetFilter(chart_sides);
 	for (const ReportSection& section : sections) {
 		out << "<div class=\"report-section\">\n<div class=\"report-table\">\n<h2>" << EscapeHtml(section.heading) << "</h2>\n";
 		if (has_gridjs) {
@@ -478,9 +496,7 @@ String BuildHtmlReport(const String& title, const std::vector<ReportSection>& se
 		out << "</div>\n";
 		std::ostringstream canvases;
 		if (has_charts && (section.chart_shape != ChartShape::NONE)) {
-			for (const String& kind : chart_kinds) {
-				AppendChartsForKind(kind, section.chart_data, section.chart_shape, side_allowed, canvases, configs, next_id);
-			}
+			AppendSectionCharts(section.chart_data, section.chart_shape, chart_kinds, dataset_allowed, canvases, configs, next_id);
 		}
 		std::string canvas_html = canvases.str();
 		if (!canvas_html.empty()) {

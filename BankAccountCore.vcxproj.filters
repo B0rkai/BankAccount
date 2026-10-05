@@ -36,6 +36,8 @@
     <ClCompile Include="src\FavoriteQuery.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\FavoriteReport.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\ChartFolding.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\ChartPresentation.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="src\ChartConversion.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\HtmlReport.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\Query.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="src\RelativePeriod.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -76,6 +78,8 @@
     <ClInclude Include="include\CategorySystem.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\ChartData.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\ChartFolding.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\ChartPresentation.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="include\ChartConversion.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\Client.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\ClientManager.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="include\CommonTypes.h"><Filter>Header Files</Filter></ClInclude>

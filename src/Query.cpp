@@ -183,13 +183,15 @@ void AppendTopicSumPoint(ChartDataByCurrency& target, const CurrencyType currenc
 	chart.m_series.front().m_values.push_back(MoneyValueAsDouble(raw_amount, currency));
 }
 
-// The three ways a topic's income/expense legs can be routed into a ChartResult - shared by
-// QuerySumByTopic::GetChartResult() and PeriodicQuery::GetChartResult() so both stay in lockstep.
-// See ChartData.h's ChartResult comment for the reasoning behind which topic gets which mode.
+// The three ways a topic's income/expense legs can be routed into a ChartResult's m_income/
+// m_expense - shared by QuerySumByTopic::GetChartResult() and PeriodicQuery::GetChartResult() so
+// both stay in lockstep. See ChartData.h's ChartResult comment for the reasoning behind which topic
+// gets which mode. ChartResult::m_net is filled the same way in every mode (each topic's signed net
+// sum), so it isn't a mode of its own.
 enum class ChartSideMode {
 	NET_SIGN, // whole topic to one side, decided by the sign of its net sum (category, client)
 	SPLIT,    // income leg and expense leg routed independently (account, type)
-	UNSIDED   // both legs combined into ChartResult::m_summary (no real topic chosen - GetTopic()==CURRENCY)
+	UNSIDED   // no real topic chosen (GetTopic()==CURRENCY) - each side gets one entry named after itself
 };
 
 ChartSideMode GetChartSideMode(const QueryTopic topic) {
@@ -227,13 +229,13 @@ ChartResult QuerySumByTopic::GetChartResult() const {
 				}
 				break;
 			case ChartSideMode::UNSIDED:
-				// no real topic here (GetTopic()==CURRENCY, one "topic" per currency) - present as
-				// one currency-keyed chart of "Income"/"Expense" magnitudes instead of two tabs.
+				// no real topic here (GetTopic()==CURRENCY, one "topic" per currency) - each
+				// dataset gets one entry named after the dataset itself, never mixed into one chart.
 				if (res.m_inc > 0) {
-					AppendTopicSumPoint(result.m_summary, currency, "Income", res.m_inc);
+					AppendTopicSumPoint(result.m_income, currency, "Income", res.m_inc);
 				}
 				if (res.m_exp < 0) {
-					AppendTopicSumPoint(result.m_summary, currency, "Expense", -res.m_exp);
+					AppendTopicSumPoint(result.m_expense, currency, "Expense", -res.m_exp);
 				}
 				break;
 			case ChartSideMode::NET_SIGN:
@@ -246,6 +248,11 @@ ChartResult QuerySumByTopic::GetChartResult() const {
 				}
 				break;
 			}
+			}
+			// Net is independent of the routing mode above - every topic with any activity gets its
+			// signed net sum (a topic whose legs exactly cancel out still shows, as a 0 bar).
+			if ((res.m_inc != 0) || (res.m_exp != 0)) {
+				AppendTopicSumPoint(result.m_net, currency, (mode == ChartSideMode::UNSIDED) ? String("Net") : tsq->GetName(), res.m_sum);
 			}
 		}
 	}
@@ -826,14 +833,13 @@ ChartResult PeriodicQuery::GetChartResult() const {
 				}
 				break;
 			case ChartSideMode::UNSIDED:
-				// no real topic here (GetTopic()==CURRENCY) - both legs become named series
-				// ("Income"/"Expense") sharing one currency-keyed chart in m_summary, rather than
-				// deciding a single destination side for the (redundant) per-currency "topic".
+				// no real topic here (GetTopic()==CURRENCY) - each dataset gets one series named
+				// after the dataset itself ("Income"/"Expense"), never mixed into one chart.
 				if (total_inc > 0) {
-					build_series(result.m_summary, currency, p, "Income", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_inc, currency); });
+					build_series(result.m_income, currency, p, "Income", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_inc, currency); });
 				}
 				if (total_exp < 0) {
-					build_series(result.m_summary, currency, p, "Expense", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(-r.m_exp, currency); });
+					build_series(result.m_expense, currency, p, "Expense", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(-r.m_exp, currency); });
 				}
 				break;
 			case ChartSideMode::NET_SIGN:
@@ -853,6 +859,12 @@ ChartResult PeriodicQuery::GetChartResult() const {
 					});
 				break;
 			}
+			}
+			// Net is independent of the routing mode above - every topic with any activity gets a
+			// signed per-period net series.
+			if ((total_inc != 0) || (total_exp != 0)) {
+				build_series(result.m_net, currency, p, (mode == ChartSideMode::UNSIDED) ? String("Net") : p->GetName(),
+					[currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_sum, currency); });
 			}
 		}
 	}

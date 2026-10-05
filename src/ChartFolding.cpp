@@ -10,6 +10,14 @@ double ChartSeriesTotal(const ChartSeries& series) {
 	return total;
 }
 
+double ChartSeriesMagnitude(const ChartSeries& series) {
+	double magnitude = 0.0;
+	for (double v : series.m_values) {
+		magnitude += std::abs(v);
+	}
+	return magnitude;
+}
+
 bool ChartSeriesAllZero(const std::vector<double>& values) {
 	for (double v : values) {
 		if (v != 0.0) {
@@ -49,16 +57,18 @@ FoldedTopicSlices BuildFoldedTopicSlices(const ChartData& chart, ChartShape shap
 		return std::abs(a.total) > std::abs(b.total);
 	});
 
-	double grand_total = 0.0;
+	// Summed by magnitude, not signed - a Net chart mixes positive and negative topics, whose signed
+	// sum can be near zero (or zero) even when every individual topic is large.
+	double magnitude_total = 0.0;
 	for (const TopicSlice& s : slices) {
-		grand_total += s.total;
+		magnitude_total += std::abs(s.total);
 	}
-	if (grand_total == 0.0) {
+	if (magnitude_total == 0.0) {
 		return { slices, false };
 	}
 
 	size_t cutoff = slices.size();
-	double tail_budget = std::abs(grand_total) * CHART_OTHERS_FOLD_TAIL_SHARE;
+	double tail_budget = magnitude_total * CHART_OTHERS_FOLD_TAIL_SHARE;
 	double others_running = 0.0;
 	while (cutoff > 0) {
 		double candidate = others_running + std::abs(slices[cutoff - 1].total);
@@ -93,9 +103,11 @@ FoldedPeriodicSeries BuildFoldedPeriodicSeries(const ChartData& chart) {
 		}
 	}
 	// Largest (by magnitude, summed across every period) topic first - dataset order drives both
-	// the legend order and, for a stacked chart, the bottom-to-top stacking order.
-	std::sort(result.series.begin(), result.series.end(), [](const ChartSeries* a, const ChartSeries* b) {
-		return std::abs(ChartSeriesTotal(*a)) > std::abs(ChartSeriesTotal(*b));
+	// the legend order and, for a stacked chart, the bottom-to-top stacking order. Per-period
+	// magnitudes rather than the signed total, so a Net series swinging between big positive and
+	// big negative periods still ranks as big even when those swings cancel out overall.
+	std::stable_sort(result.series.begin(), result.series.end(), [](const ChartSeries* a, const ChartSeries* b) {
+		return ChartSeriesMagnitude(*a) > ChartSeriesMagnitude(*b);
 	});
 	if (result.series.empty()) {
 		return result; // every topic was exactly zero in this direction - nothing to draw
@@ -103,7 +115,7 @@ FoldedPeriodicSeries BuildFoldedPeriodicSeries(const ChartData& chart) {
 
 	double grand_total = 0.0;
 	for (const ChartSeries* series : result.series) {
-		grand_total += std::abs(ChartSeriesTotal(*series));
+		grand_total += ChartSeriesMagnitude(*series);
 	}
 	if (grand_total == 0.0) {
 		return result;
@@ -113,7 +125,7 @@ FoldedPeriodicSeries BuildFoldedPeriodicSeries(const ChartData& chart) {
 	double tail_budget = grand_total * CHART_OTHERS_FOLD_TAIL_SHARE;
 	double others_running = 0.0;
 	while (cutoff > 0) {
-		double candidate = others_running + std::abs(ChartSeriesTotal(*result.series[cutoff - 1]));
+		double candidate = others_running + ChartSeriesMagnitude(*result.series[cutoff - 1]);
 		if (candidate > tail_budget) {
 			break;
 		}

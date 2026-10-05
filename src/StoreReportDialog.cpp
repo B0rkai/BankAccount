@@ -1,5 +1,6 @@
 #include "StoreReportDialog.h"
 #include "FavoriteQuery.h"
+#include "ChartData.h"
 
 namespace {
 	enum CTRL_IDs {
@@ -53,7 +54,7 @@ void StoreReportDialog::ButtonClicked(wxCommandEvent& evt) {
 	wxArrayInt checked_sides;
 	m_chart_sides_chklb->GetCheckedItems(checked_sides);
 	for (int i : checked_sides) {
-		m_chart_sides_ref.push_back(i == 0 ? "income" : "expense");
+		m_chart_sides_ref.push_back(ChartDatasetKey(CHART_DATASETS_IN_DISPLAY_ORDER[i]));
 	}
 	m_chart_kinds_ref.clear();
 	wxArrayInt checked_kinds;
@@ -84,7 +85,7 @@ StoreReportDialog::StoreReportDialog(wxWindow* parent, const std::vector<Favorit
 
 	new wxStaticText(this, wxID_ANY, "Chart sides", wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT3 - 20));
 	wxArrayString sides;
-	sides.Add("Income"); sides.Add("Expense");
+	for (ChartDataset dataset : CHART_DATASETS_IN_DISPLAY_ORDER) sides.Add(ChartDatasetLabel(dataset));
 	m_chart_sides_chklb = new wxCheckListBox(this, wxID_ANY, wxPoint(HORIZONTAL_ALIGNMENT, VERTICAL_ALIGNMENT3), cChkListSize, sides);
 
 	new wxStaticText(this, wxID_ANY, "Chart kinds", wxPoint(HORIZONTAL_ALIGNMENT + cChkListSize.GetWidth() + 20, VERTICAL_ALIGNMENT3 - 20));

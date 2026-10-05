@@ -33,10 +33,10 @@ struct FavoriteQueryDef {
 	String period;    // "none" (default)|"yearly"|"half_yearly"|"quarterly"|"monthly"|"daily"
 	bool show_list = false;
 
-	// Optional chart display preference - empty means "no preference" (today's default: Income
-	// tab if present else Expense, first available chart kind for the shape). Recognized values:
-	// chart_side "income"|"expense"; chart_kind "pie"|"doughnut"|"polar_area"|"bar"|
-	// "stacked_bar"|"line" (see ChartDialog.h's ChartWidgetKind, which this mirrors). Kept as
+	// Optional chart display preference - empty means "no preference" (the default: Net tab,
+	// first available chart kind for that dataset/shape). Recognized values: chart_side
+	// "net"|"income"|"expense" (see ChartData.h's ChartDatasetKey()); chart_kind "pie"|"doughnut"|
+	// "polar_area"|"bar"|"stacked_bar"|"line" (see ChartPresentation.h's ChartWidgetKindKey()). Kept as
 	// plain strings rather than those GUI-side enums so this Core-only struct never needs to
 	// include a wx GUI header - cMain translates them (and silently falls back to "no
 	// preference" for an unrecognized/unavailable-for-this-shape value) when building the chart.

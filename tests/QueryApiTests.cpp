@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "QueryApi.h"
+#include "ChartPresentation.h"
 #include "AccountManager.h"
 #include "Journal.h"
 #include <fstream>
@@ -48,6 +49,17 @@ const char* const kFixtureContent =
     "TYPE\t0\tPurchase\n"
     "TRANSACTION\t0\t45000\t0\t-5000\t1\t1\n"
     "TRANSACTION\t0\t45001\t0\t-3000\t1\t2\n";
+
+// The chart.datasets entry with the given "key" ("net"/"income"/"expense"), or nullptr when the
+// section has no such (non-empty) dataset.
+const nlohmann::json* FindDataset(const nlohmann::json& section, const char* key) {
+    for (const nlohmann::json& dataset : section["chart"]["datasets"]) {
+        if (dataset["key"] == key) {
+            return &dataset;
+        }
+    }
+    return nullptr;
+}
 
 }
 
@@ -98,16 +110,37 @@ TEST(RunAdHocQueryTest, CategoryAggregationRequestReturnsExpectedTableAndChart) 
     EXPECT_EQ(table["rows"].size(), 3u);
 
     ASSERT_TRUE(section.contains("chart"));
-    ASSERT_EQ(section["chart"]["expense"].size(), 1u); // one currency, HUF
-    EXPECT_EQ(section["chart"]["expense"][0]["currency"], "HUF");
-    EXPECT_EQ(section["chart"]["expense"][0]["labels"].size(), 2u);
-    EXPECT_TRUE(section["chart"]["summary"].empty()); // a real aggregation topic - not the CURRENCY fallback
+    EXPECT_EQ(section["chart"]["others_colour"], "#9e9e9e");
+    EXPECT_EQ(section["chart"]["palette"][0], ChartRgbToHex(ChartCategoricalPalette()[0]));
+    const nlohmann::json& datasets = section["chart"]["datasets"];
+    // both fixture transactions are expenses - no income dataset at all, Net listed first.
+    ASSERT_EQ(datasets.size(), 2u);
+    EXPECT_EQ(datasets[0]["key"], "net");
+    EXPECT_EQ(datasets[1]["key"], "expense");
+
+    const nlohmann::json* expense = FindDataset(section, "expense");
+    ASSERT_NE(expense, nullptr);
+    EXPECT_EQ((*expense)["label"], "Expense");
+    ASSERT_EQ((*expense)["native"].size(), 1u); // one currency, HUF
+    EXPECT_EQ((*expense)["native"][0]["currency"], "HUF");
+    EXPECT_EQ((*expense)["native"][0]["labels"].size(), 2u);
+    EXPECT_EQ((*expense)["default_currency"], "HUF");
+    EXPECT_TRUE((*expense)["converted"].empty()); // nothing to merge with a single currency
+    EXPECT_EQ((*expense)["colour"], "#e53935");
+    EXPECT_EQ((*expense)["allowed_kinds"][0], "pie");
+
+    const nlohmann::json* net = FindDataset(section, "net");
+    ASSERT_NE(net, nullptr);
+    EXPECT_EQ((*net)["colour"], "#8e24aa");
+    // topic sum: Net is only ever a bar chart, never a slice chart.
+    ASSERT_EQ((*net)["allowed_kinds"].size(), 1u);
+    EXPECT_EQ((*net)["allowed_kinds"][0], "bar");
 }
 
-TEST(RunAdHocQueryTest, NoAggregationRequestReturnsAnUnsidedSummaryChart) {
+TEST(RunAdHocQueryTest, NoAggregationRequestNeverMixesIncomeAndExpense) {
     // No "aggregate_by" - BuildQueryFromFavorite() falls back to a bare QuerySumByTopic
-    // (GetTopic()==CURRENCY, see QueryTests.cpp's own coverage of this), which has no real side to
-    // split by and so populates chart.summary instead of chart.income/chart.expense.
+    // (GetTopic()==CURRENCY, see QueryTests.cpp's own coverage of this). Income and Expense still
+    // come out as separate datasets (each with one entry named after itself), plus a signed Net.
     NullJournal journal;
     TestAccountManager mgr(journal);
     TempRecoveryFile file("test_queryapi_fixture4.tmp", kFixtureContent);
@@ -120,12 +153,56 @@ TEST(RunAdHocQueryTest, NoAggregationRequestReturnsAnUnsidedSummaryChart) {
     const nlohmann::json& section = sections[0];
     EXPECT_EQ(section["heading"], "Currency Summary");
     ASSERT_TRUE(section.contains("chart"));
-    EXPECT_TRUE(section["chart"]["income"].empty());
-    EXPECT_TRUE(section["chart"]["expense"].empty());
-    ASSERT_EQ(section["chart"]["summary"].size(), 1u); // one currency, HUF
-    EXPECT_EQ(section["chart"]["summary"][0]["currency"], "HUF");
-    ASSERT_EQ(section["chart"]["summary"][0]["labels"].size(), 1u); // both fixture transactions are expenses
-    EXPECT_EQ(section["chart"]["summary"][0]["labels"][0], "Expense");
+    EXPECT_EQ(FindDataset(section, "income"), nullptr); // both fixture transactions are expenses
+    const nlohmann::json* expense = FindDataset(section, "expense");
+    ASSERT_NE(expense, nullptr);
+    ASSERT_EQ((*expense)["native"].size(), 1u); // one currency, HUF
+    ASSERT_EQ((*expense)["native"][0]["labels"].size(), 1u);
+    EXPECT_EQ((*expense)["native"][0]["labels"][0], "Expense");
+
+    const nlohmann::json* net = FindDataset(section, "net");
+    ASSERT_NE(net, nullptr);
+    ASSERT_EQ((*net)["native"][0]["labels"].size(), 1u);
+    EXPECT_EQ((*net)["native"][0]["labels"][0], "Net");
+    EXPECT_EQ((*net)["native"][0]["series"][0]["values"][0], -8000);
+}
+
+TEST(RunAdHocQueryTest, MultiCurrencyDatasetCarriesConvertedViewPerCurrency) {
+    // A HUF and an EUR account - the dataset gets one native ChartData per currency, plus one
+    // "converted" ChartData per target currency (everything exchanged into it and merged), so the
+    // frontend's "Convert all to this currency" checkbox never needs exchange rates of its own.
+    const char* const kTwoCurrencyFixture =
+        "ACCOUNT\t0\t1177337704983110\tHuf Acc\tOTP\tHUF\n"
+        "ACCOUNT\t1\t1177337704983111\tEur Acc\tOTP\tEUR\n"
+        "CLIENT\t1\tAlice\n"
+        "CATEGORY\t1\tGroceries\n"
+        "TYPE\t0\tPurchase\n"
+        "TRANSACTION\t0\t45000\t0\t-5000\t1\t1\n"
+        "TRANSACTION\t1\t45000\t0\t-1000\t1\t1\n";
+    NullJournal journal;
+    TestAccountManager mgr(journal);
+    TempRecoveryFile file("test_queryapi_fixture6.tmp", kTwoCurrencyFixture);
+    ASSERT_TRUE(mgr.ApplyRecoveryFile(file.Path(), true).success);
+
+    QueryApiResult result = RunAdHocQuery(R"({"aggregate_by":["category"]})", mgr);
+    ASSERT_EQ(result.http_status, 200);
+    nlohmann::json sections = nlohmann::json::parse(result.body);
+    ASSERT_EQ(sections.size(), 1u);
+    const nlohmann::json* expense = FindDataset(sections[0], "expense");
+    ASSERT_NE(expense, nullptr);
+    ASSERT_EQ((*expense)["native"].size(), 2u);
+    EXPECT_EQ((*expense)["default_currency"], "HUF");
+    ASSERT_EQ((*expense)["converted"].size(), 2u);
+    for (const nlohmann::json& converted : (*expense)["converted"]) {
+        // both currencies' Groceries merged into one label, one "Sum" series.
+        ASSERT_EQ(converted["labels"].size(), 1u);
+        EXPECT_EQ(converted["labels"][0], "Groceries");
+        ASSERT_EQ(converted["series"].size(), 1u);
+        if (converted["currency"] == "HUF") {
+            // more than the HUF account's own 5000 - the EUR spend is exchanged in on top.
+            EXPECT_GT(converted["series"][0]["values"][0].get<double>(), 5000.0);
+        }
+    }
 }
 
 TEST(RunAdHocQueryTest, AccountAggregationSplitsIncomeAndExpenseForTheSameAccount) {
@@ -151,15 +228,21 @@ TEST(RunAdHocQueryTest, AccountAggregationSplitsIncomeAndExpenseForTheSameAccoun
     const nlohmann::json& section = sections[0];
     EXPECT_EQ(section["heading"], "Account Summary");
     ASSERT_TRUE(section.contains("chart"));
-    EXPECT_TRUE(section["chart"]["summary"].empty());
-    ASSERT_EQ(section["chart"]["income"].size(), 1u);
-    ASSERT_EQ(section["chart"]["expense"].size(), 1u);
+    const nlohmann::json* income = FindDataset(section, "income");
+    const nlohmann::json* expense = FindDataset(section, "expense");
+    const nlohmann::json* net = FindDataset(section, "net");
+    ASSERT_NE(income, nullptr);
+    ASSERT_NE(expense, nullptr);
+    ASSERT_NE(net, nullptr);
+    ASSERT_EQ((*income)["native"].size(), 1u);
+    ASSERT_EQ((*expense)["native"].size(), 1u);
     // Account names resolve as "Bank::Name" (see AccountManager's name resolution) - "OTP::Test Acc"
     // here, matching the ACCOUNT line's bank/name fields above.
-    EXPECT_EQ(section["chart"]["income"][0]["labels"][0], "OTP::Test Acc");
-    EXPECT_EQ(section["chart"]["income"][0]["series"][0]["values"][0], 9000);
-    EXPECT_EQ(section["chart"]["expense"][0]["labels"][0], "OTP::Test Acc");
-    EXPECT_EQ(section["chart"]["expense"][0]["series"][0]["values"][0], 2000);
+    EXPECT_EQ((*income)["native"][0]["labels"][0], "OTP::Test Acc");
+    EXPECT_EQ((*income)["native"][0]["series"][0]["values"][0], 9000);
+    EXPECT_EQ((*expense)["native"][0]["labels"][0], "OTP::Test Acc");
+    EXPECT_EQ((*expense)["native"][0]["series"][0]["values"][0], 2000);
+    EXPECT_EQ((*net)["native"][0]["series"][0]["values"][0], 7000);
 }
 
 TEST(RunAdHocQueryTest, EmptyAccountsFilterMeansEveryLoadedAccount) {
