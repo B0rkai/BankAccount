@@ -64,20 +64,36 @@ class sub_streambuf :
       if (this->gptr() >= this->egptr())
       {
         ELEM_TYPE* base = _internalBuffer;
+        size_t want = std::min(static_cast<size_t>(INTERNAL_BUFFER_SIZE), static_cast<size_t>(_endPosition - _currentPosition));
 
-        _inputStream->seekg(_currentPosition, std::ios::beg);
-        _inputStream->read(_internalBuffer, std::min(static_cast<size_t>(INTERNAL_BUFFER_SIZE), static_cast<size_t>(_endPosition - _currentPosition)));
-        size_t n = static_cast<size_t>(_inputStream->gcount());
+        // A single istream::read() can come back short of `want` without hitting real EOF -
+        // e.g. a network filesystem (CIFS/NFS) mount returning fewer bytes than requested for
+        // one underlying read() syscall. read() sets failbit on any short read, which then makes
+        // the next seekg() a silent no-op - without clear()+retry here, that truncates the
+        // decompression stream mid-file instead of actually reaching EOF.
+        size_t got = 0;
+        while (got < want)
+        {
+          _inputStream->clear();
+          _inputStream->seekg(_currentPosition + static_cast<pos_type>(got), std::ios::beg);
+          _inputStream->read(_internalBuffer + got, want - got);
+          size_t n = static_cast<size_t>(_inputStream->gcount());
+          if (n == 0)
+          {
+            break; // genuine EOF (or a real error)
+          }
+          got += n;
+        }
 
-        _currentPosition += n;
+        _currentPosition += got;
 
-        if (n == 0)
+        if (got == 0)
         {
           return traits_type::eof();
         }
 
         // set buffer pointers
-        this->setg(base, base, base + n);
+        this->setg(base, base, base + got);
       }
 
       return traits_type::to_int_type(*this->gptr());

@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-
+                       "Fix the Linux daemon aborting while loading a BData.baf read over a real Samba/CIFS mount: the vendored ZipLib's sub_streambuf treated a short read (normal on CIFS) as EOF, truncating decompression mid-file; also document copying the daemon's static frontend assets into the systemd WorkingDirectory"
                    ],
     "released":  [
                      {
