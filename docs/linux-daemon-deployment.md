@@ -50,7 +50,26 @@ stop/replace/restart.
    opened via the vendored ZipLib - see [ziplib-vendoring.md](ziplib-vendoring.md)); pointing it
    straight at a shared `.baf` avoids having to keep a separate plain-text export in sync.
 
-5. Install and enable the unit:
+5. Copy the frontend's static assets into the unit's `WorkingDirectory` (`/var/log/bankaccount-daemon`
+   below - adjust if you changed it in the unit file). `daemon/main.cpp`'s `HotReloadFile`s
+   (`daemon/static/style.css`/`app.js`) and `HtmlReport.cpp`'s `LoadChartJsSource()`/
+   `LoadGridJsSource()`/`LoadGridJsCss()` (`resources/*`) all resolve their paths relative to the
+   process's cwd - the same convention `db\`/`log\` already use elsewhere in this app - so they
+   need to live under wherever `WorkingDirectory=` points, not next to the binary:
+
+   ```bash
+   sudo mkdir -p /var/log/bankaccount-daemon/daemon/static /var/log/bankaccount-daemon/resources
+   sudo cp daemon/static/* /var/log/bankaccount-daemon/daemon/static/
+   sudo cp resources/*.js resources/*.css /var/log/bankaccount-daemon/resources/
+   sudo chown -R bankaccount-daemon:bankaccount-daemon /var/log/bankaccount-daemon/daemon /var/log/bankaccount-daemon/resources
+   ```
+
+   (Safe to leave in place across restarts/reboots - systemd's `LogsDirectory=` only ensures the
+   directory exists, it never wipes existing content in it.) Skipping this step doesn't crash the
+   daemon - `/health` and `/query` still work - but the frontend page (`GET /`) silently has no
+   JS/CSS and no chart library, so it renders with no accounts populated and no charts.
+
+6. Install and enable the unit:
 
    ```bash
    sudo cp deploy/bankaccount-daemon.service /etc/systemd/system/bankaccount-daemon.service
@@ -59,7 +78,7 @@ stop/replace/restart.
    sudo systemctl enable --now bankaccount-daemon
    ```
 
-6. Verify:
+7. Verify:
 
    ```bash
    sudo systemctl status bankaccount-daemon
@@ -85,7 +104,9 @@ sudo systemctl start bankaccount-daemon
 
 The db, favorite queries/reports, and token are untouched by this — only the binary changes. If
 argv shape itself changes (a new `--flag`), update `bankaccount-daemon.env`/the unit's
-`ExecStart=` first and `daemon-reload` before restarting.
+`ExecStart=` first and `daemon-reload` before restarting. If `daemon/static/style.css`/`app.js` or
+`resources/*` changed, re-sync those into `WorkingDirectory` too (step 5 of the one-time setup) —
+otherwise the running daemon keeps serving the previous copies.
 
 ## Rotating the token
 

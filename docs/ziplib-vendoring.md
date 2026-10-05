@@ -46,6 +46,18 @@ Two genuine cross-platform bugs, invisible on Windows because MSVC's STL carried
 did: `detail/ZipCentralDirectoryFileHeader.cpp` and `detail/ZipLocalFileHeader.cpp` both used
 `std::ios::streamoff` where they meant the standard `std::streamoff` - fixed in both.
 
+A third, invisible on both Windows and a WSL/DrvFS-mounted checkout but real on a Linux box
+reading `BData.baf` over an actual Samba/CIFS mount: `streams/streambuffs/sub_streambuf.h`'s
+`underflow()` did a single `seekg()` + `read()` per internal-buffer-sized chunk and treated any
+short read as EOF. `istream::read()` sets failbit on a short read even when it isn't true EOF, and
+a CIFS-mounted file can return fewer bytes than requested from one `read()` syscall well before
+genuine EOF (ordinary local disks and DrvFS practically never do). Once that happened, the next
+`seekg()` silently no-op'd (failbit already set), the following `read()` did nothing, and
+`underflow()` reported EOF - truncating the decompression stream mid-file instead of erroring,
+which desynced the custom stream-format parser deep inside `ManagerType<T>::StreamIn` and aborted
+the process. Fixed by `clear()`-ing before each retry and looping the read until the requested
+chunk is filled or a genuine zero-byte read confirms real EOF.
+
 zlib's vendored `.c` sources (`adler32.c` etc.) use old K&R-style function definitions, which are
 valid C but a hard syntax error under a C++ compiler - MSVC's `cl.exe` auto-detects `.c` files and
 uses its C frontend regardless of project-wide C++ settings, but `g++` does not, so the `Makefile`

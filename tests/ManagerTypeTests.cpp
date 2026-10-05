@@ -160,4 +160,24 @@ TEST(ManagerTypeTest, StreamOutAndBackInRoundTripsNameAndGroup) {
     EXPECT_EQ(reloaded.GetFullName(Id(0)), "Living expenses::Groceries");
 }
 
+// Regression: TransactionType's constructor used to take a const char*, so StreamIn()'s
+// `new Child(id, name)` forced every already-UTF-8-decoded name through wxString's
+// locale-dependent narrow-char conversion - under the Linux daemon's "C" locale any non-ASCII
+// name came out empty (blank Type aggregation labels). The CJK characters make the same loss
+// reproducible on Windows too, since they fall outside any Western ANSI code page.
+TEST(ManagerTypeTest, StreamInPreservesNonAsciiNames) {
+    const String name = String::FromUTF8("K\xC3\xA1rty\xC3\xA1s v\xC3\xA1s\xC3\xA1rl\xC3\xA1s \xE6\xBC\xA2\xE5\xAD\x97");
+    TypeManager mgr("TEST", "Test Type Manager");
+    mgr.Create(name);
+
+    std::stringstream buffer;
+    mgr.StreamOut(buffer);
+
+    TypeManager reloaded("TEST2", "Reloaded Type Manager");
+    reloaded.StreamIn(buffer);
+
+    ASSERT_EQ(reloaded.size(), 1u);
+    EXPECT_EQ(reloaded.GetName(Id(0)), name);
+}
+
 }
