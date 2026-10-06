@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-                       "Chart \"Convert all to this currency\" now converts each transaction at its own date's exchange rate, matching the table's exchanged total"
+
                    ],
     "released":  [
                      {
@@ -123,6 +123,13 @@
                                          "Fix the Linux daemon aborting while loading a BData.baf read over a real Samba/CIFS mount: the vendored ZipLib\u0027s sub_streambuf treated a short read (normal on CIFS) as EOF, truncating decompression mid-file; also document copying the daemon\u0027s static frontend assets into the systemd WorkingDirectory",
                                          "Fix the Linux daemon\u0027s Type aggregation rendering blank topic labels (table rows and chart legends): TransactionType\u0027s constructor took a const char*, so every accented type name loaded from the db went through a locale-dependent narrow-char conversion and came out empty under the daemon\u0027s \"C\" locale",
                                          "Charts never mix Income and Expense: every chart (desktop, HTML reports, Linux daemon) shows exactly one dataset - Net (new, default), Income or Expense - Net as bar/line only and drawn either side of a zero line; single-entry charts keep fixed colours (Income green, Expense red, Net purple), multi-topic charts are colourful, line charts shade only between the line and zero, and the daemon gains a Currency dropdown with \u0027Convert all to this currency\u0027"
+                                     ]
+                     },
+                     {
+                         "version":  "1.1.13",
+                         "date":  "2026-10-06",
+                         "changes":  [
+                                         "Chart \"Convert all to this currency\" now converts each transaction at its own date\u0027s exchange rate, matching the table\u0027s exchanged total"
                                      ]
                      }
                  ]
