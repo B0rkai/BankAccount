@@ -282,7 +282,11 @@ int32_t Money::GetValue(CurrencyType type, uint16_t date) const {
 		double rate = g_exchange_rate_history->GetRate(type, date);
 		return (rate != 0.) ? (int32_t)(m_amount / rate) : 0;
 	}
-	return GetValue(type); // non-HUF-to-non-HUF: fall back to the (now HUF-routed) static rate, not date-specific
+	// non-HUF-to-non-HUF: MNB only publishes HUF rates, so cross through HUF using both currencies'
+	// rates for that same date
+	double to_rate = g_exchange_rate_history->GetRate(type, date);
+	double huf_value = m_amount * g_exchange_rate_history->GetRate(m_currency_type, date);
+	return (to_rate != 0.) ? (int32_t)(huf_value / to_rate) : 0;
 }
 
 Money& Money::operator+=(const Money& other) {

@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-
+                       "Chart \"Convert all to this currency\" now converts each transaction at its own date's exchange rate, matching the table's exchanged total"
                    ],
     "released":  [
                      {

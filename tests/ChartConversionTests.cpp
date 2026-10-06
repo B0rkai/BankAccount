@@ -79,6 +79,24 @@ TEST(ChartConversionTest, PeriodicMergesSeriesByNameOverTheSharedPeriodAxis) {
     EXPECT_DOUBLE_EQ(merged.m_series[0].m_values[1], -2000.0 + ConvertChartValue(-10.0, EUR, HUF));
 }
 
+TEST(ChartConversionTest, MergePrefersTheQuerysPerTransactionExchangedValues) {
+    // a series carrying m_exchanged for the target is taken as-is (each transaction already
+    // converted at its own date's rate) rather than re-converting the summed m_values statically.
+    ChartDataByCurrency data;
+    data[HUF] = MakeTopicSum(HUF, { "Rent" }, { 1000.0 });
+    ChartData eur = MakeTopicSum(EUR, { "Rent" }, { 100.0 });
+    eur.m_series[0].m_exchanged[HUF] = { 35000.0 };
+    data[EUR] = eur;
+
+    ChartData merged = MergeConvertedToCurrency(data, HUF, ChartShape::TOPIC_SUM);
+    ASSERT_EQ(merged.m_labels.size(), 1u);
+    EXPECT_DOUBLE_EQ(merged.m_series[0].m_values[0], 36000.0);
+
+    // HUF data converted into EUR has no m_exchanged[EUR] here, so it falls back to the static rate
+    ChartData merged_eur = MergeConvertedToCurrency(data, EUR, ChartShape::TOPIC_SUM);
+    EXPECT_DOUBLE_EQ(merged_eur.m_series[0].m_values[0], 100.0 + ConvertChartValue(1000.0, HUF, EUR));
+}
+
 TEST(ChartConversionTest, EmptyInputYieldsEmptyChart) {
     ChartData merged = MergeConvertedToCurrency(ChartDataByCurrency{}, HUF, ChartShape::TOPIC_SUM);
     EXPECT_TRUE(merged.m_labels.empty());

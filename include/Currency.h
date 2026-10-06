@@ -60,7 +60,7 @@ public:
 	String PrettyPrint(CurrencyType type) const;
 	inline int32_t GetValue() const { return m_amount; };
 	int32_t GetValue(CurrencyType type) const;
-	int32_t GetValue(CurrencyType type, uint16_t date) const; // uses the date's own MNB rate when available, see ExchangeRateHistory
+	int32_t GetValue(CurrencyType type, uint16_t date) const; // uses the date's own MNB rate(s) when available (crossed through HUF for two foreign currencies), see ExchangeRateHistory
 	inline operator int32_t() const { return m_amount; }
 	Money& operator+=(const Money& other);
 	Money& operator-=(const Money& other);

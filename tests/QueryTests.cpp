@@ -5,6 +5,7 @@
 #include "IAccount.h"
 #include "INameResolve.h"
 #include "Currency.h"
+#include "ExchangeRateHistory.h"
 #include "CommonTypes.h"
 #include <list>
 #include <map>
@@ -651,6 +652,84 @@ TEST(PeriodicQueryTest, NoAggregationTopicKeepsIncomeExpenseAndNetSeriesSeparate
     EXPECT_EQ(net.m_series[0].m_name, "Net");
     EXPECT_DOUBLE_EQ(net.m_series[0].m_values[0], 9000.0);
     EXPECT_DOUBLE_EQ(net.m_series[0].m_values[1], -2000.0);
+}
+
+TEST(QuerySumByTopicTest, ChartExchangedValuesConvertEachTransactionAtItsOwnDatesRate) {
+    // "Convert all to this currency" must use each transaction's issue-date rate, not one rate
+    // applied to the summed total - two EUR transactions at different rates sum their own HUF
+    // conversions.
+    ExchangeRateHistory hist;
+    uint16_t date_a = (uint16_t)DMYToExcelSerialDate(2, 1, 2024);
+    uint16_t date_b = (uint16_t)DMYToExcelSerialDate(2, 1, 2025);
+    hist.AddRate(EUR, date_a, 400.0);
+    hist.AddRate(EUR, date_b, 300.0);
+    Currency::SetHistory(&hist);
+
+    FakeAccount acc(Id(0), "Acc");
+    Transaction a(&acc, Money(EUR, 1000), date_a, Id(0), Id(0)); // 10.00 EUR -> 4000 HUF
+    Transaction b(&acc, Money(EUR, 2000), date_b, Id(0), Id(0)); // 20.00 EUR -> 6000 HUF
+    Transaction c(&acc, Money(EUR, -500), date_b, Id(0), Id(0)); // -5.00 EUR -> -1500 HUF
+
+    FakeNameResolve resolve;
+    QueryResolveScope scope(&resolve);
+
+    QuerySumByTopic q;
+    Check(&q, &a);
+    Check(&q, &b);
+    Check(&q, &c);
+    ChartResult result = q.GetChartResult();
+    Currency::SetHistory(nullptr);
+
+    const ChartSeries& income = result.m_income.at(EUR).m_series[0];
+    EXPECT_DOUBLE_EQ(income.m_values[0], 30.0);
+    EXPECT_DOUBLE_EQ(income.m_exchanged.at(HUF)[0], 10000.0);
+    EXPECT_DOUBLE_EQ(income.m_exchanged.at(EUR)[0], 30.0);
+
+    const ChartSeries& expense = result.m_expense.at(EUR).m_series[0];
+    EXPECT_DOUBLE_EQ(expense.m_values[0], 5.0);
+    EXPECT_DOUBLE_EQ(expense.m_exchanged.at(HUF)[0], 1500.0);
+
+    const ChartSeries& net = result.m_net.at(EUR).m_series[0];
+    EXPECT_DOUBLE_EQ(net.m_values[0], 25.0);
+    EXPECT_DOUBLE_EQ(net.m_exchanged.at(HUF)[0], 8500.0);
+}
+
+TEST(PeriodicQueryTest, ChartExchangedValuesConvertEachTransactionAtItsOwnDatesRate) {
+    ExchangeRateHistory hist;
+    uint16_t date_2024 = (uint16_t)DMYToExcelSerialDate(2, 1, 2024);
+    uint16_t date_2025 = (uint16_t)DMYToExcelSerialDate(2, 1, 2025);
+    hist.AddRate(EUR, date_2024, 400.0);
+    hist.AddRate(EUR, date_2025, 300.0);
+    Currency::SetHistory(&hist);
+
+    FakeAccount acc(Id(0), "Acc");
+    Transaction a(&acc, Money(EUR, 1000), date_2024, Id(0), Id(0));  // 10.00 EUR -> 4000 HUF
+    Transaction b(&acc, Money(EUR, -2000), date_2025, Id(0), Id(0)); // -20.00 EUR -> -6000 HUF
+
+    FakeNameResolve resolve;
+    QueryResolveScope scope(&resolve);
+
+    PeriodicQuery q;
+    q.SetMode(TopicPeriodicSubQuery::YEARLY);
+    Check(&q, &a);
+    Check(&q, &b);
+    ChartResult result = q.GetChartResult();
+    Currency::SetHistory(nullptr);
+
+    // every exchanged vector stays aligned with the period axis, zero-padded like m_values
+    const ChartSeries& net = result.m_net.at(EUR).m_series[0];
+    ASSERT_EQ(net.m_exchanged.at(HUF).size(), 2u);
+    EXPECT_DOUBLE_EQ(net.m_exchanged.at(HUF)[0], 4000.0);
+    EXPECT_DOUBLE_EQ(net.m_exchanged.at(HUF)[1], -6000.0);
+
+    const ChartSeries& income = result.m_income.at(EUR).m_series[0];
+    ASSERT_EQ(income.m_exchanged.at(HUF).size(), 2u);
+    EXPECT_DOUBLE_EQ(income.m_exchanged.at(HUF)[0], 4000.0);
+    EXPECT_DOUBLE_EQ(income.m_exchanged.at(HUF)[1], 0.0);
+
+    const ChartSeries& expense = result.m_expense.at(EUR).m_series[0];
+    EXPECT_DOUBLE_EQ(expense.m_exchanged.at(HUF)[0], 0.0);
+    EXPECT_DOUBLE_EQ(expense.m_exchanged.at(HUF)[1], 6000.0);
 }
 
 }

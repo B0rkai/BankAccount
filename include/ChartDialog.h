@@ -30,11 +30,10 @@ class ChartTabPanel : public wxPanel {
 	wxChoice* m_kind_choice = nullptr;
 	wxChoice* m_currency_choice = nullptr; // only built when m_currencies.size() > 1
 	// Unchecked (the default) shows m_currency's own native data only, same as before this
-	// control existed. Checked, every other currency present is exchanged into m_currency (at
-	// today's static rate - the same simplification QueryCurrencySum::GetSumValue() already uses
-	// elsewhere for ad-hoc cross-currency comparison, not the per-transaction historical rate the
-	// table view's "EXCHANGED TOTAL" row uses) and merged in, so the chart shows one combined
-	// picture instead of splitting across a currency dropdown.
+	// control existed. Checked, every other currency present is exchanged into m_currency (each
+	// transaction at its own date's rate, same as the table view's "EXCHANGED TOTAL" row - see
+	// ChartSeries::m_exchanged) and merged in, so the chart shows one combined picture instead of
+	// splitting across a currency dropdown.
 	wxCheckBox* m_convert_checkbox = nullptr;
 	bool m_convert_to_selected = false;
 	// Shown only above a slice chart (Pie/Doughnut/Polar Area - the kinds where a single "whole",

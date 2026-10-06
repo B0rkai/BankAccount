@@ -10,6 +10,11 @@
 struct ChartSeries {
 	String m_name;
 	std::vector<double> m_values; // same length as ChartData::m_labels; real-world currency units (not raw minor units)
+	// m_values re-expressed in each currency (same length and units), every contributing
+	// transaction converted at its own date's rate before summing - what "Convert all to this
+	// currency" draws (see MergeConvertedToCurrency()). A currency missing here (e.g. hand-built
+	// data) falls back to converting the m_values sums at the static rate.
+	std::map<CurrencyType, std::vector<double>> m_exchanged;
 };
 
 // GUI-agnostic chart data for one currency, produced by QuerySumByTopic::GetChartResult() /

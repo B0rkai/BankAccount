@@ -440,8 +440,8 @@ now:
   frontend carries no chart-kind rules or colours of its own: a dataset's `colour` is used when the
   chart has a single entry, the shared categorical `palette` (by rank) when it has several topics.
 - `native` is one `ChartData` per currency present; `converted` (only when there's more than one
-  currency) is, per target currency, every currency's data exchanged into it at the static rates
-  and merged (`MergeConvertedToCurrency()` in the GUI-free
+  currency) is, per target currency, every currency's data exchanged into it - each transaction
+  at its own date's MNB rate, as the query aggregates (`ChartSeries::m_exchanged`) - and merged (`MergeConvertedToCurrency()` in the GUI-free
   [include/ChartConversion.h](../include/ChartConversion.h) - the same code the desktop
   `ChartTabPanel`'s "Convert all to this currency" checkbox uses). `default_currency` is HUF when
   present, else the first currency (`PickDefaultChartCurrency()`).

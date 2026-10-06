@@ -28,17 +28,25 @@ String QueryByName::GetStringResult() const {
 bool QueryCurrencySum::CheckTransaction(const Transaction* tr) {
 	Result& res = m_results[tr->GetCurrencyType()];
 	int32_t am = tr->GetAmount();
-	int64_t normalized = Money(tr->GetCurrencyType(), am).GetValue(HUF, tr->GetDate());
 	if (am > 0) {
 		res.m_inc += am;
-		res.m_inc_normalized += normalized;
 	} else {
 		res.m_exp += am;
-		res.m_exp_normalized += normalized;
 	}
 	res.m_sum += am;
-	res.m_sum_normalized += normalized;
 	++res.m_count;
+	const Money money(tr->GetCurrencyType(), am);
+	for (int t = 0; t < Currency_Count; ++t) {
+		const CurrencyType target = static_cast<CurrencyType>(t);
+		const int64_t exchanged = money.GetValue(target, tr->GetDate());
+		Legs& legs = res.m_exchanged[target];
+		if (am > 0) {
+			legs.m_inc += exchanged;
+		} else {
+			legs.m_exp += exchanged;
+		}
+		legs.m_sum += exchanged;
+	}
 	return true;
 }
 
@@ -101,9 +109,9 @@ StringTable QuerySumByTopic::GetTableResult() const {
 		if (totals.size() > 1) {
 			for (auto& pair : totals) {
 				exchanged_total.m_count += pair.second.m_count;
-				exchanged_total.m_inc += pair.second.m_inc_normalized;
-				exchanged_total.m_exp += pair.second.m_exp_normalized;
-				exchanged_total.m_sum += pair.second.m_sum_normalized;
+				exchanged_total.m_inc += pair.second.m_exchanged[HUF].m_inc;
+				exchanged_total.m_exp += pair.second.m_exchanged[HUF].m_exp;
+				exchanged_total.m_sum += pair.second.m_exchanged[HUF].m_sum;
 			}
 			auto& row = table.emplace_back();
 			row.push_back("EXCHANGED TOTAL");
@@ -143,9 +151,9 @@ StringTable QuerySumByTopic::GetTableResult() const {
 		row.push_back(curr->PrettyPrint((int32_t)pair.second.m_sum));
 		if (totals.size() > 1) {
 			exchanged_total.m_count += pair.second.m_count;
-			exchanged_total.m_inc += pair.second.m_inc_normalized;
-			exchanged_total.m_exp += pair.second.m_exp_normalized;
-			exchanged_total.m_sum += pair.second.m_sum_normalized;
+			exchanged_total.m_inc += pair.second.m_exchanged[HUF].m_inc;
+			exchanged_total.m_exp += pair.second.m_exchanged[HUF].m_exp;
+			exchanged_total.m_sum += pair.second.m_exchanged[HUF].m_sum;
 		}
 	}
 	// exchanged totals
@@ -170,17 +178,38 @@ double MoneyValueAsDouble(const int64_t raw, const CurrencyType type) {
 	return MakeCurrency(type)->HasCents() ? raw / 100.0 : (double)raw;
 }
 
+// Picks the one raw amount a chart point shows out of a sum's legs - which leg, and with which
+// sign, is all that differs between a chart's income, expense and net entries. Applied both to a
+// Result's native legs and to each of its m_exchanged legs, so a point and its converted
+// counterparts always come from the same leg.
+using LegPicker = int64_t(*)(const QuerySum::Legs&);
+int64_t PickIncome(const QuerySum::Legs& legs) { return legs.m_inc; }
+int64_t PickExpense(const QuerySum::Legs& legs) { return -legs.m_exp; } // magnitude, m_exp is negative
+int64_t PickNet(const QuerySum::Legs& legs) { return legs.m_sum; }
+int64_t PickNegatedNet(const QuerySum::Legs& legs) { return -legs.m_sum; }
+
+// Appends one point to `series`: `pick` applied to `res`'s native legs (in `currency`) for
+// m_values, and to each of its per-transaction-dated m_exchanged legs for m_exchanged. A null
+// `res` (no activity there, e.g. a period a topic had no transactions in) appends 0 everywhere.
+void AppendSeriesPoint(ChartSeries& series, const CurrencyType currency, const QuerySum::Result* res, LegPicker pick) {
+	series.m_values.push_back(res ? MoneyValueAsDouble(pick(res->GetLegs()), currency) : 0.0);
+	for (int t = 0; t < Currency_Count; ++t) {
+		const CurrencyType target = static_cast<CurrencyType>(t);
+		series.m_exchanged[target].push_back(res ? MoneyValueAsDouble(pick(res->m_exchanged[target]), target) : 0.0);
+	}
+}
+
 // Appends one (label, value) point to the "Sum" series of `target`'s ChartData for `currency`,
-// creating either as needed - shared by QuerySumByTopic::GetChartResult()'s income and expense
-// passes, which are otherwise identical except for which of Result's two fields they read.
-void AppendTopicSumPoint(ChartDataByCurrency& target, const CurrencyType currency, const String& label, const int64_t raw_amount) {
+// creating either as needed - shared by every QuerySumByTopic::GetChartResult() routing branch,
+// which differ only in the destination and which leg they pick.
+void AppendTopicSumPoint(ChartDataByCurrency& target, const CurrencyType currency, const String& label, const QuerySum::Result& res, LegPicker pick) {
 	ChartData& chart = target[currency];
 	chart.m_currency = currency;
 	if (chart.m_series.empty()) {
 		chart.m_series.emplace_back().m_name = "Sum";
 	}
 	chart.m_labels.push_back(label);
-	chart.m_series.front().m_values.push_back(MoneyValueAsDouble(raw_amount, currency));
+	AppendSeriesPoint(chart.m_series.front(), currency, &res, pick);
 }
 
 // The three ways a topic's income/expense legs can be routed into a ChartResult's m_income/
@@ -222,29 +251,28 @@ ChartResult QuerySumByTopic::GetChartResult() const {
 				// directions (e.g. an account paying rent and receiving a salary) legitimately
 				// appears on both tabs, each time showing only its own-direction total.
 				if (res.m_inc > 0) {
-					AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), res.m_inc);
+					AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), res, PickIncome);
 				}
 				if (res.m_exp < 0) {
-					AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -res.m_exp);
+					AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), res, PickExpense);
 				}
 				break;
 			case ChartSideMode::UNSIDED:
 				// no real topic here (GetTopic()==CURRENCY, one "topic" per currency) - each
 				// dataset gets one entry named after the dataset itself, never mixed into one chart.
 				if (res.m_inc > 0) {
-					AppendTopicSumPoint(result.m_income, currency, "Income", res.m_inc);
+					AppendTopicSumPoint(result.m_income, currency, "Income", res, PickIncome);
 				}
 				if (res.m_exp < 0) {
-					AppendTopicSumPoint(result.m_expense, currency, "Expense", -res.m_exp);
+					AppendTopicSumPoint(result.m_expense, currency, "Expense", res, PickExpense);
 				}
 				break;
 			case ChartSideMode::NET_SIGN:
 			default: {
-				const int64_t net = res.m_sum;
-				if (net >= 0) {
-					AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), net);
+				if (res.m_sum >= 0) {
+					AppendTopicSumPoint(result.m_income, currency, tsq->GetName(), res, PickNet);
 				} else {
-					AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), -net);
+					AppendTopicSumPoint(result.m_expense, currency, tsq->GetName(), res, PickNegatedNet);
 				}
 				break;
 			}
@@ -252,7 +280,7 @@ ChartResult QuerySumByTopic::GetChartResult() const {
 			// Net is independent of the routing mode above - every topic with any activity gets its
 			// signed net sum (a topic whose legs exactly cancel out still shows, as a 0 bar).
 			if ((res.m_inc != 0) || (res.m_exp != 0)) {
-				AppendTopicSumPoint(result.m_net, currency, (mode == ChartSideMode::UNSIDED) ? String("Net") : tsq->GetName(), res.m_sum);
+				AppendTopicSumPoint(result.m_net, currency, (mode == ChartSideMode::UNSIDED) ? String("Net") : tsq->GetName(), res, PickNet);
 			}
 		}
 	}
@@ -269,9 +297,9 @@ std::map<CurrencyType, QuerySum::Result> QuerySumByTopic::GetResults() const {
 				total[pair.first].m_inc += pair.second.m_inc;
 				total[pair.first].m_sum += pair.second.m_sum;
 				total[pair.first].m_count += pair.second.m_count;
-				total[pair.first].m_exp_normalized += pair.second.m_exp_normalized;
-				total[pair.first].m_inc_normalized += pair.second.m_inc_normalized;
-				total[pair.first].m_sum_normalized += pair.second.m_sum_normalized;
+				for (int t = 0; t < Currency_Count; ++t) {
+					total[pair.first].m_exchanged[t] += pair.second.m_exchanged[t];
+				}
 			} else {
 				total[pair.first] = pair.second;
 			}
@@ -681,7 +709,7 @@ StringTable PeriodicQuery::GetTableResult() const {
 					const QuerySum::Result& cell = res_map[r.first];
 					Money m(r.first, cell.m_sum);
 					// converted per-transaction using each one's own date, not "today's" rate applied to the period's total
-					Money normalized_in_huf(HUF, (int32_t)cell.m_sum_normalized);
+					Money normalized_in_huf(HUF, (int32_t)cell.m_exchanged[HUF].m_sum);
 					column_totals[r.second.size() - 1] += normalized_in_huf;
 					row_total_map[r.first] += m;
 					grand_total += normalized_in_huf;
@@ -779,12 +807,12 @@ ChartResult PeriodicQuery::GetChartResult() const {
 	}
 	const ChartSideMode mode = GetChartSideMode(GetTopic());
 	// Builds one named series for `p`/`currency` into `target`, reading each period's value via
-	// `value_for` - shared by every ChartSideMode branch below, which differ only in which
-	// target(s) they build into and how they read Result. unlike QuerySumByTopic::GetChartResult(),
-	// every topic shares the same period axis, so a topic with no transactions in a given period
-	// still gets an explicit 0 there rather than being skipped, keeping every series the same
-	// length as m_labels.
-	auto build_series = [&](ChartDataByCurrency& target, CurrencyType currency, const TopicPeriodicSubQuery* p, const String& name, const std::function<double(const QuerySum::Result&)>& value_for) {
+	// `pick` - shared by every ChartSideMode branch below, which differ only in which target(s)
+	// they build into and which leg they pick. unlike QuerySumByTopic::GetChartResult(), every
+	// topic shares the same period axis, so a topic with no transactions in a given period still
+	// gets an explicit 0 there rather than being skipped, keeping every series the same length as
+	// m_labels.
+	auto build_series = [&](ChartDataByCurrency& target, CurrencyType currency, const TopicPeriodicSubQuery* p, const String& name, LegPicker pick) {
 		ChartData& chart = target[currency];
 		chart.m_currency = currency;
 		chart.m_labels = labels;
@@ -792,15 +820,16 @@ ChartResult PeriodicQuery::GetChartResult() const {
 		series.m_name = name;
 		for (int date_id = start; date_id <= end; ++date_id) {
 			const TopicSubQuery* sub = p->GetSubQuery(date_id);
-			double value = 0.0;
+			std::map<CurrencyType, QuerySum::Result> res_map;
+			const QuerySum::Result* res = nullptr;
 			if (sub) {
-				auto res_map = sub->GetResults();
+				res_map = sub->GetResults();
 				auto it = res_map.find(currency);
 				if (it != res_map.end()) {
-					value = value_for(it->second);
+					res = &it->second;
 				}
 			}
-			series.m_values.push_back(value);
+			AppendSeriesPoint(series, currency, res, pick);
 		}
 	};
 	for (const TopicPeriodicSubQuery* p : GetSortedSubQueries()) {
@@ -826,20 +855,20 @@ ChartResult PeriodicQuery::GetChartResult() const {
 				// income leg and expense leg built as independent series - a topic active in both
 				// directions legitimately gets a trend line on both tabs.
 				if (total_inc > 0) {
-					build_series(result.m_income, currency, p, p->GetName(), [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_inc, currency); });
+					build_series(result.m_income, currency, p, p->GetName(), PickIncome);
 				}
 				if (total_exp < 0) {
-					build_series(result.m_expense, currency, p, p->GetName(), [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(-r.m_exp, currency); });
+					build_series(result.m_expense, currency, p, p->GetName(), PickExpense);
 				}
 				break;
 			case ChartSideMode::UNSIDED:
 				// no real topic here (GetTopic()==CURRENCY) - each dataset gets one series named
 				// after the dataset itself ("Income"/"Expense"), never mixed into one chart.
 				if (total_inc > 0) {
-					build_series(result.m_income, currency, p, "Income", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_inc, currency); });
+					build_series(result.m_income, currency, p, "Income", PickIncome);
 				}
 				if (total_exp < 0) {
-					build_series(result.m_expense, currency, p, "Expense", [currency](const QuerySum::Result& r) { return MoneyValueAsDouble(-r.m_exp, currency); });
+					build_series(result.m_expense, currency, p, "Expense", PickExpense);
 				}
 				break;
 			case ChartSideMode::NET_SIGN:
@@ -848,23 +877,20 @@ ChartResult PeriodicQuery::GetChartResult() const {
 				// whole period, applied once per series rather than per point, so a topic's trend
 				// line doesn't jump between tabs from one period to the next.
 				const bool is_income = (total_inc + total_exp) >= 0;
+				// sign follows the series' destination chart (decided once, above, from the topic's
+				// overall total), not each period's own sign - a period that bucks the topic's
+				// overall trend (e.g. a refund month within an otherwise expense-heavy topic) must
+				// show as a negative dip on that chart, offsetting the total, rather than as a
+				// positive magnitude that would only add to it.
 				build_series(is_income ? result.m_income : result.m_expense, currency, p, p->GetName(),
-					[currency, is_income](const QuerySum::Result& r) {
-						// sign follows the series' destination chart (decided once, above, from the
-						// topic's overall total), not each period's own sign - a period that bucks
-						// the topic's overall trend (e.g. a refund month within an otherwise
-						// expense-heavy topic) must show as a negative dip on that chart, offsetting
-						// the total, rather than as a positive magnitude that would only add to it.
-						return MoneyValueAsDouble(is_income ? r.m_sum : -r.m_sum, currency);
-					});
+					is_income ? PickNet : PickNegatedNet);
 				break;
 			}
 			}
 			// Net is independent of the routing mode above - every topic with any activity gets a
 			// signed per-period net series.
 			if ((total_inc != 0) || (total_exp != 0)) {
-				build_series(result.m_net, currency, p, (mode == ChartSideMode::UNSIDED) ? String("Net") : p->GetName(),
-					[currency](const QuerySum::Result& r) { return MoneyValueAsDouble(r.m_sum, currency); });
+				build_series(result.m_net, currency, p, (mode == ChartSideMode::UNSIDED) ? String("Net") : p->GetName(), PickNet);
 			}
 		}
 	}

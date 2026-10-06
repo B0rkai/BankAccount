@@ -209,16 +209,18 @@ TEST(MoneyGetValueDateTest, CarriesForwardTheNearestEarlierPublishedRate) {
     Currency::SetHistory(nullptr);
 }
 
-TEST(MoneyGetValueDateTest, NonHufToNonHufFallsBackToTheStaticHufRoutedRate) {
-    // Money::GetValue(type, date) documents that non-HUF-to-non-HUF isn't resolved from history
-    // (there's no single date-keyed rate between two foreign currencies) - it falls back to the
-    // static (now HUF-routed) rate from Money::GetValue(type) instead.
+TEST(MoneyGetValueDateTest, NonHufToNonHufCrossesThroughHufAtThatDatesRates) {
+    // MNB only publishes HUF rates, so EUR->USD on a date is EUR->HUF then HUF->USD, both at that
+    // same date's rates - not the static rate.
     ExchangeRateHistory hist;
     uint16_t date = Date(2, 1, 2024);
-    hist.AddRate(EUR, date, 111.0); // deliberately different from the static default
+    hist.AddRate(EUR, date, 400.0);
+    hist.AddRate(USD, date, 200.0);
     Currency::SetHistory(&hist);
 
-    EXPECT_EQ(Money(EUR, 100).GetValue(USD, date), Money(EUR, 100).GetValue(USD));
+    // 1.00 EUR = 400 HUF = 2.00 USD on that date.
+    EXPECT_EQ(Money(EUR, 100).GetValue(USD, date), 200);
+    EXPECT_EQ(Money(USD, 200).GetValue(EUR, date), 100);
 
     Currency::SetHistory(nullptr);
 }

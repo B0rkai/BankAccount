@@ -21,6 +21,21 @@ double ConvertChartValue(double value, CurrencyType from, CurrencyType to) {
 	return to_curr->HasCents() ? converted_raw / 100.0 : (double)converted_raw;
 }
 
+namespace {
+	// Point `i` of `series` (a `from`-currency series) expressed in `to` - the query's own
+	// per-transaction-dated conversion when it carried one, else the static-rate fallback.
+	double ExchangedPoint(const ChartSeries& series, size_t i, CurrencyType from, CurrencyType to) {
+		if (from == to) {
+			return series.m_values[i];
+		}
+		auto it = series.m_exchanged.find(to);
+		if ((it != series.m_exchanged.end()) && (i < it->second.size())) {
+			return it->second[i];
+		}
+		return ConvertChartValue(series.m_values[i], from, to);
+	}
+}
+
 ChartData MergeConvertedToCurrency(const ChartDataByCurrency& data, CurrencyType target, ChartShape shape) {
 	ChartData result;
 	result.m_currency = target;
@@ -43,7 +58,7 @@ ChartData MergeConvertedToCurrency(const ChartDataByCurrency& data, CurrencyType
 					idx = it->second;
 				}
 				for (size_t i = 0; (i < series.m_values.size()) && (i < result.m_labels.size()); ++i) {
-					result.m_series[idx].m_values[i] += ConvertChartValue(series.m_values[i], currency_pair.first, target);
+					result.m_series[idx].m_values[i] += ExchangedPoint(series, i, currency_pair.first, target);
 				}
 			}
 		}
@@ -57,7 +72,7 @@ ChartData MergeConvertedToCurrency(const ChartDataByCurrency& data, CurrencyType
 			const ChartSeries& series = currency_pair.second.m_series.front();
 			for (size_t i = 0; i < currency_pair.second.m_labels.size(); ++i) {
 				const String& label = currency_pair.second.m_labels[i];
-				double converted = ConvertChartValue(series.m_values[i], currency_pair.first, target);
+				double converted = ExchangedPoint(series, i, currency_pair.first, target);
 				auto it = value_by_label.find(label);
 				if (it == value_by_label.end()) {
 					value_by_label[label] = converted;

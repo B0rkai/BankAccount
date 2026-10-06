@@ -10,16 +10,16 @@
 CurrencyType PickDefaultChartCurrency(const ChartDataByCurrency& data);
 
 // Exchanges `value` (in ChartSeries::m_values' real-world units, see MoneyValueAsDouble() in
-// Query.cpp) from one currency to another at today's static rate - the same simplification
-// QueryCurrencySum::GetSumValue() already uses for ad-hoc cross-currency comparison, not the
-// per-transaction historical rate the table view's "EXCHANGED TOTAL" row uses (this is
-// post-aggregation chart data, so a per-transaction date is no longer available to look one up
-// by).
+// Query.cpp) from one currency to another at the static rate (Money::GetValue(type), no date) -
+// only MergeConvertedToCurrency()'s fallback for a series that carries no
+// ChartSeries::m_exchanged values for the target currency.
 double ConvertChartValue(double value, CurrencyType from, CurrencyType to);
 
 // Exchanges every currency present in `data` into `target` and merges them into one ChartData - a
 // topic present in more than one currency (e.g. a category with both EUR and HUF transactions)
-// sums its converted contributions rather than appearing twice. PERIODIC data keeps the shared
+// sums its converted contributions rather than appearing twice. Each value comes from
+// ChartSeries::m_exchanged - every transaction converted at its own date's rate, the same way the
+// table's "EXCHANGED TOTAL" row is - not from converting the already-summed m_values. PERIODIC data keeps the shared
 // period axis; TOPIC_SUM data ends up sorted ascending by converted value (QuerySumByTopic's own
 // convention).
 ChartData MergeConvertedToCurrency(const ChartDataByCurrency& data, CurrencyType target, ChartShape shape);

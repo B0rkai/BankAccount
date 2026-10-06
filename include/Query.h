@@ -127,16 +127,29 @@ public:
 
 class QuerySum : public QueryElement {
 public:
+	// The income/expense/net legs of a sum, as raw amounts of one currency.
+	struct Legs {
+		int64_t m_inc = 0;
+		int64_t m_exp = 0;
+		int64_t m_sum = 0;
+		inline Legs& operator+=(const Legs& other) {
+			m_inc += other.m_inc;
+			m_exp += other.m_exp;
+			m_sum += other.m_sum;
+			return *this;
+		}
+	};
 	struct Result {
 		int64_t m_sum = 0;
 		int64_t m_exp = 0;
 		int64_t m_inc = 0;
 		uint32_t m_count = 0;
-		// same three totals expressed in HUF, converted per-transaction using each one's own date
-		// (not a single "current" rate applied to the aggregate) - see QueryCurrencySum::CheckTransaction
-		int64_t m_sum_normalized = 0;
-		int64_t m_exp_normalized = 0;
-		int64_t m_inc_normalized = 0;
+		// The same three totals re-expressed in every currency (indexed by CurrencyType), each
+		// transaction converted at its own date's rate before summing - not one rate applied to the
+		// aggregate (see QueryCurrencySum::CheckTransaction). [HUF] backs the table's "EXCHANGED
+		// TOTAL" row; every entry backs the charts' "Convert all to this currency".
+		Legs m_exchanged[Currency_Count];
+		inline Legs GetLegs() const { return { m_inc, m_exp, m_sum }; }
 	};
 	QuerySum() = default;
 	virtual ~QuerySum() = default;
