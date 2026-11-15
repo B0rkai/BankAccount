@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-
+                       "Fix crash when storing a favorite query/report with accented names (JSON now written/read as UTF-8; a failed save no longer empties the file)"
                    ],
     "released":  [
                      {

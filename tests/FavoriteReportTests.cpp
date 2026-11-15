@@ -112,3 +112,19 @@ TEST(WriteFavoriteReportsTest, MinimalDefRoundTripsWithoutOptionalFields) {
     EXPECT_TRUE(reports[0].chart_kinds.empty());
     EXPECT_TRUE(reports[0].chart_sides.empty());
 }
+
+// Regression: same ToStdString()-vs-UTF-8 crash as WriteFavoriteQueriesTest.NonAsciiNamesRoundTripAsUtf8.
+TEST(WriteFavoriteReportsTest, NonAsciiNamesRoundTripAsUtf8) {
+    FavoriteReportDef def;
+    def.name = String::FromUTF8("Havi kiad\xC3\xA1s jelent\xC3\xA9s"); // "Havi kiadás jelentés"
+    def.favorite_query = String::FromUTF8("F\xC5\x91 sz\xC3\xA1mla");   // "Fő számla"
+
+    std::ostringstream out;
+    ASSERT_NO_THROW(WriteFavoriteReports({ def }, out));
+    std::istringstream in(out.str());
+    auto reports = ParseFavoriteReports(in);
+
+    ASSERT_EQ(reports.size(), 1u);
+    EXPECT_EQ(reports[0].name, def.name);
+    EXPECT_EQ(reports[0].favorite_query, def.favorite_query);
+}

@@ -291,6 +291,28 @@ TEST(WriteFavoriteQueriesTest, MinimalDefRoundTripsWithoutOptionalFields) {
     EXPECT_TRUE(favorites[0].chart_kind.empty());
 }
 
+// Regression: Store Query crashed (uncaught nlohmann type_error.316) on any accented name, since
+// the writer used wxString::ToStdString() (ANSI codepage on Windows) instead of UTF-8.
+TEST(WriteFavoriteQueriesTest, NonAsciiNamesRoundTripAsUtf8) {
+    const String fo = String::FromUTF8("F\xC5\x91");           // "Fő"
+    const String regi = String::FromUTF8("R\xC3\xA9gi");       // "Régi"
+    const String name = String::FromUTF8("Havi kiad\xC3\xA1s"); // "Havi kiadás"
+    FavoriteQueryDef def;
+    def.name = name;
+    def.accounts = { fo, regi };
+    def.clients = { String::FromUTF8("\xC3\x81RAM") };          // "ÁRAM"
+
+    std::ostringstream out;
+    ASSERT_NO_THROW(WriteFavoriteQueries({ def }, out));
+    std::istringstream in(out.str());
+    auto favorites = ParseFavoriteQueries(in);
+
+    ASSERT_EQ(favorites.size(), 1u);
+    EXPECT_EQ(favorites[0].name, name);
+    EXPECT_EQ(favorites[0].accounts, def.accounts);
+    EXPECT_EQ(favorites[0].clients, def.clients);
+}
+
 TEST(BuildQueryFromFavoriteTest, PlainDefaultProducesAccountFilterAndCurrencyFallback) {
     FavoriteQueryDef def;
     def.name = "Plain";

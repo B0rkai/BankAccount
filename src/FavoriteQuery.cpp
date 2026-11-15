@@ -165,17 +165,24 @@ std::vector<FavoriteQueryDef> LoadFavoriteQueries() {
 }
 
 namespace {
+	// Never wxString::ToStdString() here: on Windows that converts to the ANSI codepage (CP1250),
+	// so any accented name ("Fő", "Régi", ...) becomes non-UTF-8 bytes and nlohmann's dump()
+	// throws type_error.316 - the read side already decodes with String::FromUTF8().
+	std::string ToUtf8(const String& s) {
+		return std::string(s.utf8_str());
+	}
+
 	nlohmann::json StringVectorToJson(const StringVector& vec) {
 		nlohmann::json arr = nlohmann::json::array();
 		for (const String& s : vec) {
-			arr.push_back(s.ToStdString());
+			arr.push_back(ToUtf8(s));
 		}
 		return arr;
 	}
 
 	nlohmann::json ToJson(const FavoriteQueryDef& def) {
 		nlohmann::json j;
-		j["name"] = def.name.ToStdString();
+		j["name"] = ToUtf8(def.name);
 		if (!def.accounts.empty()) j["accounts"] = StringVectorToJson(def.accounts);
 		if (!def.clients.empty()) j["clients"] = StringVectorToJson(def.clients);
 		if (!def.categories.empty()) j["categories"] = StringVectorToJson(def.categories);
@@ -184,18 +191,18 @@ namespace {
 		if (def.exclude_categories) j["exclude_categories"] = true;
 		if (def.exclude_types) j["exclude_types"] = true;
 		if (!def.aggregate_by.empty()) j["aggregate_by"] = StringVectorToJson(def.aggregate_by);
-		if (!def.period.empty()) j["period"] = def.period.ToStdString();
+		if (!def.period.empty()) j["period"] = ToUtf8(def.period);
 		if (def.show_list) j["show_list"] = true;
 		if (def.date_mode == FavoriteQueryDef::DateMode::RELATIVE_KEYWORD) {
-			j["relative_period"] = def.relative_period.ToStdString();
+			j["relative_period"] = ToUtf8(def.relative_period);
 		} else if (def.date_mode == FavoriteQueryDef::DateMode::FIXED_RANGE) {
-			j["date_from"] = def.date_from.ToStdString();
-			j["date_to"] = def.date_to.ToStdString();
+			j["date_from"] = ToUtf8(def.date_from);
+			j["date_to"] = ToUtf8(def.date_to);
 		}
 		if (!def.chart_side.empty() || !def.chart_kind.empty()) {
 			nlohmann::json chart;
-			if (!def.chart_side.empty()) chart["side"] = def.chart_side.ToStdString();
-			if (!def.chart_kind.empty()) chart["kind"] = def.chart_kind.ToStdString();
+			if (!def.chart_side.empty()) chart["side"] = ToUtf8(def.chart_side);
+			if (!def.chart_kind.empty()) chart["kind"] = ToUtf8(def.chart_kind);
 			j["chart"] = chart;
 		}
 		return j;
@@ -211,12 +218,21 @@ void WriteFavoriteQueries(const std::vector<FavoriteQueryDef>& defs, std::ostrea
 }
 
 void SaveFavoriteQueries(const std::vector<FavoriteQueryDef>& defs) {
+	// Serialize fully before opening (= truncating) the file, so a serialization failure leaves
+	// the existing favorites intact instead of an empty file.
+	std::ostringstream buffer;
+	try {
+		WriteFavoriteQueries(defs, buffer);
+	} catch (const nlohmann::json::exception& e) {
+		LogError() << "Failed to serialize favorite queries (" << e.what() << ") - not saved";
+		return;
+	}
 	std::ofstream out(FavoriteQueryFilePath());
 	if (!out.is_open()) {
 		LogError() << "Failed to open " << FavoriteQueryFilePath() << " for writing - favorite queries not saved";
 		return;
 	}
-	WriteFavoriteQueries(defs, out);
+	out << buffer.str();
 	LogInfo() << "Saved " << defs.size() << " favorite quer" << (defs.size() == 1 ? "y" : "ies");
 }
 
