@@ -6,7 +6,7 @@ services:
     image: bankaccount:live
     # Runs as the server's user, who can read the db share.
     user: "${BANKACCOUNT_UID:?}:${BANKACCOUNT_GID:?}"
-    # 8300: only `tailscale serve` (svc:bankaccount) may reach it, as its identity headers are
+    # 8300: only `tailscale serve` (svc:persely) may reach it, as its identity headers are
     # trusted there. 8400: the home LAN (the server's LAN address only, never 0.0.0.0), where
     # those headers are ignored and the shared password signs in.
     ports:

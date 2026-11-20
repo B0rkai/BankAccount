@@ -1,6 +1,6 @@
 {
-  "name": "BankAccount",
-  "short_name": "BankAccount",
+  "name": "Persely",
+  "short_name": "Persely",
   "description": "Home finances: spending, income and queries over the BankAccount database.",
   "start_url": "/",
   "display": "standalone",

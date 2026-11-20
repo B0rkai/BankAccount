@@ -5,13 +5,17 @@ web app (`web/`) ship as one Docker image, built by [deploy/Dockerfile](../deplo
 run by [deploy/docker-compose.yml](../deploy/docker-compose.yml). This replaced the earlier
 systemd unit + shared-token setup (2026-11-20).
 
+The web app calls itself **Persely** (Hungarian for piggy bank; tab title, home-screen name) and
+lives at `https://persely.tail61796b.ts.net`; the repo, image, container and env-file names stay
+`bankaccount`.
+
 | What | Where |
 |---|---|
 | Live checkout (built from GitHub, detached at the deployed commit) | `~/bankaccount-live` |
 | Database (mounted read-only) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
 | Favorites (mounted read-only) | `/mnt/storage/dev/BankAccount/favorite_{queries,reports}.json` |
 | Secrets (allowed logins, LAN password hash; `chmod 600`) | `~/.config/bankaccount/web.env` |
-| Tailnet port (behind `tailscale serve`, identity headers trusted) | `127.0.0.1:8300` → `https://bankaccount.tail61796b.ts.net` |
+| Tailnet port (behind `tailscale serve`, identity headers trusted) | `127.0.0.1:8300` → `https://persely.tail61796b.ts.net` |
 | LAN port (plain HTTP, shared password) | `http://192.168.1.100:8400` |
 
 The paths are `deploy/deploy.sh`'s defaults; override them with the `BANKACCOUNT_*` variables at
@@ -63,10 +67,10 @@ healthy. The container restarts on its own after a reboot (`restart: unless-stop
 
    ```bash
    deploy/deploy.sh
-   tailscale serve --service=svc:bankaccount --https=443 http://127.0.0.1:8300
+   tailscale serve --service=svc:persely --https=443 http://127.0.0.1:8300
    ```
 
-   (`svc:bankaccount` has to exist in the Tailscale admin console first — Services — the same way
+   (`svc:persely` has to exist in the Tailscale admin console first — Services — the same way
    `svc:spajz` does, and the tailnet policy's `autoApprovers` → `services` must list it next to
    `svc:spajz`. Until it is approved the phone gets no page, and the daemon logs
    `Refused tailnet request for / from login ''`.)

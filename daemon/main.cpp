@@ -208,11 +208,11 @@ void InstallAuth(httplib::Server& server, Context& ctx, Listener listener) {
 			}
 			LogWarn("AUTH") << "Refused tailnet request for " << req.path << " from login '" << login << "'";
 			if (IsApiPath(req.path)) {
-				SendError(res, 403, "This Tailscale account is not allowed to use BankAccount");
+				SendError(res, 403, "This Tailscale account is not allowed to use Persely");
 			} else {
 				res.status = 403;
-				res.set_content("<!doctype html><meta charset=utf-8><title>BankAccount</title><p style=\"font-family:sans-serif\">"
-					"This Tailscale account is not allowed to use BankAccount.</p>", "text/html; charset=utf-8");
+				res.set_content("<!doctype html><meta charset=utf-8><title>Persely</title><p style=\"font-family:sans-serif\">"
+					"This Tailscale account is not allowed to use Persely.</p>", "text/html; charset=utf-8");
 			}
 			return httplib::Server::HandlerResponse::Handled;
 		}

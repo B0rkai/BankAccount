@@ -26,7 +26,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
       <form className="card login-card" onSubmit={submit}>
         <div className="brand">
           <span className="brand-mark"><Icon name="logo" size={22} /></span>
-          BankAccount
+          Persely
         </div>
         <div>
           <h1>Sign in</h1>

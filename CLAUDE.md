@@ -68,7 +68,7 @@ single-header, no-build, used for the small JSON config/data files (`db\location
 A second, non-MSBuild build lives alongside the Windows solution: the top-level `Makefile` builds
 a read-only subset of `BankAccountCore` for Linux (no import/mutation/Windows-only file-locking
 code) plus `daemon/`, an HTTP+JSON server (vendored [cpp-httplib](https://github.com/yhirose/cpp-httplib)
-as `include/httplib.h`) exposing the `Query` engine under `/api/v1`, and serving `web/` — a
+as `include/httplib.h`) exposing the `Query` engine under `/api/v1`, and serving `web/` — "Persely", a
 React + TypeScript + Vite web app (Overview/Explore/Transactions/Reports) over the live db. It
 listens twice: a tailnet port behind `tailscale serve` (trusts `Tailscale-User-Login`, allowlisted)
 and a LAN port (shared password, session cookie) — `daemon/WebAuth.h`. Ships as one Docker image

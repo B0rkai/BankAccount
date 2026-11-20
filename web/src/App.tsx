@@ -35,7 +35,7 @@ export function App() {
     return (
       <div className="login-page">
         <div className="card login-card">
-          <h1>BankAccount is unavailable</h1>
+          <h1>Persely is unavailable</h1>
           <p className="alert">{session.message}</p>
         </div>
       </div>
@@ -53,7 +53,7 @@ export function App() {
         <div className="topbar-inner">
           <a className="brand" href="/" onClick={linkHandler('/')}>
             <span className="brand-mark"><Icon name="logo" size={20} /></span>
-            BankAccount
+            Persely
           </a>
           <nav aria-label="Main" className="nav">
             {ROUTES.map((r) => (
@@ -85,7 +85,7 @@ export function App() {
         {route === 'explore' && <Explore params={params} />}
         {route === 'transactions' && <Transactions />}
         {route === 'reports' && <Reports />}
-        <footer className="footer muted small">BankAccount {me.version} · read-only view of the desktop database</footer>
+        <footer className="footer muted small">Persely · BankAccount {me.version} · read-only view of the desktop database</footer>
       </main>
 
       <nav aria-label="Main" className="tabbar">
