@@ -2140,11 +2140,20 @@ void cMain::GenerateFavoriteReportByName(const String& name) {
 	std::vector<ReportSection> sections = BuildReportSections(q, *m_bank_file);
 	String html = BuildHtmlReport(def.name, sections, def.chart_kinds, def.chart_sides, LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss());
 
-	std::filesystem::create_directories("reports");
+	std::error_code ec;
+	std::filesystem::create_directories("reports", ec);
 	String filename = "reports\\" + SanitizeFileNameComponent(def.name) + "_" + TimestampForFilename() + ".html";
-	std::ofstream out(filename.ToStdString(), std::ofstream::binary);
-	out << html.utf8_str();
-	out.close();
+	// Wide path, not ToStdString() (ANSI codepage) - see BankAccountCliMain.cpp's GenerateOneReport().
+	std::ofstream out(std::filesystem::path(filename.ToStdWstring()), std::ofstream::binary);
+	if (out) {
+		out << html.utf8_str();
+		out.close();
+	}
+	if (!out) {
+		LogError() << "Favorite report \"" << def.name.utf8_str() << "\" could not be written to " << filename.utf8_str();
+		UIOutputText("Failed to write report to " + filename);
+		return;
+	}
 
 	wxFileName fn(filename);
 	fn.MakeAbsolute();

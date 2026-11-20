@@ -99,11 +99,22 @@ namespace {
 		std::vector<ReportSection> sections = BuildReportSections(q, mgr);
 		String html = BuildHtmlReport(def.name, sections, def.chart_kinds, def.chart_sides, LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss());
 
-		std::filesystem::create_directories((std::string)out_dir);
+		// Wide paths throughout: a narrow std::string here is the ANSI codepage on Windows, which
+		// can't represent every accented report name (e.g. "ő" on a CP1252 system becomes "?",
+		// an illegal filename character).
+		std::error_code ec;
+		std::filesystem::create_directories(std::filesystem::path(out_dir.ToStdWstring()), ec);
 		String filename = JoinPath(out_dir, SanitizeFileNameComponent(def.name) + "_" + TimestampForFilename() + ".html");
-		std::ofstream out(filename.ToStdString(), std::ofstream::binary);
-		out << html.utf8_str();
-		out.close();
+		std::ofstream out(std::filesystem::path(filename.ToStdWstring()), std::ofstream::binary);
+		if (out) {
+			out << html.utf8_str();
+			out.close();
+		}
+		if (!out) {
+			std::cerr << "Failed to write " << filename.utf8_str() << "\n";
+			LogError() << "Favorite report \"" << def.name.utf8_str() << "\" could not be written to " << filename.utf8_str();
+			return false;
+		}
 
 		std::cout << "Wrote " << filename.utf8_str() << "\n";
 		LogInfo() << "Favorite report \"" << def.name.utf8_str() << "\" written to " << filename.utf8_str();

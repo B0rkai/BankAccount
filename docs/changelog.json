@@ -1,5 +1,7 @@
 {
     "unreleased":  [
+                       "Fix crash when storing a favorite query/report with accented names (JSON now written/read as UTF-8; a failed save no longer empties the file)",
+                       "HTML report files are now opened via a wide (Unicode) path and a failed write is reported instead of claiming success",
                        "Linux web service: new React web app (overview, query explorer, transactions, reports) with Tailscale-login and LAN-password sign-in, shipped as a Docker image",
                        "Linux web service: --hash-password hides the password and asks for it twice",
                        "Linux web service: deploy/set-secrets.sh writes the secrets file; the daemon refuses the template's placeholder values"

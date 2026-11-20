@@ -13,7 +13,7 @@ namespace {
 		}
 		for (const auto& item : j[key]) {
 			if (item.is_string()) {
-				result.push_back(String(item.get<std::string>()));
+				result.push_back(String::FromUTF8(item.get<std::string>().c_str()));
 			}
 		}
 		return result;
@@ -21,7 +21,7 @@ namespace {
 
 	String ReadString(const nlohmann::json& j, const char* key) {
 		if (j.contains(key) && j[key].is_string()) {
-			return String(j[key].get<std::string>());
+			return String::FromUTF8(j[key].get<std::string>().c_str());
 		}
 		return cStringEmpty;
 	}
@@ -91,18 +91,23 @@ std::vector<FavoriteReportDef> LoadFavoriteReports() {
 }
 
 namespace {
+	// UTF-8, never ToStdString() (ANSI codepage on Windows) - see FavoriteQuery.cpp's ToUtf8().
+	std::string ToUtf8(const String& s) {
+		return std::string(s.utf8_str());
+	}
+
 	nlohmann::json StringVectorToJson(const StringVector& vec) {
 		nlohmann::json arr = nlohmann::json::array();
 		for (const String& s : vec) {
-			arr.push_back(s.ToStdString());
+			arr.push_back(ToUtf8(s));
 		}
 		return arr;
 	}
 
 	nlohmann::json ToJson(const FavoriteReportDef& def) {
 		nlohmann::json j;
-		j["name"] = def.name.ToStdString();
-		j["favorite_query"] = def.favorite_query.ToStdString();
+		j["name"] = ToUtf8(def.name);
+		j["favorite_query"] = ToUtf8(def.favorite_query);
 		if (!def.chart_kinds.empty()) j["chart_kinds"] = StringVectorToJson(def.chart_kinds);
 		if (!def.chart_sides.empty()) j["chart_sides"] = StringVectorToJson(def.chart_sides);
 		return j;
@@ -118,11 +123,19 @@ void WriteFavoriteReports(const std::vector<FavoriteReportDef>& defs, std::ostre
 }
 
 void SaveFavoriteReports(const std::vector<FavoriteReportDef>& defs) {
+	// Serialize before truncating the file - see SaveFavoriteQueries().
+	std::ostringstream buffer;
+	try {
+		WriteFavoriteReports(defs, buffer);
+	} catch (const nlohmann::json::exception& e) {
+		LogError() << "Failed to serialize favorite reports (" << e.what() << ") - not saved";
+		return;
+	}
 	std::ofstream out(FavoriteReportFilePath());
 	if (!out.is_open()) {
 		LogError() << "Failed to open " << FavoriteReportFilePath() << " for writing - favorite reports not saved";
 		return;
 	}
-	WriteFavoriteReports(defs, out);
+	out << buffer.str();
 	LogInfo() << "Saved " << defs.size() << " favorite report" << (defs.size() == 1 ? "" : "s");
 }
