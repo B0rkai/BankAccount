@@ -42,21 +42,22 @@ healthy. The container restarts on its own after a reboot (`restart: unless-stop
 
 ## First-time setup (done once)
 
-1. Build the image once, to get the password-hashing tool:
+1. Build the image once (the next step hashes the password with it):
 
    ```bash
    docker build -f deploy/Dockerfile -t bankaccount:live .
    ```
 
-2. Write the secrets file:
+2. Write the secrets file — your Tailscale login, and the LAN password (asked twice, hidden; only
+   its hash is stored):
 
    ```bash
-   mkdir -p ~/.config/bankaccount
-   cp deploy/web.env.example ~/.config/bankaccount/web.env
-   chmod 600 ~/.config/bankaccount/web.env
-   docker run --rm -it bankaccount:live bankaccount-daemon --hash-password   # type it twice (hidden)
-   $EDITOR ~/.config/bankaccount/web.env   # your Tailscale login + the printed hash
+   deploy/set-secrets.sh --login you@example.com
    ```
+
+   It creates `~/.config/bankaccount/web.env` (`chmod 600`) from
+   [deploy/web.env.example](../deploy/web.env.example) and fills both values in. The daemon refuses
+   to start while either is still the template's placeholder.
 
 3. Deploy, then publish the tailnet port as a Tailscale Service:
 
@@ -79,10 +80,14 @@ healthy. The container restarts on its own after a reboot (`restart: unless-stop
 
 ## Changing the LAN password or the allowed logins
 
-Edit `~/.config/bankaccount/web.env` (a new hash from `--hash-password`, as above), then
-`docker compose -f ~/bankaccount-live/deploy/docker-compose.yml up -d --force-recreate` with the
-same variables `deploy.sh` exports — or simply rerun `deploy/deploy.sh`. Recreating the container
-also signs every LAN browser out.
+```bash
+deploy/set-secrets.sh                                   # new LAN password, logins kept
+deploy/set-secrets.sh --login me@example.com,other@example.com   # also replace the logins
+deploy/deploy.sh                                        # restart with the new values
+```
+
+Restarting signs every LAN browser out. `bankaccount-daemon --hash-password` (run with
+`docker run --rm -it`) still prints a hash on its own, if you'd rather edit the file by hand.
 
 ## Look around
 

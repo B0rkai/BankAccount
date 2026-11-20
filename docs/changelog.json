@@ -1,7 +1,8 @@
 {
     "unreleased":  [
                        "Linux web service: new React web app (overview, query explorer, transactions, reports) with Tailscale-login and LAN-password sign-in, shipped as a Docker image",
-                       "Linux web service: --hash-password hides the password and asks for it twice"
+                       "Linux web service: --hash-password hides the password and asks for it twice",
+                       "Linux web service: deploy/set-secrets.sh writes the secrets file; the daemon refuses the template's placeholder values"
                    ],
     "released":  [
                      {

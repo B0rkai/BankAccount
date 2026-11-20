@@ -403,8 +403,14 @@ int main(int argc, char** argv) {
 		std::cerr << "BANKACCOUNT_ALLOWED_LOGINS is empty - nobody could use the tailnet listener\n";
 		return 1;
 	}
-	if (args.lan_port > 0 && auth.lan_password_hash.rfind("pbkdf2-sha256:", 0) != 0) {
-		std::cerr << "--lan-port needs BANKACCOUNT_LAN_PASSWORD_HASH (make one with --hash-password)\n";
+	for (const std::string& login : auth.allowed_logins) {
+		if (login.size() > 12 && login.compare(login.size() - 12, 12, "@example.com") == 0) {
+			std::cerr << "BANKACCOUNT_ALLOWED_LOGINS still holds the template's " << login << " - set it with deploy/set-secrets.sh\n";
+			return 1;
+		}
+	}
+	if (args.lan_port > 0 && !IsPasswordHash(auth.lan_password_hash)) {
+		std::cerr << "--lan-port needs a real BANKACCOUNT_LAN_PASSWORD_HASH - set it with deploy/set-secrets.sh\n";
 		return 1;
 	}
 

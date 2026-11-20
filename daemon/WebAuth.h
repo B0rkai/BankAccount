@@ -32,6 +32,8 @@ std::string RandomHex(size_t bytes);
 std::string HashPassword(const std::string& password, int iterations = 600000);
 // False for a wrong password and for any `stored` string not in HashPassword()'s format.
 bool VerifyPassword(const std::string& password, const std::string& stored);
+// True when `stored` is in HashPassword()'s format (rejects the env template's placeholder).
+bool IsPasswordHash(const std::string& stored);
 
 // Case-insensitive (Tailscale logins are e-mail addresses). An empty allowlist lets nobody in.
 bool IsAllowedTailnetLogin(const std::set<std::string>& allowed_logins, const std::string& login);

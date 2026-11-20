@@ -98,7 +98,15 @@ std::string HashPassword(const std::string& password, int iterations) {
 	return out.str();
 }
 
-bool VerifyPassword(const std::string& password, const std::string& stored) {
+namespace {
+
+struct StoredHash {
+	int iterations = 0;
+	std::vector<unsigned char> salt;
+	std::string hash_hex;
+};
+
+bool ParseStoredHash(const std::string& stored, StoredHash& out) {
 	std::vector<std::string> parts;
 	std::istringstream in(stored);
 	for (std::string part; std::getline(in, part, ':');) {
@@ -107,17 +115,32 @@ bool VerifyPassword(const std::string& password, const std::string& stored) {
 	if (parts.size() != 4 || parts[0] != HASH_SCHEME) {
 		return false;
 	}
-	int iterations = 0;
 	try {
-		iterations = std::stoi(parts[1]);
+		out.iterations = std::stoi(parts[1]);
 	} catch (...) {
 		return false;
 	}
-	std::vector<unsigned char> salt;
-	if (iterations <= 0 || !FromHex(parts[2], salt) || salt.empty() || parts[3].size() != HASH_BYTES * 2) {
+	std::vector<unsigned char> hash;
+	if (out.iterations <= 0 || !FromHex(parts[2], out.salt) || out.salt.empty() || parts[3].size() != HASH_BYTES * 2 || !FromHex(parts[3], hash)) {
 		return false;
 	}
-	return ConstantTimeEquals(Pbkdf2(password, salt, iterations), Lower(parts[3]));
+	out.hash_hex = Lower(parts[3]);
+	return true;
+}
+
+} // namespace
+
+bool IsPasswordHash(const std::string& stored) {
+	StoredHash parsed;
+	return ParseStoredHash(stored, parsed);
+}
+
+bool VerifyPassword(const std::string& password, const std::string& stored) {
+	StoredHash parsed;
+	if (!ParseStoredHash(stored, parsed)) {
+		return false;
+	}
+	return ConstantTimeEquals(Pbkdf2(password, parsed.salt, parsed.iterations), parsed.hash_hex);
 }
 
 bool IsAllowedTailnetLogin(const std::set<std::string>& allowed_logins, const std::string& login) {

@@ -49,6 +49,13 @@ TEST(WebAuthTests, MalformedStoredHashNeverVerifies) {
 	EXPECT_FALSE(VerifyPassword("x", "pbkdf2-sha256:1000:0011:abcd"));
 }
 
+TEST(WebAuthTests, IsPasswordHashAcceptsOnlyRealHashes) {
+	EXPECT_TRUE(IsPasswordHash(HashPassword("a long password", 1000)));
+	EXPECT_FALSE(IsPasswordHash("pbkdf2-sha256:600000:...:..."));
+	EXPECT_FALSE(IsPasswordHash("pbkdf2-sha256:1000:0011:" + std::string(64, 'z')));
+	EXPECT_FALSE(IsPasswordHash(""));
+}
+
 TEST(WebAuthTests, TailnetLoginMustBeOnTheAllowlistIgnoringCase) {
 	std::set<std::string> allowed = ParseLoginList(" Me@Example.com , ,other@example.com");
 	EXPECT_EQ(allowed.size(), 2u);

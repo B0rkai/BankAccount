@@ -12,7 +12,7 @@ REPO=https://github.com/B0rkai/BankAccount.git
 export BANKACCOUNT_DB_DIR=${BANKACCOUNT_DB_DIR:-/mnt/storage/dev/BankAccount/db}
 export BANKACCOUNT_DB_FILE=${BANKACCOUNT_DB_FILE:-BData.baf}
 export BANKACCOUNT_FAVORITES_DIR=${BANKACCOUNT_FAVORITES_DIR:-/mnt/storage/dev/BankAccount}
-# BANKACCOUNT_ALLOWED_LOGINS and BANKACCOUNT_LAN_PASSWORD_HASH (chmod 600) - see deploy/README.md.
+# BANKACCOUNT_ALLOWED_LOGINS and BANKACCOUNT_LAN_PASSWORD_HASH (chmod 600) - written by deploy/set-secrets.sh.
 export BANKACCOUNT_ENV_FILE=${BANKACCOUNT_ENV_FILE:-$HOME/.config/bankaccount/web.env}
 # The server's address on the home LAN (it must stay put: a DHCP reservation in the router).
 export BANKACCOUNT_LAN_ADDRESS=${BANKACCOUNT_LAN_ADDRESS:-192.168.1.100}
@@ -23,7 +23,7 @@ export BANKACCOUNT_UID BANKACCOUNT_GID
 ref=${1:-origin/master}
 
 if [ ! -f "$BANKACCOUNT_ENV_FILE" ]; then
-    echo "missing $BANKACCOUNT_ENV_FILE - see deploy/README.md, First-time setup" >&2
+    echo "missing $BANKACCOUNT_ENV_FILE - see docs/linux-daemon-deployment.md, First-time setup" >&2
     exit 1
 fi
 
