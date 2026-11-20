@@ -453,6 +453,33 @@ hidden for a single-currency result), and a chart-kind dropdown filled from the 
 `allowed_kinds` - all redrawing the same `Chart` instance in place, keeping the chosen currency/kind
 across dataset switches when still valid.
 
+## Revision (2026-11-20): web app, Docker, two-listener auth
+
+The plain-JS query page (story 5) and the shared `--token` (story 6) are replaced by a proper web
+app and per-network sign-in. Proposed and agreed with a design mockup before building.
+
+- **Frontend**: `web/`, a React + TypeScript + Vite SPA (the same stack as the server's other
+  app), with Overview (period KPIs, spending by category, 12-month income/expense, recent
+  transactions, favorites), Explore (the query builder, query kept in the URL), Transactions
+  (paged list) and Reports (view a favorite report, or download its HTML). Chart.js comes from
+  npm; `web/src/charts.ts` ports the same one-dataset-per-chart, colour and "Others"-folding rules
+  as `HtmlReport.cpp`. `daemon/FrontendPage.*`, `daemon/HotReloadFile.*` and `daemon/static/` are
+  gone.
+- **API**: every route moved under `/api/v1`. New: `/me`, `/login`, `/logout`,
+  `/names?topic=`, `POST /transactions` (`daemon/BrowseApi.h` — filtered, paged, newest first,
+  with numeric amounts), `/favorites/reports/html` (the same HTML file BankAccountCli writes).
+  `/health` is the only unauthenticated route and reports nothing but load state.
+- **Auth** (`daemon/WebAuth.h`): two listeners in one process. The tailnet one sits behind
+  `tailscale serve` on loopback, so its `Tailscale-User-Login` header is trusted and checked
+  against an allowlist. The LAN one ignores that header and requires a session cookie from the one
+  shared password (PBKDF2-SHA256 hash in the environment, OpenSSL), with a per-address login
+  throttle. Secrets moved from argv to the environment, since argv shows in `ps`. Superseded the
+  "Decisions" note on minimal shared-token auth; still no accounts, OAuth or public exposure.
+- **Deployment**: Docker instead of systemd — see
+  [linux-daemon-deployment.md](linux-daemon-deployment.md). The db and favorites are bind-mounted
+  read-only. The daemon's own GoogleTest suite (`daemon/tests/`, `make daemon-tests`) runs in the
+  image build; it lives outside `tests/` because the Windows test project has no OpenSSL.
+
 ## Decisions (2026-09-10)
 
 - **Explicit "Run" button**, not live-as-you-type — matches the desktop's own model, no

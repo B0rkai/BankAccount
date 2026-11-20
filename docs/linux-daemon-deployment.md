@@ -1,116 +1,104 @@
-# Linux query daemon: deployment
+# Linux web service: deployment
 
-Story 7 of [linux-query-daemon-design.md](linux-query-daemon-design.md). Covers installing the
-daemon as a systemd service and redeploying a new build — there's no auto-update (unlike the
-desktop app's self-update flow) and no app-level config file to migrate, so both are just
-stop/replace/restart.
+The daemon (`daemon/`, see [linux-query-daemon-design.md](linux-query-daemon-design.md)) and the
+web app (`web/`) ship as one Docker image, built by [deploy/Dockerfile](../deploy/Dockerfile) and
+run by [deploy/docker-compose.yml](../deploy/docker-compose.yml). This replaced the earlier
+systemd unit + shared-token setup (2026-11-20).
 
-## One-time host setup
+| What | Where |
+|---|---|
+| Live checkout (built from GitHub, detached at the deployed commit) | `~/bankaccount-live` |
+| Database (mounted read-only) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
+| Favorites (mounted read-only) | `/mnt/storage/dev/BankAccount/favorite_{queries,reports}.json` |
+| Secrets (allowed logins, LAN password hash; `chmod 600`) | `~/.config/bankaccount/web.env` |
+| Tailnet port (behind `tailscale serve`, identity headers trusted) | `127.0.0.1:8300` → `https://bankaccount.tail61796b.ts.net` |
+| LAN port (plain HTTP, shared password) | `http://192.168.1.100:8400` |
 
-1. Build the daemon (see [linux-query-daemon-design.md](linux-query-daemon-design.md) story 1/2,
-   or just `make` at the repo root on a box with `g++`/`libwxbase3.0-dev` installed) and copy the
-   resulting `build/linux/bin/daemon` binary to the target host.
+The paths are `deploy/deploy.sh`'s defaults; override them with the `BANKACCOUNT_*` variables at
+its top.
 
-2. Create a dedicated, unprivileged service user/group — the daemon never needs to run as root:
+## How sign-in works
 
-   ```bash
-   sudo useradd --system --no-create-home --shell /usr/sbin/nologin bankaccount-daemon
-   ```
+- **Tailscale**: `tailscale serve` adds `Tailscale-User-Login` to every request it forwards to
+  `127.0.0.1:8300`. The daemon lets a request in only if that login is in
+  `BANKACCOUNT_ALLOWED_LOGINS`; anyone else gets 403. No password.
+- **LAN**: on `:8400` those headers are ignored (anyone on the LAN could send one). The app shows
+  a password page; a correct password gives an HttpOnly session cookie (12 hours, or 30 days with
+  "keep me signed in"). Five wrong passwords from one address lock it out for 15 minutes. Sessions
+  live in memory, so a redeploy signs LAN browsers out.
 
-3. Install the binary:
+## Deploy
 
-   ```bash
-   sudo mkdir -p /opt/bankaccount-daemon/bin
-   sudo cp daemon /opt/bankaccount-daemon/bin/daemon
-   sudo chown -R root:root /opt/bankaccount-daemon
-   ```
-
-   (Owned by `root`, not the service user — the daemon only needs to *execute* the binary, never
-   write to it; keeping it non-writable by the service account means a compromised daemon process
-   can't overwrite its own executable.)
-
-4. Create the env file holding the db path / bind host+port / auth token (see
-   [deploy/bankaccount-daemon.env.example](../deploy/bankaccount-daemon.env.example)) — these stay
-   out of the systemd unit file itself since unit files under `/etc/systemd/system` are commonly
-   world-readable, while this file is locked to 0600:
-
-   ```bash
-   sudo mkdir -p /etc/bankaccount-daemon
-   sudo cp deploy/bankaccount-daemon.env.example /etc/bankaccount-daemon/bankaccount-daemon.env
-   sudo $EDITOR /etc/bankaccount-daemon/bankaccount-daemon.env   # fill in real db path/host/port/token
-   sudo chown root:bankaccount-daemon /etc/bankaccount-daemon/bankaccount-daemon.env
-   sudo chmod 640 /etc/bankaccount-daemon/bankaccount-daemon.env
-   ```
-
-   Generate the token with `openssl rand -hex 32` — anything guessable defeats the whole point of
-   story 6's shared-token check. `BANKACCOUNT_HOST` should be the LAN or Tailscale interface
-   address to bind, never `0.0.0.0` (the design doc's scope explicitly rules out public internet
-   exposure). `BANKACCOUNT_DB` can point at either the plain-text `BankAccount.txt` export or the
-   compressed/password-"protected" `BData.baf` a saved db normally is (a path ending in `.baf` is
-   opened via the vendored ZipLib - see [ziplib-vendoring.md](ziplib-vendoring.md)); pointing it
-   straight at a shared `.baf` avoids having to keep a separate plain-text export in sync.
-
-5. Copy the frontend's static assets into the unit's `WorkingDirectory` (`/var/log/bankaccount-daemon`
-   below - adjust if you changed it in the unit file). `daemon/main.cpp`'s `HotReloadFile`s
-   (`daemon/static/style.css`/`app.js`) and `HtmlReport.cpp`'s `LoadChartJsSource()`/
-   `LoadGridJsSource()`/`LoadGridJsCss()` (`resources/*`) all resolve their paths relative to the
-   process's cwd - the same convention `db\`/`log\` already use elsewhere in this app - so they
-   need to live under wherever `WorkingDirectory=` points, not next to the binary:
-
-   ```bash
-   sudo mkdir -p /var/log/bankaccount-daemon/daemon/static /var/log/bankaccount-daemon/resources
-   sudo cp daemon/static/* /var/log/bankaccount-daemon/daemon/static/
-   sudo cp resources/*.js resources/*.css /var/log/bankaccount-daemon/resources/
-   sudo chown -R bankaccount-daemon:bankaccount-daemon /var/log/bankaccount-daemon/daemon /var/log/bankaccount-daemon/resources
-   ```
-
-   (Safe to leave in place across restarts/reboots - systemd's `LogsDirectory=` only ensures the
-   directory exists, it never wipes existing content in it.) Skipping this step doesn't crash the
-   daemon - `/health` and `/query` still work - but the frontend page (`GET /`) silently has no
-   JS/CSS and no chart library, so it renders with no accounts populated and no charts.
-
-6. Install and enable the unit:
-
-   ```bash
-   sudo cp deploy/bankaccount-daemon.service /etc/systemd/system/bankaccount-daemon.service
-   # Edit ReadOnlyPaths= to match BANKACCOUNT_DB's actual mount point first.
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now bankaccount-daemon
-   ```
-
-7. Verify:
-
-   ```bash
-   sudo systemctl status bankaccount-daemon
-   curl -H "X-Auth-Token: <token>" http://<host>:<port>/health
-   ```
-
-   `journalctl -u bankaccount-daemon` shows startup/stdout; the app's own logging
-   (`LogInfo`/`LogWarn`/etc. — [Logger.h](../include/Logger.h)) lands in
-   `/var/log/bankaccount-daemon/log/BankAccount.log`, since `Logger.cpp`'s `FileLogSink` writes a
-   cwd-relative `log/BankAccount.log` and the unit's `WorkingDirectory` is the log directory
-   systemd's `LogsDirectory=` creates for it.
-
-## Redeploying a new build
-
-No self-update mechanism — a new build replaces the binary manually (or via a small script/CI
-job wrapping the same three steps), same as the design doc's "Decisions" section settled on:
+Only pushed commits deploy. From any checkout:
 
 ```bash
-sudo systemctl stop bankaccount-daemon
-sudo cp daemon /opt/bankaccount-daemon/bin/daemon
-sudo systemctl start bankaccount-daemon
+deploy/deploy.sh            # origin/master
+deploy/deploy.sh <ref>      # a branch, tag, or an older commit to roll back to
 ```
 
-The db, favorite queries/reports, and token are untouched by this — only the binary changes. If
-argv shape itself changes (a new `--flag`), update `bankaccount-daemon.env`/the unit's
-`ExecStart=` first and `daemon-reload` before restarting. If `daemon/static/style.css`/`app.js` or
-`resources/*` changed, re-sync those into `WorkingDirectory` too (step 5 of the one-time setup) —
-otherwise the running daemon keeps serving the previous copies.
+It checks out the commit in `~/bankaccount-live`, builds the image (which also runs the daemon's
+unit tests — a failure stops the deploy), starts the new container and waits for it to report
+healthy. The container restarts on its own after a reboot (`restart: unless-stopped`).
 
-## Rotating the token
+## First-time setup (done once)
 
-Edit `BANKACCOUNT_TOKEN` in `/etc/bankaccount-daemon/bankaccount-daemon.env`, then
-`sudo systemctl restart bankaccount-daemon` — every existing browser tab/bookmark using the old
-`?token=...` URL stops working immediately (by design: there's no session/refresh mechanism, per
-the design doc's minimal auth story) and needs a new link with the new token.
+1. Build the image once, to get the password-hashing tool:
+
+   ```bash
+   docker build -f deploy/Dockerfile -t bankaccount:live .
+   ```
+
+2. Write the secrets file:
+
+   ```bash
+   mkdir -p ~/.config/bankaccount
+   cp deploy/web.env.example ~/.config/bankaccount/web.env
+   chmod 600 ~/.config/bankaccount/web.env
+   docker run --rm -i bankaccount:live bankaccount-daemon --hash-password   # type the password, Enter
+   $EDITOR ~/.config/bankaccount/web.env   # your Tailscale login + the printed hash
+   ```
+
+3. Deploy, then publish the tailnet port as a Tailscale Service:
+
+   ```bash
+   deploy/deploy.sh
+   tailscale serve --service=svc:bankaccount --https=443 http://127.0.0.1:8300
+   ```
+
+   (`svc:bankaccount` has to exist in the Tailscale admin console first — Services — the same way
+   `svc:spajz` does.)
+
+4. Retire the old systemd daemon, which still holds the old shared token:
+
+   ```bash
+   sudo systemctl disable --now bankaccount-daemon
+   sudo rm /etc/systemd/system/bankaccount-daemon.service
+   sudo rm -r /etc/bankaccount-daemon /opt/bankaccount-daemon
+   sudo systemctl daemon-reload
+   ```
+
+## Changing the LAN password or the allowed logins
+
+Edit `~/.config/bankaccount/web.env` (a new hash from `--hash-password`, as above), then
+`docker compose -f ~/bankaccount-live/deploy/docker-compose.yml up -d --force-recreate` with the
+same variables `deploy.sh` exports — or simply rerun `deploy/deploy.sh`. Recreating the container
+also signs every LAN browser out.
+
+## Look around
+
+```bash
+docker ps --filter name=bankaccount-app-1
+docker logs -f bankaccount-app-1
+```
+
+## Developing the web app
+
+Run a daemon locally (`make`, or the image) with its tailnet port on `127.0.0.1:8300` and your
+login allowed, then:
+
+```bash
+cd web && npm install
+BANKACCOUNT_DEV_LOGIN=you@example.com npm run dev
+```
+
+Vite proxies `/api` to the daemon and adds the Tailscale header `tailscale serve` would.

@@ -4,8 +4,10 @@
 # cpp-httplib, include/httplib.h) on top of it. Mirrors the .vcxproj files' explicit, non-globbing
 # source list rather than using wildcards.
 #
-# Build (WSL/Ubuntu or any Linux box with g++ and libwxbase3.0-dev installed):
-#   make            # build/linux/libbankaccountcore_ro.a and build/linux/bin/daemon
+# Build (any Linux box with g++, wxBase dev headers and libssl-dev installed - or just let
+# deploy/Dockerfile do it, which is how the live service is built):
+#   make               # build/linux/libbankaccountcore_ro.a and build/linux/bin/daemon
+#   make daemon-tests  # build and run build/linux/bin/daemon_tests (needs libgtest-dev)
 #   make clean
 
 CXX      := g++
@@ -90,15 +92,25 @@ OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS)) \
 # daemon/ (story 2): an HTTP server skeleton linking the library above. Vendors cpp-httplib
 # (include/httplib.h, same low-friction single-header precedent as nlohmann/json) - header-only
 # but still needs -pthread for its worker thread pool at link time.
-DAEMON_SRCS := daemon/main.cpp daemon/DaemonDb.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/FrontendPage.cpp daemon/HotReloadFile.cpp
+# WebAuth.cpp needs OpenSSL's libcrypto (PBKDF2 password hashing, CSPRNG session tokens).
+DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/WebAuth.cpp
+DAEMON_SRCS := daemon/main.cpp $(DAEMON_LIB_SRCS)
 DAEMON_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_SRCS))
+DAEMON_LIB_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_LIB_SRCS))
+DAEMON_LIBS := $(shell wx-config --libs base) -lcrypto -pthread -lstdc++fs
 # Under bin/, not directly in $(BUILD): the object files above already live in $(BUILD)/daemon/,
 # and a plain file can't share that path with the directory holding them.
 DAEMON_BIN  := $(BUILD)/bin/daemon
 
-DEPS := $(OBJS:.o=.d) $(DAEMON_OBJS:.o=.d)
+# daemon/tests/: GoogleTest suite for the daemon-only code (WebAuth etc.). Kept apart from tests/,
+# which the Windows BankAccountTests.vcxproj builds and which has no OpenSSL to link against.
+DAEMON_TEST_SRCS := daemon/tests/WebAuthTests.cpp
+DAEMON_TEST_OBJS := $(patsubst daemon/tests/%.cpp,$(BUILD)/daemon/tests/%.o,$(DAEMON_TEST_SRCS))
+DAEMON_TEST_BIN  := $(BUILD)/bin/daemon_tests
 
-.PHONY: all clean
+DEPS := $(OBJS:.o=.d) $(DAEMON_OBJS:.o=.d) $(DAEMON_TEST_OBJS:.o=.d)
+
+.PHONY: all clean daemon-tests
 all: $(LIB) $(DAEMON_BIN)
 
 $(LIB): $(OBJS)
@@ -120,12 +132,23 @@ $(BUILD)/daemon/%.o: daemon/%.cpp
 	@mkdir -p $(BUILD)/daemon
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
+$(BUILD)/daemon/tests/%.o: daemon/tests/%.cpp
+	@mkdir -p $(BUILD)/daemon/tests
+	$(CXX) $(CXXFLAGS) -Idaemon -MMD -MP -c $< -o $@
+
 # -lstdc++fs: GCC 9 (WSL Ubuntu-20.04's default) still ships std::filesystem in a separate
 # library instead of folding it into libstdc++ proper - harmless to keep on newer toolchains
 # where it's a no-op/already-merged.
 $(DAEMON_BIN): $(DAEMON_OBJS) $(LIB)
 	@mkdir -p $(BUILD)/bin
-	$(CXX) $(CXXFLAGS) -Wl,--gc-sections -o $@ $(DAEMON_OBJS) $(LIB) $(shell wx-config --libs base) -pthread -lstdc++fs
+	$(CXX) $(CXXFLAGS) -Wl,--gc-sections -o $@ $(DAEMON_OBJS) $(LIB) $(DAEMON_LIBS)
+
+$(DAEMON_TEST_BIN): $(DAEMON_TEST_OBJS) $(DAEMON_LIB_OBJS) $(LIB)
+	@mkdir -p $(BUILD)/bin
+	$(CXX) $(CXXFLAGS) -Wl,--gc-sections -o $@ $(DAEMON_TEST_OBJS) $(DAEMON_LIB_OBJS) $(LIB) -lgtest -lgtest_main $(DAEMON_LIBS)
+
+daemon-tests: $(DAEMON_TEST_BIN)
+	$(DAEMON_TEST_BIN)
 
 -include $(DEPS)
 

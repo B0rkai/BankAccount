@@ -1,56 +1,70 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <memory>
+#include <numeric>
+#include <set>
 #include <string>
 #include <thread>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include "httplib.h"
+#include "BrowseApi.h"
 #include "CommonTypes.h"
 #include "DaemonDb.h"
+#include "FavoriteQuery.h"
+#include "FavoriteReport.h"
 #include "FavoritesApi.h"
-#include "FrontendPage.h"
-#include "HotReloadFile.h"
 #include "HtmlReport.h"
 #include "Logger.h"
+#include "Query.h"
 #include "QueryApi.h"
+#include "Version.h"
+#include "WebAuth.h"
 
-// Daemon entry point - see docs/linux-query-daemon-design.md. Takes the db path, bind host/
-// port, and auth token as plain argv (no config file - see the design doc's "Decisions" section
-// for why). Story 2 added GET /health; story 3 added POST /query, the ad-hoc query endpoint
-// (QueryApi.h); story 4 added the favorite query/report listing + run-by-name routes
-// (FavoritesApi.h); story 5 added GET / (the interactive query builder page, FrontendPage.h) and
-// GET /accounts (the account-name list its checkbox picker needs); story 6 enforces --token on
-// every route via a pre-routing handler, and pairs it with --host (already bind-address-scoped
-// since story 2 - never 0.0.0.0) as the daemon's whole auth story, per the design doc's "minimal
-// shared-token check ... network-scoped to LAN/Tailscale only" - no accounts, no sessions, no
-// OAuth, matching the "out of scope" note ruling out OAuth-grade auth.
+// Daemon entry point - see docs/linux-query-daemon-design.md, "Revision (2026-11-20): web app,
+// Docker, two-listener auth". Serves the built web app (web/, a React SPA) and its JSON API under
+// /api/v1 on two listeners that differ only in how a request proves who it is (WebAuth.h):
+//
+// - --tailnet-port: published on the host's loopback only and fronted by `tailscale serve`, so the
+//   Tailscale-User-Login header is trustworthy; it must name a login in BANKACCOUNT_ALLOWED_LOGINS.
+// - --lan-port: published on the host's LAN address; Tailscale headers are ignored and every API
+//   call needs a session cookie from POST /api/v1/login (the password hash in
+//   BANKACCOUNT_LAN_PASSWORD_HASH). The SPA's own static files are served without one, so the
+//   sign-in page can load - they hold no data.
+//
+// Secrets come from the environment, not argv, so they never show up in `ps`.
 
 namespace {
 
 struct Args {
 	std::string db_path;
 	std::string host;
-	int port = 0;
-	std::string token;
+	int tailnet_port = 0;
+	int lan_port = 0; // 0: no LAN listener
+	std::string web_dir;
 };
 
-// Constant-time compare so a wrong token takes the same time to reject regardless of how many
-// leading characters happen to match - a plain `!=` would leak a timing side-channel an attacker
-// on the same LAN/Tailscale segment could exploit to guess the token byte-by-byte.
-bool ConstantTimeEquals(const std::string& a, const std::string& b) {
-	if (a.size() != b.size()) {
-		return false;
-	}
-	unsigned char diff = 0;
-	for (size_t i = 0; i < a.size(); ++i) {
-		diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
-	}
-	return diff == 0;
-}
+struct AuthConfig {
+	std::set<std::string> allowed_logins;
+	std::string lan_password_hash;
+};
+
+enum class Listener { TAILNET, LAN };
+
+constexpr const char* SESSION_COOKIE = "ba_session";
+constexpr const char* TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login";
+constexpr const char* TAILSCALE_NAME_HEADER = "Tailscale-User-Name";
 
 void PrintUsage(const char* argv0) {
-	std::cerr << "Usage: " << argv0 << " --db <path> --host <bind-host> --port <port> --token <token>\n";
+	std::cerr << "Usage: " << argv0 << " --db <path> --host <bind-host> --tailnet-port <port> [--lan-port <port>] --web-dir <dir>\n"
+		<< "       " << argv0 << " --hash-password   (reads a password from stdin, prints its hash)\n"
+		<< "       " << argv0 << " --health-check <port>\n"
+		<< "Environment: BANKACCOUNT_ALLOWED_LOGINS (comma-separated Tailscale logins),\n"
+		<< "             BANKACCOUNT_LAN_PASSWORD_HASH (required with --lan-port)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Args& out) {
@@ -63,40 +77,314 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 			out.db_path = next();
 		} else if (arg == "--host") {
 			out.host = next();
-		} else if (arg == "--port") {
-			out.port = std::atoi(next().c_str());
-		} else if (arg == "--token") {
-			out.token = next();
+		} else if (arg == "--tailnet-port") {
+			out.tailnet_port = std::atoi(next().c_str());
+		} else if (arg == "--lan-port") {
+			out.lan_port = std::atoi(next().c_str());
+		} else if (arg == "--web-dir") {
+			out.web_dir = next();
 		} else {
 			return false;
 		}
 	}
-	return !out.db_path.empty() && !out.host.empty() && out.port > 0 && !out.token.empty();
+	return !out.db_path.empty() && !out.host.empty() && out.tailnet_port > 0 && out.lan_port >= 0 && !out.web_dir.empty();
+}
+
+std::string Env(const char* name) {
+	const char* value = std::getenv(name);
+	return value ? value : "";
+}
+
+int HashPasswordMode() {
+	std::string password;
+	std::getline(std::cin, password);
+	if (password.size() < 10) {
+		std::cerr << "Use a password of at least 10 characters.\n";
+		return 1;
+	}
+	std::cout << HashPassword(password) << "\n";
+	return 0;
+}
+
+// docker logs shows what the daemon logs; debug lines would drown everything else.
+class StdoutLogSink : public ILogSink {
+public:
+	void OnLogEntry(const LogEntry& entry) override {
+		if (entry.level == "DEBUG") {
+			return;
+		}
+		std::cout << entry.date << ' ' << entry.time << ' ' << entry.level << ' ' << entry.component << ": " << entry.message << std::endl;
+	}
+};
+
+void SendJson(httplib::Response& res, int status, const nlohmann::json& body) {
+	res.status = status;
+	res.set_content(body.dump(), "application/json");
+}
+
+void SendResult(httplib::Response& res, const QueryApiResult& result) {
+	res.status = result.http_status;
+	res.set_content(result.body, "application/json");
+}
+
+void SendError(httplib::Response& res, int status, const std::string& message) {
+	SendResult(res, MakeErrorResult(status, message));
+}
+
+bool IsApiPath(const std::string& path) {
+	return path.rfind("/api/", 0) == 0;
+}
+
+std::string SessionCookie(const std::string& token, bool remember) {
+	std::string cookie = std::string(SESSION_COOKIE) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict";
+	if (remember) {
+		cookie += "; Max-Age=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(SessionStore::REMEMBER_LIFETIME).count());
+	}
+	return cookie;
+}
+
+struct Context {
+	DaemonDb& db;
+	const std::vector<FavoriteQueryDef>& favorite_queries;
+	const std::vector<FavoriteReportDef>& favorite_reports;
+	const AuthConfig& auth;
+	SessionStore& sessions;
+	LoginThrottle& throttle;
+	const std::string& web_dir;
+	// Vendored resources/ files inlined into every downloaded report, read once at startup.
+	const String chartjs_source;
+	const String gridjs_source;
+	const String gridjs_css;
+};
+
+// Runs `fn(const AccountManager&)` against the loaded db, or answers 503 while nothing is loaded.
+template <class Fn>
+void WithDb(Context& ctx, httplib::Response& res, Fn&& fn) {
+	if (!ctx.db.IsLoaded()) {
+		SendError(res, 503, "Database not loaded");
+		return;
+	}
+	ctx.db.WithManager(fn);
+}
+
+void InstallAuth(httplib::Server& server, Context& ctx, Listener listener) {
+	server.set_pre_routing_handler([&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		if (req.path == "/api/v1/health") {
+			return httplib::Server::HandlerResponse::Unhandled;
+		}
+		if (listener == Listener::TAILNET) {
+			std::string login = req.get_header_value(TAILSCALE_LOGIN_HEADER);
+			if (IsAllowedTailnetLogin(ctx.auth.allowed_logins, login)) {
+				return httplib::Server::HandlerResponse::Unhandled;
+			}
+			LogWarn("AUTH") << "Refused tailnet request for " << req.path << " from login '" << login << "'";
+			if (IsApiPath(req.path)) {
+				SendError(res, 403, "This Tailscale account is not allowed to use BankAccount");
+			} else {
+				res.status = 403;
+				res.set_content("<!doctype html><meta charset=utf-8><title>BankAccount</title><p style=\"font-family:sans-serif\">"
+					"This Tailscale account is not allowed to use BankAccount.</p>", "text/html; charset=utf-8");
+			}
+			return httplib::Server::HandlerResponse::Handled;
+		}
+		// LAN: the app shell and the login route are open; every other API call needs a session.
+		if (!IsApiPath(req.path) || req.path == "/api/v1/login") {
+			return httplib::Server::HandlerResponse::Unhandled;
+		}
+		if (ctx.sessions.IsValid(CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE))) {
+			return httplib::Server::HandlerResponse::Unhandled;
+		}
+		SendError(res, 401, "Sign in first");
+		return httplib::Server::HandlerResponse::Handled;
+	});
+}
+
+void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
+	server.Get("/api/v1/health", [&ctx](const httplib::Request&, httplib::Response& res) {
+		nlohmann::json body;
+		body["status"] = "ok";
+		body["db_loaded"] = ctx.db.IsLoaded();
+		SendJson(res, 200, body);
+	});
+
+	server.Get("/api/v1/me", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		nlohmann::json body;
+		body["version"] = APP_VERSION;
+		body["db_loaded"] = ctx.db.IsLoaded();
+		body["last_loaded"] = ctx.db.LastLoadedIso();
+		if (listener == Listener::TAILNET) {
+			body["via"] = "tailscale";
+			body["login"] = req.get_header_value(TAILSCALE_LOGIN_HEADER);
+			body["name"] = DecodeMimeWord(req.get_header_value(TAILSCALE_NAME_HEADER));
+		} else {
+			body["via"] = "lan";
+			body["login"] = "";
+			body["name"] = "Home network";
+		}
+		if (ctx.db.IsLoaded()) {
+			ctx.db.WithManager([&](const AccountManager& mgr) {
+				body["accounts"] = mgr.CountAccounts();
+				body["transactions"] = mgr.CountTransactions();
+				body["last_record_date"] = std::string(mgr.GetLastRecordDate().utf8_str());
+			});
+		}
+		SendJson(res, 200, body);
+	});
+
+	if (listener == Listener::LAN) {
+		server.Post("/api/v1/login", [&ctx](const httplib::Request& req, httplib::Response& res) {
+			if (!ctx.throttle.IsAllowed(req.remote_addr)) {
+				SendError(res, 429, "Too many wrong passwords - try again in 15 minutes");
+				return;
+			}
+			nlohmann::json body = nlohmann::json::parse(req.body, nullptr, false);
+			if (body.is_discarded() || !body.is_object() || !body.contains("password") || !body["password"].is_string()) {
+				SendError(res, 400, "Expected {\"password\": \"...\"}");
+				return;
+			}
+			if (!VerifyPassword(body["password"].get<std::string>(), ctx.auth.lan_password_hash)) {
+				ctx.throttle.RecordFailure(req.remote_addr);
+				LogWarn("AUTH") << "Wrong LAN password from " << req.remote_addr;
+				SendError(res, 401, "Wrong password");
+				return;
+			}
+			ctx.throttle.RecordSuccess(req.remote_addr);
+			bool remember = body.contains("remember") && body["remember"].is_boolean() && body["remember"].get<bool>();
+			res.set_header("Set-Cookie", SessionCookie(ctx.sessions.Create(remember), remember));
+			LogInfo("AUTH") << "LAN sign-in from " << req.remote_addr;
+			SendJson(res, 200, nlohmann::json{{"ok", true}});
+		});
+
+		server.Post("/api/v1/logout", [&ctx](const httplib::Request& req, httplib::Response& res) {
+			ctx.sessions.Revoke(CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE));
+			res.set_header("Set-Cookie", std::string(SESSION_COOKIE) + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+			SendJson(res, 200, nlohmann::json{{"ok", true}});
+		});
+	}
+
+	server.Get("/api/v1/names", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			SendResult(res, ListNames(req.get_param_value("topic"), mgr));
+		});
+	});
+
+	server.Post("/api/v1/query", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			SendResult(res, RunAdHocQuery(req.body, mgr));
+		});
+	});
+
+	server.Post("/api/v1/transactions", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			SendResult(res, ListTransactions(req.body, mgr));
+		});
+	});
+
+	server.Get("/api/v1/favorites/queries", [&ctx](const httplib::Request&, httplib::Response& res) {
+		SendResult(res, ListFavoriteQueries(ctx.favorite_queries));
+	});
+
+	server.Get("/api/v1/favorites/reports", [&ctx](const httplib::Request&, httplib::Response& res) {
+		SendResult(res, ListFavoriteReports(ctx.favorite_reports));
+	});
+
+	server.Get("/api/v1/favorites/queries/run", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			SendResult(res, RunFavoriteQueryByName(req.get_param_value("name"), ctx.favorite_queries, mgr));
+		});
+	});
+
+	// The same self-contained .html file the desktop's Reports -> Favorite Reports menu and
+	// BankAccountCli write, offered as a download.
+	server.Get("/api/v1/favorites/reports/html", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		const String name = String::FromUTF8(req.get_param_value("name").c_str());
+		auto report = std::find_if(ctx.favorite_reports.begin(), ctx.favorite_reports.end(), [&](const FavoriteReportDef& r) { return r.name == name; });
+		if (report == ctx.favorite_reports.end()) {
+			SendError(res, 404, "No favorite report with that name");
+			return;
+		}
+		auto query_def = std::find_if(ctx.favorite_queries.begin(), ctx.favorite_queries.end(), [&](const FavoriteQueryDef& q) { return q.name == report->favorite_query; });
+		if (query_def == ctx.favorite_queries.end()) {
+			SendError(res, 404, "The report's favorite query no longer exists");
+			return;
+		}
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			std::vector<int> all_accounts(mgr.CountAccounts());
+			std::iota(all_accounts.begin(), all_accounts.end(), 0);
+			Query query;
+			BuildQueryFromFavorite(*query_def, query, all_accounts);
+			std::vector<ReportSection> sections = BuildReportSections(query, mgr);
+			String html = BuildHtmlReport(report->name, sections, report->chart_kinds, report->chart_sides,
+				ctx.chartjs_source, ctx.gridjs_source, ctx.gridjs_css);
+			res.set_header("Content-Disposition", "attachment; filename=\"report.html\"");
+			res.set_content(std::string(html.utf8_str()), "text/html; charset=utf-8");
+		});
+	});
+
+	// Static files: Vite's content-hashed bundles can be cached forever; everything else (index.html,
+	// the manifest, icons) is re-checked on every load so a redeploy shows up at once.
+	server.set_mount_point("/assets", ctx.web_dir + "/assets", {{"Cache-Control", "public, max-age=31536000, immutable"}});
+	server.set_mount_point("/", ctx.web_dir, {{"Cache-Control", "no-cache"}});
+
+	// Client-side routes (/explore, /transactions, ...) are not files: hand them the SPA shell.
+	server.Get(R"(/(?!api/).*)", [&ctx](const httplib::Request&, httplib::Response& res) {
+		std::ifstream in(ctx.web_dir + "/index.html", std::ios::binary);
+		if (!in) {
+			res.status = 404;
+			res.set_content("Web app not built", "text/plain");
+			return;
+		}
+		std::string html((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		res.set_header("Cache-Control", "no-cache");
+		res.set_content(html, "text/html; charset=utf-8");
+	});
 }
 
 // mtime poll interval for reloading the db in place - see the design doc's "File-watch reload"
-// decision: an mtime check is enough (not a full reparse per request, and not an inotify-style
-// watch for this first cut).
+// decision.
 constexpr auto RELOAD_POLL_INTERVAL = std::chrono::seconds(5);
+
+// The image has no curl/wget - Docker's HEALTHCHECK runs the daemon itself to ask the running one.
+int HealthCheckMode(const char* port) {
+	httplib::Client client("127.0.0.1", std::atoi(port));
+	client.set_connection_timeout(3);
+	client.set_read_timeout(3);
+	httplib::Result res = client.Get("/api/v1/health");
+	return (res && res->status == 200) ? 0 : 1;
+}
 
 } // namespace
 
 int main(int argc, char** argv) {
+	if (argc == 2 && std::string(argv[1]) == "--hash-password") {
+		return HashPasswordMode();
+	}
+	if (argc == 3 && std::string(argv[1]) == "--health-check") {
+		return HealthCheckMode(argv[2]);
+	}
 	Args args;
 	if (!ParseArgs(argc, argv, args)) {
 		PrintUsage(argv[0]);
 		return 1;
 	}
+	AuthConfig auth;
+	auth.allowed_logins = ParseLoginList(Env("BANKACCOUNT_ALLOWED_LOGINS"));
+	auth.lan_password_hash = Env("BANKACCOUNT_LAN_PASSWORD_HASH");
+	if (auth.allowed_logins.empty()) {
+		std::cerr << "BANKACCOUNT_ALLOWED_LOGINS is empty - nobody could use the tailnet listener\n";
+		return 1;
+	}
+	if (args.lan_port > 0 && auth.lan_password_hash.rfind("pbkdf2-sha256:", 0) != 0) {
+		std::cerr << "--lan-port needs BANKACCOUNT_LAN_PASSWORD_HASH (make one with --hash-password)\n";
+		return 1;
+	}
 
 	Log::InitLoggingSystem();
-	static FileLogSink file_sink;
-	LogHistory::AddSink(&file_sink);
+	static StdoutLogSink stdout_sink;
+	LogHistory::AddSink(&stdout_sink);
 
-	// Every relative-date keyword ("this_month", "last_30_days", ... - RelativePeriod.h) resolves
-	// against CommonTypes.h's process-wide GetToday(), which stays null (and crashes on the first
-	// dereference) until something calls SetToday()/SetRealToday() - see its declaration for why.
-	// cMain and BankAccountCli both do this at their own startup; the daemon needs the same call,
-	// since /query's relative_period accepts exactly those keywords.
+	// Relative-date keywords ("this_month", ...) resolve against CommonTypes.h's GetToday(), which
+	// stays null until something calls SetRealToday() - see its declaration.
 	SetRealToday();
 
 	DaemonDb db(args.db_path);
@@ -106,21 +394,9 @@ int main(int argc, char** argv) {
 	}
 	LogInfo("DAEMON") << "Loaded database from " << args.db_path;
 
-	// Loaded once at startup, not part of DaemonDb's mtime-polled hot reload - db/favorite_
-	// queries.json and db/favorite_reports.json are hand-edited files the desktop app itself only
-	// re-reads on an explicit user action (Store Query/Store Report...), not on a timer.
+	// Loaded once at startup, like the desktop app does - see FavoriteQuery.h/FavoriteReport.h.
 	const std::vector<FavoriteQueryDef> favorite_queries = LoadFavoriteQueries();
 	const std::vector<FavoriteReportDef> favorite_reports = LoadFavoriteReports();
-
-	// Built once at startup, not per-request - reuses HtmlReport.h's existing resources\ loaders
-	// (same vendored Chart.js/Grid.js the static-report path already inlines) rather than reading
-	// those files a second, daemon-specific way. Leaves %PAGE_CSS%/%PAGE_JS% unresolved (see
-	// FrontendPage.h) since those two are meant to be hand-tweaked without a daemon rebuild;
-	// page_css/page_js below re-check their files' mtimes on every GET / and only re-read from disk
-	// when something actually changed, so a styling edit shows up on the next page load.
-	const String frontend_shell = BuildFrontendPage(LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss());
-	HotReloadFile page_css("daemon/static/style.css");
-	HotReloadFile page_js("daemon/static/app.js");
 
 	std::atomic<bool> stop_watcher{false};
 	std::thread watcher([&] {
@@ -135,123 +411,40 @@ int main(int argc, char** argv) {
 		}
 	});
 
-	httplib::Server server;
+	SessionStore sessions;
+	LoginThrottle throttle;
+	Context ctx{db, favorite_queries, favorite_reports, auth, sessions, throttle, args.web_dir,
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss()};
 
-	// Shared-token check in front of every route (including / and /health) - a request must carry
-	// the token either as an X-Auth-Token header (used by the frontend page's own fetch() calls
-	// once it has the token) or a ?token= query param (used for the very first page load, since
-	// there's no login form to collect a header from). Checked before route dispatch so a missing/
-	// wrong token never reaches a handler, let alone the loaded AccountManager snapshot.
-	server.set_pre_routing_handler([&](const httplib::Request& req, httplib::Response& res) {
-		std::string provided = req.get_header_value("X-Auth-Token");
-		if (provided.empty()) {
-			provided = req.get_param_value("token");
-		}
-		if (!ConstantTimeEquals(provided, args.token)) {
-			nlohmann::json err;
-			err["error"] = "Unauthorized";
-			res.status = 401;
-			res.set_content(err.dump(), "application/json");
-			return httplib::Server::HandlerResponse::Handled;
-		}
-		return httplib::Server::HandlerResponse::Unhandled;
-	});
+	httplib::Server tailnet_server;
+	InstallAuth(tailnet_server, ctx, Listener::TAILNET);
+	InstallRoutes(tailnet_server, ctx, Listener::TAILNET);
 
-	server.Get("/", [&](const httplib::Request&, httplib::Response& res) {
-		String page = InjectPageAssets(frontend_shell, String::FromUTF8(page_css.Content().c_str()), String::FromUTF8(page_js.Content().c_str()));
-		// The whole point of HotReloadFile is that a style.css/app.js edit shows up on the next
-		// load with no daemon restart - a browser-cached copy of this page would silently defeat
-		// that, so tell it never to cache this response.
-		res.set_header("Cache-Control", "no-store");
-		res.set_content(std::string(page.utf8_str()), "text/html; charset=utf-8");
-	});
-
-	server.Get("/accounts", [&](const httplib::Request&, httplib::Response& res) {
-		if (!db.IsLoaded()) {
-			nlohmann::json err;
-			err["error"] = "Database not loaded";
-			res.status = 503;
-			res.set_content(err.dump(), "application/json");
-			return;
-		}
-		db.WithManager([&](const AccountManager& mgr) {
-			StringVector names;
-			mgr.ListOfAccNames(names);
-			nlohmann::json body;
-			body["accounts"] = nlohmann::json::array();
-			for (const String& name : names) {
-				body["accounts"].push_back(std::string(name.utf8_str()));
+	std::unique_ptr<httplib::Server> lan_server;
+	std::thread lan_thread;
+	if (args.lan_port > 0) {
+		lan_server = std::make_unique<httplib::Server>();
+		InstallAuth(*lan_server, ctx, Listener::LAN);
+		InstallRoutes(*lan_server, ctx, Listener::LAN);
+		lan_thread = std::thread([&] {
+			LogInfo("DAEMON") << "LAN listener on " << args.host << ":" << args.lan_port;
+			if (!lan_server->listen(args.host.c_str(), args.lan_port)) {
+				std::cerr << "Failed to bind " << args.host << ":" << args.lan_port << "\n";
+				tailnet_server.stop();
 			}
-			res.set_content(body.dump(), "application/json");
 		});
-	});
-
-	server.Get("/health", [&](const httplib::Request&, httplib::Response& res) {
-		nlohmann::json body;
-		body["status"] = "ok";
-		body["db_loaded"] = db.IsLoaded();
-		body["last_loaded"] = db.LastLoadedIso();
-		if (db.IsLoaded()) {
-			db.WithManager([&](const AccountManager& mgr) {
-				body["accounts"] = mgr.CountAccounts();
-				body["transactions"] = mgr.CountTransactions();
-			});
-		}
-		res.set_content(body.dump(), "application/json");
-	});
-
-	server.Post("/query", [&](const httplib::Request& req, httplib::Response& res) {
-		if (!db.IsLoaded()) {
-			nlohmann::json err;
-			err["error"] = "Database not loaded";
-			res.status = 503;
-			res.set_content(err.dump(), "application/json");
-			return;
-		}
-		db.WithManager([&](const AccountManager& mgr) {
-			QueryApiResult result = RunAdHocQuery(req.body, mgr);
-			res.status = result.http_status;
-			res.set_content(result.body, "application/json");
-		});
-	});
-
-	server.Get("/favorites/queries", [&](const httplib::Request&, httplib::Response& res) {
-		QueryApiResult result = ListFavoriteQueries(favorite_queries);
-		res.status = result.http_status;
-		res.set_content(result.body, "application/json");
-	});
-
-	server.Get("/favorites/reports", [&](const httplib::Request&, httplib::Response& res) {
-		QueryApiResult result = ListFavoriteReports(favorite_reports);
-		res.status = result.http_status;
-		res.set_content(result.body, "application/json");
-	});
-
-	server.Get("/favorites/queries/run", [&](const httplib::Request& req, httplib::Response& res) {
-		if (!db.IsLoaded()) {
-			nlohmann::json err;
-			err["error"] = "Database not loaded";
-			res.status = 503;
-			res.set_content(err.dump(), "application/json");
-			return;
-		}
-		std::string name = req.get_param_value("name");
-		db.WithManager([&](const AccountManager& mgr) {
-			QueryApiResult result = RunFavoriteQueryByName(name, favorite_queries, mgr);
-			res.status = result.http_status;
-			res.set_content(result.body, "application/json");
-		});
-	});
-
-	LogInfo("DAEMON") << "Listening on " << args.host << ":" << args.port;
-	// Bind to the given host explicitly (Tailscale/LAN interface address) rather than
-	// defaulting to 0.0.0.0 anywhere - see the design doc's scope note on never being publicly
-	// reachable.
-	bool listen_ok = server.listen(args.host.c_str(), args.port);
-	if (!listen_ok) {
-		std::cerr << "Failed to bind " << args.host << ":" << args.port << "\n";
 	}
 
+	LogInfo("DAEMON") << "Tailnet listener on " << args.host << ":" << args.tailnet_port;
+	bool listen_ok = tailnet_server.listen(args.host.c_str(), args.tailnet_port);
+	if (!listen_ok) {
+		std::cerr << "Failed to bind " << args.host << ":" << args.tailnet_port << "\n";
+	}
+
+	if (lan_server) {
+		lan_server->stop();
+		lan_thread.join();
+	}
 	stop_watcher = true;
 	watcher.join();
 	return listen_ok ? 0 : 1;

@@ -68,10 +68,14 @@ single-header, no-build, used for the small JSON config/data files (`db\location
 A second, non-MSBuild build lives alongside the Windows solution: the top-level `Makefile` builds
 a read-only subset of `BankAccountCore` for Linux (no import/mutation/Windows-only file-locking
 code) plus `daemon/`, an HTTP+JSON server (vendored [cpp-httplib](https://github.com/yhirose/cpp-httplib)
-as `include/httplib.h`) exposing the `Query` engine and a self-contained browser frontend for
-ad-hoc querying of the live db over the LAN/Tailscale. Design and story-by-story history:
-[docs/linux-query-daemon-design.md](docs/linux-query-daemon-design.md); systemd deployment/
-redeploy/token-rotation: [docs/linux-daemon-deployment.md](docs/linux-daemon-deployment.md).
+as `include/httplib.h`) exposing the `Query` engine under `/api/v1`, and serving `web/` — a
+React + TypeScript + Vite web app (Overview/Explore/Transactions/Reports) over the live db. It
+listens twice: a tailnet port behind `tailscale serve` (trusts `Tailscale-User-Login`, allowlisted)
+and a LAN port (shared password, session cookie) — `daemon/WebAuth.h`. Ships as one Docker image
+(`deploy/Dockerfile`, `deploy/deploy.sh`); the daemon's own GoogleTest suite is `daemon/tests/`
+(`make daemon-tests`, runs in the image build), not `tests/`. Design and story-by-story history:
+[docs/linux-query-daemon-design.md](docs/linux-query-daemon-design.md); deployment/secrets:
+[docs/linux-daemon-deployment.md](docs/linux-daemon-deployment.md).
 
 ## Data storage
 

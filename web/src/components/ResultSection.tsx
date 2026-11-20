@@ -1,0 +1,108 @@
+import { useMemo, useState } from 'react'
+import type { DatasetKey, Section } from '../api'
+import { buildChartConfig, currencyChoices, defaultCurrencyChoice, KIND_LABELS, pickData } from '../charts'
+import { useThemeColours } from '../hooks'
+import { ChartCanvas } from './ChartCanvas'
+import { DataTable, downloadCsv } from './DataTable'
+
+export interface ChartPreference {
+  kinds?: string[] // a report's chart_kinds: narrows what each dataset offers
+  side?: string // a favorite's preferred dataset
+}
+
+// The kinds to offer: the server's allowed_kinds, narrowed by a report's chart_kinds when any of
+// them suit this dataset (HtmlReport.cpp's KindsForDataset() rule).
+function kindsFor(allowed: string[], pref?: ChartPreference): string[] {
+  const wanted = pref?.kinds?.filter((k) => KIND_LABELS[k])
+  if (!wanted?.length) return allowed
+  const narrowed = allowed.filter((k) => wanted.includes(k))
+  return narrowed.length ? narrowed : allowed.slice(0, 1)
+}
+
+// One result section: its chart (when the section has chart data) above its table. Every chart
+// draws exactly one dataset - Net, Income or Expense.
+export function ResultSection({ section, pref }: { section: Section; pref?: ChartPreference }) {
+  const theme = useThemeColours()
+  const datasets = section.chart?.datasets ?? []
+  const preferred = datasets.find((d) => d.key === pref?.side)?.key
+  // Net (always first) unless a favorite names a side - the desktop dialog's and HTML reports' default.
+  const [key, setKey] = useState<DatasetKey | undefined>(preferred ?? datasets[0]?.key)
+  const ds = datasets.find((d) => d.key === key) ?? datasets[0]
+  const [currency, setCurrency] = useState<string | undefined>(undefined)
+  const [kind, setKind] = useState<string | undefined>(undefined)
+  const [filter, setFilter] = useState('')
+
+  const kinds = ds ? kindsFor(ds.allowed_kinds, pref) : []
+  const activeKind = kind && kinds.includes(kind) ? kind : kinds[0]
+  const choices = ds ? currencyChoices(ds) : []
+  const activeCurrency = currency && choices.some((c) => c.value === currency) ? currency : ds ? defaultCurrencyChoice(ds) : ''
+  const data = ds ? pickData(ds, activeCurrency) : undefined
+
+  const config = useMemo(
+    () => (ds && data && activeKind && section.chart_shape && section.chart ? buildChartConfig(activeKind, section.chart_shape, data, ds, section.chart, theme) : null),
+    [ds, data, activeKind, section, theme],
+  )
+
+  const isTransactions = section.heading === 'Transactions'
+
+  return (
+    <section className="card result-section">
+      <div className="card-head">
+        <h2>{section.heading}</h2>
+        <div className="card-actions">
+          {section.table.rows.length > 8 && (
+            <input type="search" className="filter-input" placeholder="Filter rows" aria-label={`Filter ${section.heading}`} value={filter} onChange={(e) => setFilter(e.target.value)} />
+          )}
+          <button type="button" className="button secondary small" onClick={() => downloadCsv(section.table, section.heading)}>
+            CSV
+          </button>
+        </div>
+      </div>
+
+      {ds && config && (
+        <>
+          <div className="chart-controls">
+            {datasets.length > 1 && (
+              <div role="tablist" aria-label="Dataset" className="segmented">
+                {datasets.map((d) => (
+                  <button key={d.key} role="tab" type="button" aria-selected={d.key === ds.key} className={`ds-${d.key}`} onClick={() => setKey(d.key)}>
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="chart-selects">
+              {kinds.length > 1 && (
+                <label>
+                  Chart
+                  <select value={activeKind} onChange={(e) => setKind(e.target.value)}>
+                    {kinds.map((k) => (
+                      <option key={k} value={k}>
+                        {KIND_LABELS[k] ?? k}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {choices.length > 1 && (
+                <label>
+                  Currency
+                  <select value={activeCurrency} onChange={(e) => setCurrency(e.target.value)}>
+                    {choices.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          </div>
+          <ChartCanvas config={config} height={320} label={`${section.heading}: ${ds.label}`} />
+        </>
+      )}
+
+      <DataTable table={section.table} filter={filter} maxRows={isTransactions ? 50 : 25} />
+    </section>
+  )
+}

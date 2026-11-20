@@ -1,6 +1,6 @@
 {
     "unreleased":  [
-
+                       "Linux web service: new React web app (overview, query explorer, transactions, reports) with Tailscale-login and LAN-password sign-in, shipped as a Docker image"
                    ],
     "released":  [
                      {

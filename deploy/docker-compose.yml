@@ -1,0 +1,23 @@
+# The live web service. Started by deploy.sh, which builds the image and sets the variables below.
+name: bankaccount
+
+services:
+  app:
+    image: bankaccount:live
+    # Runs as the server's user, who can read the db share.
+    user: "${BANKACCOUNT_UID:?}:${BANKACCOUNT_GID:?}"
+    # 8300: only `tailscale serve` (svc:bankaccount) may reach it, as its identity headers are
+    # trusted there. 8400: the home LAN (the server's LAN address only, never 0.0.0.0), where
+    # those headers are ignored and the shared password signs in.
+    ports:
+      - "127.0.0.1:${BANKACCOUNT_TAILNET_PORT:-8300}:8300"
+      - "${BANKACCOUNT_LAN_ADDRESS:?}:${BANKACCOUNT_LAN_PORT:-8400}:8400"
+    # BANKACCOUNT_ALLOWED_LOGINS and BANKACCOUNT_LAN_PASSWORD_HASH - see deploy/README.md.
+    env_file: "${BANKACCOUNT_ENV_FILE:?}"
+    environment:
+      BANKACCOUNT_DB: "/data/${BANKACCOUNT_DB_FILE:?}"
+    volumes:
+      # Read-only: the service never writes the db (the desktop app is its only writer).
+      - "${BANKACCOUNT_DB_DIR:?}:/data:ro"
+      - "${BANKACCOUNT_FAVORITES_DIR:?}:/app/db:ro"
+    restart: unless-stopped

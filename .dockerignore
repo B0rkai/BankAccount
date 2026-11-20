@@ -1,0 +1,9 @@
+# Only sources go into the image build; never local data, envs or build output.
+.git
+build
+x64
+**/node_modules
+web/dist
+db
+log
+**/*.env
