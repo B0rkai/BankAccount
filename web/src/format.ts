@@ -1,4 +1,6 @@
 const LOCALE = 'hu-HU'
+// Hungarian rules leave 4-digit numbers ungrouped ("3380"); group them like the rest ("3 380").
+const GROUP = { useGrouping: 'always' } as const
 
 const moneyFormats = new Map<string, Intl.NumberFormat>()
 
@@ -9,6 +11,7 @@ export function formatMoney(value: number, currency: string, opts: { sign?: bool
     const digits = currency === 'HUF' ? 0 : 2
     try {
       fmt = new Intl.NumberFormat(LOCALE, {
+        ...GROUP,
         style: 'currency',
         currency,
         minimumFractionDigits: digits,
@@ -16,7 +19,7 @@ export function formatMoney(value: number, currency: string, opts: { sign?: bool
         signDisplay: opts.sign ? 'exceptZero' : 'auto',
       })
     } catch {
-      fmt = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: digits, signDisplay: opts.sign ? 'exceptZero' : 'auto' })
+      fmt = new Intl.NumberFormat(LOCALE, { ...GROUP, maximumFractionDigits: digits, signDisplay: opts.sign ? 'exceptZero' : 'auto' })
     }
     moneyFormats.set(key, fmt)
   }
@@ -28,13 +31,13 @@ export function formatMoneyCompact(value: number, currency: string): string {
   const abs = Math.abs(value)
   const sign = value < 0 ? '−' : ''
   const unit = currency === 'HUF' ? ' Ft' : ` ${currency}`
-  if (abs >= 1e6) return `${sign}${(abs / 1e6).toLocaleString(LOCALE, { maximumFractionDigits: 1 })} M${unit}`
-  if (abs >= 1e4) return `${sign}${(abs / 1e3).toLocaleString(LOCALE, { maximumFractionDigits: 0 })} e${unit}`
-  return `${sign}${abs.toLocaleString(LOCALE, { maximumFractionDigits: currency === 'HUF' ? 0 : 2 })}${unit}`
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toLocaleString(LOCALE, { ...GROUP, maximumFractionDigits: 1 })} M${unit}`
+  if (abs >= 1e4) return `${sign}${(abs / 1e3).toLocaleString(LOCALE, { ...GROUP, maximumFractionDigits: 0 })} e${unit}`
+  return `${sign}${abs.toLocaleString(LOCALE, { ...GROUP, maximumFractionDigits: currency === 'HUF' ? 0 : 2 })}${unit}`
 }
 
 export function formatCount(n: number): string {
-  return n.toLocaleString(LOCALE)
+  return n.toLocaleString(LOCALE, GROUP)
 }
 
 export function formatDate(iso: string, opts: { year?: boolean } = {}): string {

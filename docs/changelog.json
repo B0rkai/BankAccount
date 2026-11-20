@@ -7,7 +7,8 @@
                        "Linux web service: deploy/set-secrets.sh writes the secrets file; the daemon refuses the template's placeholder values",
                        "Linux web service: the web app is now called Persely, at persely.tail61796b.ts.net",
                        "Persely: click any chart or table number for its transactions; transaction search; comparisons, category trends and a stale-data notice on the overview; client pages; year in review; save and delete favorites (the web app's own, kept on the server)",
-                       "Persely: transaction lists fit a phone's width - long names end in an ellipsis, and the date moves under the name"
+                       "Persely: transaction lists fit a phone's width - long names end in an ellipsis, and the date moves under the name",
+                       "Persely: 4-digit amounts are grouped too (3 380 Ft, not 3380 Ft)"
                    ],
     "released":  [
                      {
