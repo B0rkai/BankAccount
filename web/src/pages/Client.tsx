@@ -119,7 +119,7 @@ export function Client({ params }: { params: URLSearchParams }) {
                 {newest.data.transactions.map((t, i) => (
                   <tr key={i}>
                     <td className="muted nowrap">{formatDate(t.date, { year: true })}</td>
-                    <td className="muted small clip">{[t.description, t.memo].filter(Boolean).join(' · ') || t.type}</td>
+                    <td className="muted small fill"><span className="clip">{[t.description, t.memo].filter(Boolean).join(' · ') || t.type}</span></td>
                     <td className="hide-narrow">
                       <span className="tag">{shortCategory(t.category)}</span>
                     </td>

@@ -164,7 +164,7 @@ export function Transactions({ params }: { params: URLSearchParams }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th className="hide-narrow">Date</th>
                   <th>Client</th>
                   <th className="hide-narrow">Category</th>
                   <th className="hide-narrow">Type</th>
@@ -177,16 +177,19 @@ export function Transactions({ params }: { params: URLSearchParams }) {
                   const byCategory = transactionsLink({ def: { ...def, categories: [`#${t.category_id}`], exclude_categories: undefined } })
                   return (
                     <tr key={`${offset}:${i}`}>
-                      <td className="muted nowrap">{formatDate(t.date, { year: true })}</td>
-                      <td>
+                      <td className="muted nowrap hide-narrow">{formatDate(t.date, { year: true })}</td>
+                      <td className="fill">
                         {t.client ? (
-                          <a className="strong" href={clientLink(t.client_id)} onClick={linkHandler(clientLink(t.client_id))}>
+                          <a className="strong clip" href={clientLink(t.client_id)} onClick={linkHandler(clientLink(t.client_id))}>
                             {t.client}
                           </a>
                         ) : (
                           <div className="strong">—</div>
                         )}
-                        {(t.memo || t.description) && <div className="muted small clip">{[t.description, t.memo].filter(Boolean).join(' · ')}</div>}
+                        <div className="muted small clip">
+                          <span className="show-narrow-inline">{formatDate(t.date, { year: true })}</span>
+                          {(t.description || t.memo) && <span>{[t.description, t.memo].filter(Boolean).join(' · ')}</span>}
+                        </div>
                       </td>
                       <td className="hide-narrow">
                         <a className="tag" href={byCategory} onClick={linkHandler(byCategory)} title={`Only ${t.category}`}>

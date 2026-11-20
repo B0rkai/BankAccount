@@ -246,9 +246,9 @@ export function Overview({ me }: { me: Me }) {
                   {recent.data.transactions.map((t, i) => (
                     <tr key={i}>
                       <td className="muted nowrap">{formatDate(t.date)}</td>
-                      <td className="strong">
+                      <td className="strong fill">
                         {t.client ? (
-                          <a href={clientLink(t.client_id)} onClick={linkHandler(clientLink(t.client_id))}>
+                          <a className="clip" href={clientLink(t.client_id)} onClick={linkHandler(clientLink(t.client_id))}>
                             {t.client}
                           </a>
                         ) : (

@@ -223,6 +223,10 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .data-table .pos { color: var(--income); }
 .data-table td.neg { color: var(--text); }
+/* The column that gives way: it takes the room left over, and its lines end in "…" instead of
+   widening the table past a phone's screen. */
+.data-table td.fill { width: 100%; max-width: 0; }
+.data-table td.fill .clip { display: block; max-width: none; }
 .data-table .total-row td { font-weight: 600; background: var(--surface-2); }
 .data-table .empty { text-align: center; color: var(--muted); padding: 24px; }
 .data-table tbody.stale { opacity: 0.5; }
@@ -288,7 +292,7 @@ a.tag:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .change.bad .change-pct { color: var(--bad); }
 .bar-note { margin-left: 4px; display: inline-block; min-width: 3ch; text-align: right; }
 .card > h2 + .bar-list, .card > h2 + .skeleton, .card > p + .bar-list { margin-top: 14px; }
-.show-narrow { display: none; }
+.show-narrow, .show-narrow-inline { display: none; }
 .callout { margin: 4px 0 0; }
 .trends { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 24px; }
 .trend-table td { vertical-align: middle; }
@@ -348,6 +352,8 @@ a.tag:hover { background: var(--accent-soft); color: var(--accent-strong); }
   .filter-input { width: 130px; }
   .trends { grid-template-columns: minmax(0, 1fr); }
   .show-narrow { display: block; }
+  .show-narrow-inline { display: inline; }
+  .show-narrow-inline:not(:last-child)::after { content: " · "; }
   .changes .change { font-size: 12px; }
   .tabbar {
     display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
