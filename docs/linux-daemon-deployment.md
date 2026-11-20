@@ -67,7 +67,9 @@ healthy. The container restarts on its own after a reboot (`restart: unless-stop
    ```
 
    (`svc:bankaccount` has to exist in the Tailscale admin console first — Services — the same way
-   `svc:spajz` does.)
+   `svc:spajz` does, and the tailnet policy's `autoApprovers` → `services` must list it next to
+   `svc:spajz`. Until it is approved the phone gets no page, and the daemon logs
+   `Refused tailnet request for / from login ''`.)
 
 4. Retire the old systemd daemon, which still holds the old shared token:
 
