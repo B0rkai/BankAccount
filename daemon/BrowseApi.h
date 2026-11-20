@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 #include "AccountManager.h"
 #include "QueryApi.h"
 
@@ -9,12 +10,21 @@
 // POST /api/v1/transactions: the individual transactions matching a filter, newest first, one page
 // at a time. `request_body` is the same JSON object POST /api/v1/query takes (FavoriteQuery.h's
 // ParseAdHocQuery - aggregate_by/period are ignored here), plus optional "limit" (default 50,
-// capped at 500) and "offset" (default 0). Responds {"total", "offset", "transactions": [{"account",
-// "date" (YYYY-MM-DD), "type", "client", "memo", "description", "category", "amount" (a number in
-// the currency's own unit, negative for an expense), "currency" (short code), "display" (the
-// desktop's own formatting of the amount)}, ...]}.
+// capped at 500), "offset" (default 0), "search" (MatchesSearch() below) and "direction" ("in":
+// only income, "out": only expenses). Responds {"total", "offset", "transactions": [{"account",
+// "date" (YYYY-MM-DD), "type", "client", "client_id", "memo", "description", "category",
+// "category_id", "amount" (a number in the currency's own unit, negative for an expense),
+// "currency" (short code), "display" (the desktop's own formatting of the amount)}, ...]}. A name
+// filter of "#<id>" matches that one client/category exactly (Query.cpp's QueryByName), unlike a
+// plain name, which matches fuzzily - the web app's drill-downs and client pages use the ids.
 QueryApiResult ListTransactions(const std::string& request_body, const AccountManager& mgr);
 
 // GET /api/v1/names?topic=accounts|categories|clients: every name of that kind, for the web app's
-// filter pickers/autocomplete. Categories are full "Group::Name" names. 400 for any other topic.
+// filter pickers/autocomplete, as {"names": [...], "ids": [...]} (parallel arrays; ids only for
+// categories and clients). Categories are full "Group::Name" names. 400 for any other topic.
 QueryApiResult ListNames(const std::string& topic, const AccountManager& mgr);
+
+// The transactions route's "search": true when `needle` appears, ignoring case and accents, in any of `fields`
+// (client, memo, description, type, category, account), or - when it is a number such as
+// "12 990" or "12'990" - when it equals the amount's whole-unit part.
+bool MatchesSearch(const std::vector<String>& fields, double amount, const String& needle);

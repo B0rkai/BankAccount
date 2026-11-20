@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { DatasetKey, Section } from '../api'
+import type { DatasetKey, QueryDef, Section } from '../api'
 import { buildChartConfig, currencyChoices, defaultCurrencyChoice, KIND_LABELS, pickData } from '../charts'
+import { drillLink, sectionTopic, useNameIndex, type Drill } from '../drill'
 import { useThemeColours } from '../hooks'
+import { bucketRange } from '../periods'
+import { navigate } from '../router'
 import { ChartCanvas } from './ChartCanvas'
 import { DataTable, downloadCsv } from './DataTable'
 
@@ -19,10 +22,15 @@ function kindsFor(allowed: string[], pref?: ChartPreference): string[] {
   return narrowed.length ? narrowed : allowed.slice(0, 1)
 }
 
+const SLICE_KINDS = new Set(['pie', 'doughnut', 'polar_area'])
+
 // One result section: its chart (when the section has chart data) above its table. Every chart
-// draws exactly one dataset - Net, Income or Expense.
-export function ResultSection({ section, pref }: { section: Section; pref?: ChartPreference }) {
+// draws exactly one dataset - Net, Income or Expense. With `def` (the query that produced it),
+// selecting a bar, slice or table cell opens the transactions behind that number.
+export function ResultSection({ section, pref, def }: { section: Section; pref?: ChartPreference; def?: QueryDef }) {
   const theme = useThemeColours()
+  const names = useNameIndex()
+  const topic = sectionTopic(section.heading)
   const datasets = section.chart?.datasets ?? []
   const preferred = datasets.find((d) => d.key === pref?.side)?.key
   // Net (always first) unless a favorite names a side - the desktop dialog's and HTML reports' default.
@@ -44,6 +52,36 @@ export function ResultSection({ section, pref }: { section: Section; pref?: Char
   )
 
   const isTransactions = section.heading === 'Transactions'
+
+  const onPick =
+    def && config && ds
+      ? (index: number, datasetIndex: number) => {
+          const labels = (config.data.labels ?? []) as string[]
+          const drill: Drill = { topic, side: ds.key }
+          if (section.chart_shape === 'periodic' && !SLICE_KINDS.has(activeKind ?? '')) {
+            drill.period = labels[index]
+            drill.label = config.data.datasets[datasetIndex]?.label
+          } else {
+            drill.label = labels[index]
+          }
+          const href = drillLink(def, drill, names)
+          if (href) navigate(href)
+        }
+      : undefined
+
+  // Topic rows, period columns, and the Income/Expense columns of a summary table.
+  const cellLink =
+    def && !isTransactions
+      ? (row: string[], column: number) => {
+          const header = section.table.header[column] ?? ''
+          if (header === 'AVERAGE' || header === '#' || header === 'Currency') return undefined
+          const drill: Drill = { topic, label: row[0] }
+          if (bucketRange(header)) drill.period = header
+          if (header === 'Income') drill.side = 'income'
+          if (header === 'Expense') drill.side = 'expense'
+          return drillLink(def, drill, names)
+        }
+      : undefined
 
   return (
     <section className="card result-section">
@@ -98,11 +136,11 @@ export function ResultSection({ section, pref }: { section: Section; pref?: Char
               )}
             </div>
           </div>
-          <ChartCanvas config={config} height={320} label={`${section.heading}: ${ds.label}`} />
+          <ChartCanvas config={config} height={320} label={`${section.heading}: ${ds.label}`} onPick={onPick} />
         </>
       )}
 
-      <DataTable table={section.table} filter={filter} maxRows={isTransactions ? 50 : 25} />
+      <DataTable table={section.table} filter={filter} maxRows={isTransactions ? 50 : 25} cellLink={cellLink} />
     </section>
   )
 }

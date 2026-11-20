@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, onUnauthorized, type Me } from './api'
 import { Icon, type IconName } from './components/Icons'
 import { formatDate, formatDateTime } from './format'
+import { Client } from './pages/Client'
 import { Explore } from './pages/Explore'
 import { Login } from './pages/Login'
-import { Overview } from './pages/Overview'
+import { daysSince, Overview, STALE_DAYS } from './pages/Overview'
 import { Reports } from './pages/Reports'
 import { Transactions } from './pages/Transactions'
-import { linkHandler, ROUTES, useRoute } from './router'
+import { Year } from './pages/Year'
+import { linkHandler, menuRoute, ROUTES, useRoute } from './router'
 
 type Session = { state: 'loading' } | { state: 'signed-out' } | { state: 'error'; message: string } | { state: 'ready'; me: Me }
 
@@ -42,6 +44,8 @@ export function App() {
     )
 
   const { me } = session
+  const stale = (daysSince(me.last_record_date) ?? 0) > STALE_DAYS
+  const menu = menuRoute(route)
   const signOut = async () => {
     await api.logout().catch(() => {})
     setSession({ state: 'signed-out' })
@@ -57,14 +61,14 @@ export function App() {
           </a>
           <nav aria-label="Main" className="nav">
             {ROUTES.map((r) => (
-              <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === route ? 'page' : undefined}>
+              <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === menu ? 'page' : undefined}>
                 {r.label}
               </a>
             ))}
           </nav>
           <div className="topbar-meta">
             <span className="freshness" title={`Loaded ${formatDateTime(me.last_loaded)}`}>
-              <span className={`dot${me.db_loaded ? '' : ' off'}`} />
+              <span className={`dot${!me.db_loaded ? ' off' : stale ? ' stale' : ''}`} />
               {me.last_record_date ? `Latest transaction ${formatDate(dotted(me.last_record_date) ?? '', { year: true })}` : 'No data'}
             </span>
             <span className="user-chip" title={me.login || 'Signed in on the home network'}>
@@ -81,16 +85,18 @@ export function App() {
       </header>
 
       <main className="main">
-        {route === 'overview' && <Overview />}
+        {route === 'overview' && <Overview me={me} />}
         {route === 'explore' && <Explore params={params} />}
-        {route === 'transactions' && <Transactions />}
+        {route === 'transactions' && <Transactions params={params} />}
         {route === 'reports' && <Reports />}
-        <footer className="footer muted small">Persely · BankAccount {me.version} · read-only view of the desktop database</footer>
+        {route === 'client' && <Client params={params} />}
+        {route === 'year' && <Year params={params} />}
+        <footer className="footer muted small">Persely · BankAccount {me.version} · read-only view of the desktop database (favorites can be saved)</footer>
       </main>
 
       <nav aria-label="Main" className="tabbar">
         {ROUTES.map((r) => (
-          <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === route ? 'page' : undefined}>
+          <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === menu ? 'page' : undefined}>
             <Icon name={r.route as IconName} size={22} />
             {r.label}
           </a>

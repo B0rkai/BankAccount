@@ -120,6 +120,11 @@ invalid) — `ChangelogManifest::EntriesBetween()`/`AllEntries()` operate only o
 
 ## `db\favorite_queries.json`
 
+> Besides the desktop app (Store Query/Store Report), the Linux web app (Persely) also adds,
+> replaces and deletes entries in this file and `favorite_reports.json` — see
+> `daemon/FavoritesStore.h`. It keeps every other entry exactly as written and never touches a file
+> that isn't a JSON array. The desktop app picks its changes up on its next start.
+
 Small, local, hand-edited file listing saved/favorite queries, surfaced as a
 `Query → Favorite Queries` submenu. Parsed by `ParseFavoriteQueries()`
 ([include/FavoriteQuery.h](../include/FavoriteQuery.h)/

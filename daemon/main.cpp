@@ -20,6 +20,7 @@
 #include "FavoriteQuery.h"
 #include "FavoriteReport.h"
 #include "FavoritesApi.h"
+#include "FavoritesStore.h"
 #include "HtmlReport.h"
 #include "Logger.h"
 #include "Query.h"
@@ -174,8 +175,7 @@ std::string SessionCookie(const std::string& token, bool remember) {
 
 struct Context {
 	DaemonDb& db;
-	const std::vector<FavoriteQueryDef>& favorite_queries;
-	const std::vector<FavoriteReportDef>& favorite_reports;
+	FavoritesStore& favorites;
 	const AuthConfig& auth;
 	SessionStore& sessions;
 	LoginThrottle& throttle;
@@ -310,16 +310,34 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 	});
 
 	server.Get("/api/v1/favorites/queries", [&ctx](const httplib::Request&, httplib::Response& res) {
-		SendResult(res, ListFavoriteQueries(ctx.favorite_queries));
+		SendResult(res, ListFavoriteQueries(ctx.favorites.Queries()));
 	});
 
 	server.Get("/api/v1/favorites/reports", [&ctx](const httplib::Request&, httplib::Response& res) {
-		SendResult(res, ListFavoriteReports(ctx.favorite_reports));
+		SendResult(res, ListFavoriteReports(ctx.favorites.Reports()));
+	});
+
+	// Saving and deleting favorites is the one thing the web app writes - never the database.
+	server.Post("/api/v1/favorites/queries", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		SendResult(res, ctx.favorites.SaveQuery(req.body));
+	});
+
+	server.Post("/api/v1/favorites/reports", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		SendResult(res, ctx.favorites.SaveReport(req.body));
+	});
+
+	server.Delete("/api/v1/favorites/queries", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		SendResult(res, ctx.favorites.DeleteQuery(req.get_param_value("name")));
+	});
+
+	server.Delete("/api/v1/favorites/reports", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		SendResult(res, ctx.favorites.DeleteReport(req.get_param_value("name")));
 	});
 
 	server.Get("/api/v1/favorites/queries/run", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		const std::vector<FavoriteQueryDef> queries = ctx.favorites.Queries();
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
-			SendResult(res, RunFavoriteQueryByName(req.get_param_value("name"), ctx.favorite_queries, mgr));
+			SendResult(res, RunFavoriteQueryByName(req.get_param_value("name"), queries, mgr));
 		});
 	});
 
@@ -327,13 +345,15 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 	// BankAccountCli write, offered as a download.
 	server.Get("/api/v1/favorites/reports/html", [&ctx](const httplib::Request& req, httplib::Response& res) {
 		const String name = String::FromUTF8(req.get_param_value("name").c_str());
-		auto report = std::find_if(ctx.favorite_reports.begin(), ctx.favorite_reports.end(), [&](const FavoriteReportDef& r) { return r.name == name; });
-		if (report == ctx.favorite_reports.end()) {
+		const std::vector<FavoriteQueryDef> queries = ctx.favorites.Queries();
+		const std::vector<FavoriteReportDef> reports = ctx.favorites.Reports();
+		auto report = std::find_if(reports.begin(), reports.end(), [&](const FavoriteReportDef& r) { return r.name == name; });
+		if (report == reports.end()) {
 			SendError(res, 404, "No favorite report with that name");
 			return;
 		}
-		auto query_def = std::find_if(ctx.favorite_queries.begin(), ctx.favorite_queries.end(), [&](const FavoriteQueryDef& q) { return q.name == report->favorite_query; });
-		if (query_def == ctx.favorite_queries.end()) {
+		auto query_def = std::find_if(queries.begin(), queries.end(), [&](const FavoriteQueryDef& q) { return q.name == report->favorite_query; });
+		if (query_def == queries.end()) {
 			SendError(res, 404, "The report's favorite query no longer exists");
 			return;
 		}
@@ -429,9 +449,10 @@ int main(int argc, char** argv) {
 	}
 	LogInfo("DAEMON") << "Loaded database from " << args.db_path;
 
-	// Loaded once at startup, like the desktop app does - see FavoriteQuery.h/FavoriteReport.h.
-	const std::vector<FavoriteQueryDef> favorite_queries = LoadFavoriteQueries();
-	const std::vector<FavoriteReportDef> favorite_reports = LoadFavoriteReports();
+	// db/ next to the working directory, like the desktop app's FavoriteQueryFilePath() - in the
+	// image, the shared folder holding favorite_*.json is mounted there.
+	FavoritesStore favorites("db");
+	LogInfo("MAIN") << "Found " << favorites.Queries().size() << " favorite queries and " << favorites.Reports().size() << " favorite reports";
 
 	std::atomic<bool> stop_watcher{false};
 	std::thread watcher([&] {
@@ -448,7 +469,7 @@ int main(int argc, char** argv) {
 
 	SessionStore sessions;
 	LoginThrottle throttle;
-	Context ctx{db, favorite_queries, favorite_reports, auth, sessions, throttle, args.web_dir,
+	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
 		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss()};
 
 	httplib::Server tailnet_server;

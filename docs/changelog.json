@@ -5,7 +5,8 @@
                        "Linux web service: new React web app (overview, query explorer, transactions, reports) with Tailscale-login and LAN-password sign-in, shipped as a Docker image",
                        "Linux web service: --hash-password hides the password and asks for it twice",
                        "Linux web service: deploy/set-secrets.sh writes the secrets file; the daemon refuses the template's placeholder values",
-                       "Linux web service: the web app is now called Persely, at persely.tail61796b.ts.net"
+                       "Linux web service: the web app is now called Persely, at persely.tail61796b.ts.net",
+                       "Persely: click any chart or table number for its transactions; transaction search; comparisons, category trends and a stale-data notice on the overview; client pages; year in review; save and delete favorites"
                    ],
     "released":  [
                      {

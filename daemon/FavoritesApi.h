@@ -1,16 +1,21 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <nlohmann/json.hpp>
 #include "FavoriteQuery.h"
 #include "FavoriteReport.h"
 #include "QueryApi.h"
 
+// The JSON object one favorite_queries.json / favorite_reports.json entry is written as - the
+// same field set FavoriteQuery.cpp/FavoriteReport.cpp write for the desktop app.
+nlohmann::json FavoriteQueryDefToJson(const FavoriteQueryDef& def);
+nlohmann::json FavoriteReportDefToJson(const FavoriteReportDef& def);
+
 // Favorite query/report listing + run-by-name (story 4, see docs/linux-query-daemon-design.md):
 // lets a browser frontend (story 5) offer the same favorite-query/report pickers the desktop's
-// Query/Reports menus do, without hand-rolling a second favorites reader. `daemon/main.cpp` loads
-// db/favorite_queries.json and db/favorite_reports.json once at startup (the same load-once
-// convention FavoriteQuery.h/FavoriteReport.h document for the desktop app - no polling/hot-reload
-// here, unlike DaemonDb's db-file watch) and passes the results into these route handlers.
+// Query/Reports menus do, without hand-rolling a second favorites reader. FavoritesStore.h reads
+// db/favorite_queries.json and db/favorite_reports.json (again whenever they change) and passes
+// the results into these route handlers.
 
 // {"name", "accounts", "clients", ...} - one entry per loaded favorite query, the same field set
 // ParseAdHocQuery (FavoriteQuery.h) reads back (plus "name"), so the frontend can either run one

@@ -15,9 +15,11 @@ nlohmann::json StringVectorToJson(const StringVector& vec) {
 	return arr;
 }
 
+} // namespace
+
 // Mirrors FavoriteQuery.cpp's own (file-private) ToJson() - duplicated here rather than exposed
-// from that header since this is purely an API-listing concern for the daemon, not part of
-// FavoriteQueryDef's load/save contract (which stays JSON-free at the header level).
+// from that header since this is purely a daemon concern (API listing, FavoritesStore's writes),
+// not part of FavoriteQueryDef's load/save contract (which stays JSON-free at the header level).
 nlohmann::json FavoriteQueryDefToJson(const FavoriteQueryDef& def) {
 	nlohmann::json j;
 	j["name"] = Utf8(def.name);
@@ -54,8 +56,6 @@ nlohmann::json FavoriteReportDefToJson(const FavoriteReportDef& def) {
 	if (!def.chart_sides.empty()) j["chart_sides"] = StringVectorToJson(def.chart_sides);
 	return j;
 }
-
-} // namespace
 
 QueryApiResult ListFavoriteQueries(const std::vector<FavoriteQueryDef>& defs) {
 	nlohmann::json arr = nlohmann::json::array();

@@ -9,6 +9,7 @@ const paths = {
   download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
   close: 'M6 6l12 12M18 6L6 18',
   logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
 } as const
 
 export type IconName = keyof typeof paths

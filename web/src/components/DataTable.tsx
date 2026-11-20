@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Table } from '../api'
+import { linkHandler } from '../router'
 
 // The daemon's tables are pre-formatted strings (" 1'456'206 Ft", "-4,000.00"), so sorting a
 // right-aligned (numeric) column parses the number back out.
@@ -25,7 +26,18 @@ export function downloadCsv(table: Table, name: string) {
   URL.revokeObjectURL(url)
 }
 
-export function DataTable({ table, filter = '', maxRows }: { table: Table; filter?: string; maxRows?: number }) {
+// `cellLink(row, column)` turns a cell into a link (a drill-down to its transactions).
+export function DataTable({
+  table,
+  filter = '',
+  maxRows,
+  cellLink,
+}: {
+  table: Table
+  filter?: string
+  maxRows?: number
+  cellLink?: (row: string[], column: number) => string | undefined
+}) {
   const [sort, setSort] = useState<{ col: number; desc: boolean } | null>(null)
   const [showAll, setShowAll] = useState(false)
 
@@ -64,11 +76,20 @@ export function DataTable({ table, filter = '', maxRows }: { table: Table; filte
         <tbody>
           {rows.slice(0, limit).map((r, ri) => (
             <tr key={ri} className={/TOTAL|AVERAGE/.test(r[0]) ? 'total-row' : undefined}>
-              {r.map((c, ci) => (
-                <td key={ci} className={table.align[ci] === 'right' ? `num${c.trim().startsWith('-') ? ' neg' : ''}` : undefined}>
-                  {c.trim()}
-                </td>
-              ))}
+              {r.map((c, ci) => {
+                const href = c.trim() && c.trim() !== '-' ? cellLink?.(r, ci) : undefined
+                return (
+                  <td key={ci} className={table.align[ci] === 'right' ? `num${c.trim().startsWith('-') ? ' neg' : ''}` : undefined}>
+                    {href ? (
+                      <a className="cell-link" href={href} onClick={linkHandler(href)}>
+                        {c.trim()}
+                      </a>
+                    ) : (
+                      c.trim()
+                    )}
+                  </td>
+                )
+              })}
             </tr>
           ))}
           {rows.length === 0 && (

@@ -480,6 +480,35 @@ app and per-network sign-in. Proposed and agreed with a design mockup before bui
   read-only. The daemon's own GoogleTest suite (`daemon/tests/`, `make daemon-tests`) runs in the
   image build; it lives outside `tests/` because the Windows test project has no OpenSSL.
 
+## Web app features (2026-11-20)
+
+Picked from a proposal list: click-through, transaction search, period comparisons, client pages,
+a stale-data notice, category trends, year in review, and saving favorites. Editing the database
+from the web was considered and declined: the desktop app's write lock (`NetworkLock`) is a
+Windows SMB share mode a Linux process can't reliably see, so the database stays read-only and
+only the favorites files are writable.
+
+- **Exact names**: `/names` now returns each category/client id next to its name, and transaction
+  rows carry `client_id`/`category_id`. Drill-downs and client pages filter on `#<id>`
+  (`QueryByName`'s exact form) rather than a name, which `GetIds()` matches fuzzily.
+- **Click-through** (`web/src/drill.ts`): a chart bar/slice or a table cell opens Transactions
+  with the query's own filters narrowed by the clicked topic, period column (period labels such
+  as `2025-Q3` turned back into dates, `web/src/periods.ts`) and Income/Expense side.
+- **Transactions**: `search` (case- and accent-insensitive across client, notes, type, category and
+  account, or an amount such as "12 990" — `MatchesSearch()`, independent of the C locale) and
+  `direction` (`in`/`out`). The page keeps all its state in the URL.
+- **Comparisons**: the overview compares its totals with the period before and the same period a
+  year earlier; a period still running is compared over the same number of days. The browser
+  resolves relative periods with the same rules as `RelativePeriod.cpp`.
+- **New pages**: `/client?id=` and `/year?y=`, plus a category-trends card on the overview — all
+  built from existing `/query` results.
+- **Favorites** (`daemon/FavoritesStore.h`): the files are re-read when they change on disk, so
+  desktop edits appear without a restart. `POST`/`DELETE /favorites/queries|reports` edit the raw
+  JSON array, keeping every other entry exactly as it is, never overwrite a file that isn't a JSON
+  list, refuse a taken name unless `replace` is set, refuse deleting a query a report still uses,
+  and write by renaming a temporary file into place. The favorites folder is therefore mounted
+  writable; the db folder inside it is mounted read-only again.
+
 ## Decisions (2026-09-10)
 
 - **Explicit "Run" button**, not live-as-you-type — matches the desktop's own model, no

@@ -3,18 +3,21 @@ import { Icon } from './Icons'
 
 // Chips for a list of names (categories, clients, ...), typed with autocomplete from `options`.
 // Free text is allowed too: the daemon matches names the same fuzzy way the desktop filter does.
+// `display` names a value the chip can't show as-is (an exact "#12" filter from a drill-down).
 export function NamePicker({
   label,
   values,
   options,
   onChange,
   placeholder,
+  display = (v) => v,
 }: {
   label: string
   values: string[]
   options: string[]
   onChange: (v: string[]) => void
   placeholder?: string
+  display?: (value: string) => string
 }) {
   const id = useId()
   const [text, setText] = useState('')
@@ -29,8 +32,8 @@ export function NamePicker({
       <div className="chip-input">
         {values.map((v) => (
           <span key={v} className="chip">
-            {v}
-            <button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}>
+            {display(v)}
+            <button type="button" aria-label={`Remove ${display(v)}`} onClick={() => onChange(values.filter((x) => x !== v))}>
               <Icon name="close" size={12} />
             </button>
           </span>

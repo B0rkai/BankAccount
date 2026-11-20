@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 
-// Four pages don't need a routing library: the path picks the page, the query string carries a
-// page's state (so a query in Explore can be bookmarked), and navigate() pushes history entries.
+// A handful of pages don't need a routing library: the path picks the page, the query string
+// carries a page's state (so a query in Explore can be bookmarked), and navigate() pushes history
+// entries.
 
-export type Route = 'overview' | 'explore' | 'transactions' | 'reports'
+export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year'
 
 export const ROUTES: { route: Route; path: string; label: string }[] = [
   { route: 'overview', path: '/', label: 'Overview' },
@@ -12,8 +13,16 @@ export const ROUTES: { route: Route; path: string; label: string }[] = [
   { route: 'reports', path: '/reports', label: 'Reports' },
 ]
 
+// Pages reached by links rather than the menu, and the menu entry they belong under.
+export const SUB_ROUTES: { route: Route; path: string; parent: Route }[] = [
+  { route: 'client', path: '/client', parent: 'transactions' },
+  { route: 'year', path: '/year', parent: 'reports' },
+]
+
+export const menuRoute = (route: Route): Route => SUB_ROUTES.find((r) => r.route === route)?.parent ?? route
+
 function current(): { route: Route; params: URLSearchParams } {
-  const match = ROUTES.find((r) => r.path === window.location.pathname)
+  const match = [...ROUTES, ...SUB_ROUTES].find((r) => r.path === window.location.pathname)
   return { route: match?.route ?? 'overview', params: new URLSearchParams(window.location.search) }
 }
 

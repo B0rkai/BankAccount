@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
-import { api, cachedNames, type FavoriteQuery, type QueryDef, type Section } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { api, ApiError, cachedNames, getFavoritesVersion, onFavoritesChanged, type FavoriteQuery, type QueryDef, type Section } from '../api'
+import { KIND_LABELS } from '../charts'
 import type { ChartPreference } from '../components/ResultSection'
 import { ResultSection } from '../components/ResultSection'
 import { NamePicker } from '../components/NamePicker'
+import { displayName, useNameIndex } from '../drill'
 import { periodLabel, RELATIVE_PERIODS } from '../format'
 import { useAsync } from '../hooks'
 import { navigate } from '../router'
@@ -95,14 +97,27 @@ function defFromForm(f: Form): QueryDef {
   return JSON.parse(JSON.stringify(def)) // drops the undefined keys
 }
 
-function describe(def: QueryDef): string {
+// Re-renders when a favorite is saved or deleted, for keys of lists that show them.
+export function useFavoritesVersion(): number {
+  const [version, setVersion] = useState(getFavoritesVersion)
+  useEffect(() => onFavoritesChanged(() => setVersion(getFavoritesVersion())), [])
+  return version
+}
+
+// Just the query fields of a favorite (no name or chart preference).
+function queryOf(fav: FavoriteQuery | QueryDef): QueryDef {
+  const { name: _name, chart: _chart, ...def } = fav as FavoriteQuery
+  return def
+}
+
+function describe(def: QueryDef, names?: ReturnType<typeof useNameIndex>): string {
   const parts: string[] = []
   parts.push(def.relative_period ? periodLabel(def.relative_period) : def.date_from ? `${def.date_from} – ${def.date_to}` : 'All time')
   parts.push(def.accounts?.length ? def.accounts.join(', ') : 'all accounts')
-  const filter = (names: string[] | undefined, exclude: boolean | undefined, what: string) =>
-    names?.length && parts.push(`${exclude ? 'without' : 'only'} ${what} ${names.join(', ')}`)
-  filter(def.categories, def.exclude_categories, 'categories')
-  filter(def.clients, def.exclude_clients, 'clients')
+  const filter = (values: string[] | undefined, exclude: boolean | undefined, what: string, topic?: 'category' | 'client') =>
+    values?.length && parts.push(`${exclude ? 'without' : 'only'} ${what} ${values.map((v) => (topic ? displayName(v, names, topic) : v)).join(', ')}`)
+  filter(def.categories, def.exclude_categories, 'categories', 'category')
+  filter(def.clients, def.exclude_clients, 'clients', 'client')
   filter(def.types, def.exclude_types, 'types')
   return parts.join(' · ')
 }
@@ -115,8 +130,11 @@ export function Explore({ params }: { params: URLSearchParams }) {
   const accounts = useAsync(() => cachedNames('accounts'), 'accounts')
   const categories = useAsync(() => cachedNames('categories'), 'categories')
   const clients = useAsync(() => cachedNames('clients'), 'clients')
-  const favorites = useAsync(() => api.favoriteQueries(), 'favorites')
-  const reports = useAsync(() => (reportName ? api.favoriteReports() : Promise.resolve([])), `reports:${reportName}`)
+  const version = useFavoritesVersion()
+  const names = useNameIndex()
+  const favorites = useAsync(() => api.favoriteQueries(), `favorites:${version}`)
+  const reports = useAsync(() => (reportName ? api.favoriteReports() : Promise.resolve([])), `reports:${reportName}:${version}`)
+  const [saving, setSaving] = useState(false)
 
   const [form, setForm] = useState<Form>(EMPTY)
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }))
@@ -149,6 +167,7 @@ export function Explore({ params }: { params: URLSearchParams }) {
     runKey,
   )
   const ranDef = favorite ?? adHoc
+  const ranQuery = ranDef ? queryOf(ranDef) : undefined
 
   const run = (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -224,14 +243,14 @@ export function Explore({ params }: { params: URLSearchParams }) {
           </div>
         </fieldset>
 
-        <NamePicker label="Categories" values={form.categories} options={categories.data ?? []} onChange={(v) => set('categories', v)} placeholder="Any category" />
+        <NamePicker label="Categories" values={form.categories} options={categories.data ?? []} onChange={(v) => set('categories', v)} placeholder="Any category" display={(v) => displayName(v, names, 'category')} />
         {form.categories.length > 0 && (
           <label className="check sub">
             <input type="checkbox" checked={form.excludeCategories} onChange={(e) => set('excludeCategories', e.target.checked)} />
             Leave these out instead
           </label>
         )}
-        <NamePicker label="Clients" values={form.clients} options={clients.data ?? []} onChange={(v) => set('clients', v)} placeholder="Any client" />
+        <NamePicker label="Clients" values={form.clients} options={clients.data ?? []} onChange={(v) => set('clients', v)} placeholder="Any client" display={(v) => displayName(v, names, 'client')} />
         {form.clients.length > 0 && (
           <label className="check sub">
             <input type="checkbox" checked={form.excludeClients} onChange={(e) => set('excludeClients', e.target.checked)} />
@@ -290,21 +309,166 @@ export function Explore({ params }: { params: URLSearchParams }) {
           <div className="results-head">
             <div>
               <h2>{report?.name ?? favorite?.name ?? 'Query result'}</h2>
-              {ranDef && <p className="muted small">{describe(ranDef)}</p>}
+              {ranQuery && <p className="muted small">{describe(ranQuery, names)}</p>}
             </div>
-            {report && (
-              <a className="button secondary small" href={api.reportHtmlUrl(report.name)} download>
-                Download HTML report
-              </a>
-            )}
+            <div className="card-actions">
+              {ranQuery && (
+                <button type="button" className="button secondary small" onClick={() => setSaving(true)}>
+                  {favorite ? 'Save as…' : 'Save as favorite'}
+                </button>
+              )}
+              {report && (
+                <a className="button secondary small" href={api.reportHtmlUrl(report.name)} download>
+                  Download HTML report
+                </a>
+              )}
+            </div>
           </div>
+        )}
+        {saving && ranQuery && (
+          <SaveFavorite
+            query={ranQuery}
+            initialName={favorite?.name ?? ''}
+            initialChart={favorite?.chart}
+            onClose={() => setSaving(false)}
+            onSaved={(name, asReport) => {
+              setSaving(false)
+              navigate(asReport ? `/explore?report=${encodeURIComponent(name)}` : `/explore?fav=${encodeURIComponent(name)}`)
+            }}
+          />
         )}
         {result.error && <div className="alert">{result.error}</div>}
         {result.loading && runKey && <section className="card"><Skeleton rows={8} /></section>}
         {!result.loading &&
-          result.data?.map((s, i) => <ResultSection key={`${runKey}:${i}`} section={s} pref={pref} />)}
+          result.data?.map((s, i) => <ResultSection key={`${runKey}:${i}`} section={s} pref={pref} def={ranQuery} />)}
         {!result.loading && result.data?.length === 0 && <div className="card empty-state"><p className="muted">No results.</p></div>}
       </div>
     </div>
+  )
+}
+
+const SIDES = [
+  { key: '', label: 'Net (default)' },
+  { key: 'expense', label: 'Expense' },
+  { key: 'income', label: 'Income' },
+]
+
+// Stores the query on screen as a favorite query - in the same favorite_queries.json the desktop
+// app reads - and, optionally, a favorite report built on it.
+function SaveFavorite({
+  query,
+  initialName,
+  initialChart,
+  onClose,
+  onSaved,
+}: {
+  query: QueryDef
+  initialName: string
+  initialChart?: { kind?: string; side?: string }
+  onClose: () => void
+  onSaved: (name: string, asReport: boolean) => void
+}) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [name, setName] = useState(initialName)
+  const [side, setSide] = useState(initialChart?.side ?? '')
+  const [kind, setKind] = useState(initialChart?.kind ?? '')
+  const [asReport, setAsReport] = useState(false)
+  const [kinds, setKinds] = useState<string[]>(['pie', 'bar'])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+
+  useEffect(() => {
+    dialog.current?.showModal()
+  }, [])
+
+  // A taken name asks once before replacing.
+  const withReplace = async <T,>(save: (replace: boolean) => Promise<T>, what: string): Promise<T | undefined> => {
+    try {
+      return await save(false)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && window.confirm(`There is already a ${what} named "${name.trim()}". Replace it?`)) return save(true)
+      throw e
+    }
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    setBusy(true)
+    setError(undefined)
+    try {
+      const chart = side || kind ? { side: side || undefined, kind: kind || undefined } : undefined
+      const saved = await withReplace((replace) => api.saveFavoriteQuery({ ...query, name: trimmed, chart }, replace), 'favorite query')
+      if (!saved) return
+      if (asReport) {
+        const report = await withReplace((replace) => api.saveFavoriteReport({ name: trimmed, favorite_query: trimmed, chart_kinds: kinds }, replace), 'report')
+        if (!report) return
+      }
+      onSaved(trimmed, asReport)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <dialog ref={dialog} className="dialog" onClose={onClose} aria-labelledby="save-title">
+      <form method="dialog" onSubmit={submit} className="dialog-body">
+        <h2 id="save-title">Save as favorite</h2>
+        <p className="muted small">It appears under Favorites here and in the desktop app's Query menu (after it restarts).</p>
+        <label className="field">
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} autoFocus placeholder="e.g. Groceries this year" />
+        </label>
+        <div className="two-col">
+          <label className="field">
+            Chart shows
+            <select value={side} onChange={(e) => setSide(e.target.value)}>
+              {SIDES.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Chart type
+            <select value={kind} onChange={(e) => setKind(e.target.value)}>
+              <option value="">Automatic</option>
+              {Object.entries(KIND_LABELS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={asReport} onChange={(e) => setAsReport(e.target.checked)} />
+          Also save it as a report (downloadable HTML)
+        </label>
+        {asReport && (
+          <fieldset className="kind-picks">
+            <legend>Report charts</legend>
+            {Object.entries(KIND_LABELS).map(([k, label]) => (
+              <label key={k} className="check">
+                <input type="checkbox" checked={kinds.includes(k)} onChange={(e) => setKinds(e.target.checked ? [...kinds, k] : kinds.filter((x) => x !== k))} />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {error && <p className="alert small">{error}</p>}
+        <div className="dialog-actions">
+          <button type="button" className="button secondary" onClick={() => dialog.current?.close()}>
+            Cancel
+          </button>
+          <button type="submit" className="button primary" disabled={busy || !name.trim()}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </form>
+    </dialog>
   )
 }
