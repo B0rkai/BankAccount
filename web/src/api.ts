@@ -156,7 +156,7 @@ export interface TransactionQuery extends QueryDef {
   direction?: 'in' | 'out'
 }
 
-// Favorites change when saved here or in the desktop app; pages showing them listen for saves.
+// Favorites change when saved or deleted here; pages showing them listen for saves.
 let favoritesVersion = 0
 const favoritesListeners = new Set<() => void>()
 export function onFavoritesChanged(listener: () => void): () => void {

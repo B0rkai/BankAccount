@@ -353,8 +353,7 @@ const SIDES = [
   { key: 'income', label: 'Income' },
 ]
 
-// Stores the query on screen as a favorite query - in the same favorite_queries.json the desktop
-// app reads - and, optionally, a favorite report built on it.
+// Stores the query on screen as a favorite query and, optionally, a favorite report built on it.
 function SaveFavorite({
   query,
   initialName,
@@ -416,7 +415,7 @@ function SaveFavorite({
     <dialog ref={dialog} className="dialog" onClose={onClose} aria-labelledby="save-title">
       <form method="dialog" onSubmit={submit} className="dialog-body">
         <h2 id="save-title">Save as favorite</h2>
-        <p className="muted small">It appears under Favorites here and in the desktop app's Query menu (after it restarts).</p>
+        <p className="muted small">It appears under Favorites on the Overview and Reports pages.</p>
         <label className="field">
           Name
           <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} autoFocus placeholder="e.g. Groceries this year" />

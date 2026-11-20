@@ -506,8 +506,9 @@ only the favorites files are writable.
   desktop edits appear without a restart. `POST`/`DELETE /favorites/queries|reports` edit the raw
   JSON array, keeping every other entry exactly as it is, never overwrite a file that isn't a JSON
   list, refuse a taken name unless `replace` is set, refuse deleting a query a report still uses,
-  and write by renaming a temporary file into place. The favorites folder is therefore mounted
-  writable; the db folder inside it is mounted read-only again.
+  and write by renaming a temporary file into place. They are the web app's own files, on the
+  server's system disk (`~/.local/share/bankaccount/`) rather than the shared folder, since nothing
+  else needs them; that folder is the only one the service writes.
 
 ## Decisions (2026-09-10)
 

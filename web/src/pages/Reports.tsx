@@ -18,7 +18,7 @@ export function Reports() {
   const years = firstYear.data ? Array.from({ length: thisYear - firstYear.data + 1 }, (_, i) => thisYear - i) : []
 
   const remove = async (what: 'query' | 'report', name: string) => {
-    if (!window.confirm(`Delete the favorite ${what} "${name}"? The desktop app loses it too.`)) return
+    if (!window.confirm(`Delete the favorite ${what} "${name}"?`)) return
     setError(undefined)
     try {
       await (what === 'query' ? api.deleteFavoriteQuery(name) : api.deleteFavoriteReport(name))
@@ -32,7 +32,7 @@ export function Reports() {
       <div className="page-head">
         <div>
           <h1>Reports</h1>
-          <p className="muted">Year in review, and your favorite reports and queries — saved here or in the desktop app.</p>
+          <p className="muted">Year in review, and your favorite reports and queries.</p>
         </div>
       </div>
 

@@ -279,7 +279,7 @@ export function Overview({ me }: { me: Me }) {
 
         <section className="card grow-1 favorites">
           <h2>Favorites</h2>
-          <p className="muted small">Saved here or in the desktop app</p>
+          <p className="muted small">Saved from Explore</p>
           {favorites.data?.map((f) => (
             <a key={f.name} className="fav-link" href={`/explore?fav=${encodeURIComponent(f.name)}`} onClick={linkHandler(`/explore?fav=${encodeURIComponent(f.name)}`)}>
               <span>

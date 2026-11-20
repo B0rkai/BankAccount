@@ -70,8 +70,8 @@ a read-only subset of `BankAccountCore` for Linux (no import/mutation/Windows-on
 code) plus `daemon/`, an HTTP+JSON server (vendored [cpp-httplib](https://github.com/yhirose/cpp-httplib)
 as `include/httplib.h`) exposing the `Query` engine under `/api/v1`, and serving `web/` — "Persely", a
 React + TypeScript + Vite web app (Overview/Explore/Transactions/Reports, client and
-year-in-review pages) over the live db — read-only except for saving favorites
-(`daemon/FavoritesStore.h`). It
+year-in-review pages) over the live db — read-only except for its own favorites files
+(`daemon/FavoritesStore.h`, kept on the server's disk, not shared with the desktop app). It
 listens twice: a tailnet port behind `tailscale serve` (trusts `Tailscale-User-Login`, allowlisted)
 and a LAN port (shared password, session cookie) — `daemon/WebAuth.h`. Ships as one Docker image
 (`deploy/Dockerfile`, `deploy/deploy.sh`); the daemon's own GoogleTest suite is `daemon/tests/`

@@ -450,7 +450,7 @@ int main(int argc, char** argv) {
 	LogInfo("DAEMON") << "Loaded database from " << args.db_path;
 
 	// db/ next to the working directory, like the desktop app's FavoriteQueryFilePath() - in the
-	// image, the shared folder holding favorite_*.json is mounted there.
+	// image, the web app's own favorites folder is mounted there.
 	FavoritesStore favorites("db");
 	LogInfo("MAIN") << "Found " << favorites.Queries().size() << " favorite queries and " << favorites.Reports().size() << " favorite reports";
 

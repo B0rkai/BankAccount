@@ -10,8 +10,8 @@
 
 // The favorite queries/reports the web app lists and saves - see docs/linux-query-daemon-design.md,
 // "Web app features (2026-11-20)". Reads `<dir>/favorite_queries.json` and `<dir>/favorite_reports.json`
-// (the files the desktop app keeps in its db\ folder), again whenever one changes on disk, so a
-// favorite stored in the desktop app shows up without restarting the daemon.
+// (the same format as the desktop app's db\ files, but the web app's own copies), again whenever
+// one changes on disk, so a hand edit shows up without restarting the daemon.
 //
 // Writes edit the file's JSON array in place: every other entry is kept as it is in the file -
 // including ones FavoriteQuery.cpp's parser would skip - so a save from the web never drops
