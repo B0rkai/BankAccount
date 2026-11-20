@@ -54,7 +54,7 @@ healthy. The container restarts on its own after a reboot (`restart: unless-stop
    mkdir -p ~/.config/bankaccount
    cp deploy/web.env.example ~/.config/bankaccount/web.env
    chmod 600 ~/.config/bankaccount/web.env
-   docker run --rm -i bankaccount:live bankaccount-daemon --hash-password   # type the password, Enter
+   docker run --rm -it bankaccount:live bankaccount-daemon --hash-password   # type it twice (hidden)
    $EDITOR ~/.config/bankaccount/web.env   # your Tailscale login + the printed hash
    ```
 

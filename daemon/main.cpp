@@ -10,6 +10,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <termios.h>
+#include <unistd.h>
 #include <nlohmann/json.hpp>
 #include "httplib.h"
 #include "BrowseApi.h"
@@ -95,9 +97,36 @@ std::string Env(const char* name) {
 	return value ? value : "";
 }
 
-int HashPasswordMode() {
+// Reads one line from stdin. On a terminal it prompts and turns echo off, like passwd does.
+std::string ReadPassword(const char* prompt, bool terminal) {
+	termios saved{};
+	if (terminal) {
+		std::cerr << prompt << std::flush;
+		tcgetattr(STDIN_FILENO, &saved);
+		termios quiet = saved;
+		quiet.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+		tcsetattr(STDIN_FILENO, TCSANOW, &quiet);
+	}
 	std::string password;
 	std::getline(std::cin, password);
+	if (terminal) {
+		tcsetattr(STDIN_FILENO, TCSANOW, &saved);
+		std::cerr << "\n";
+	}
+	if (!password.empty() && password.back() == '\r') {
+		password.pop_back();
+	}
+	return password;
+}
+
+int HashPasswordMode() {
+	// Needs `docker run -it` to be a terminal; piped input (scripts) is read once, silently.
+	bool terminal = isatty(STDIN_FILENO);
+	std::string password = ReadPassword("New LAN password: ", terminal);
+	if (terminal && ReadPassword("Repeat it: ", terminal) != password) {
+		std::cerr << "The two passwords differ - nothing was printed.\n";
+		return 1;
+	}
 	if (password.size() < 10) {
 		std::cerr << "Use a password of at least 10 characters.\n";
 		return 1;
