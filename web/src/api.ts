@@ -84,6 +84,7 @@ export interface Section {
 
 export interface TransactionRow {
   account: string
+  account_full: string // "Bank::Name": short names repeat across banks; what an accounts filter takes
   date: string
   type: string
   client: string
@@ -161,6 +162,7 @@ export interface TransactionQuery extends QueryDef {
   offset?: number
   search?: string
   direction?: 'in' | 'out'
+  order?: 'largest' // by size, in HUF; newest first otherwise
 }
 
 // Favorites change when saved or deleted here; pages showing them listen for saves.

@@ -59,7 +59,8 @@ export function NamePicker({
           onBlur={() => text && add(text)}
         />
         <datalist id={`${id}-options`}>
-          {options.map((o) => (
+          {/* Two clients can share a name: one suggestion is enough. */}
+          {[...new Set(options)].map((o) => (
             <option key={o} value={o} />
           ))}
         </datalist>

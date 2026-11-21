@@ -3,7 +3,7 @@ import { useMemo, type ReactNode } from 'react'
 import type { Section } from '../api'
 import { fold, pickHuf } from '../charts'
 import { formatMoney, formatMoneyCompact } from '../format'
-import { useThemeColours } from '../hooks'
+import { useStoredState, useThemeColours } from '../hooks'
 import { linkHandler, navigate } from '../router'
 import { ChartCanvas } from './ChartCanvas'
 
@@ -124,34 +124,141 @@ export function Kpi({ label, value, sub, colour, changes = [], href, extra }: { 
   )
 }
 
-// Income and expense side by side per period ("2026-07" labels read as month names). Selecting
-// a bar calls onPick with its period index.
-export function IncomeExpenseBars({ labels, income, expense, height = 260, onPick }: { labels: string[]; income: number[]; expense: number[]; height?: number; onPick?: (index: number) => void }) {
+export type ChartKind = 'bar' | 'line' | 'net'
+export interface ChartStyle {
+  kind: ChartKind
+  trend: boolean
+}
+
+// The topic pages' chart style, remembered in this browser and shared by their charts.
+export function useChartStyle(): [ChartStyle, (s: ChartStyle) => void] {
+  const [style, setStyle] = useStoredState<ChartStyle>('topic.chart', { kind: 'bar', trend: false })
+  return [{ kind: ['bar', 'line', 'net'].includes(style?.kind) ? style.kind : 'bar', trend: !!style?.trend }, setStyle]
+}
+
+const KINDS: [ChartKind, string][] = [
+  ['bar', 'Bars'],
+  ['line', 'Lines'],
+  ['net', 'Net'],
+]
+
+export function ChartStyleControls({ style, onChange }: { style: ChartStyle; onChange: (s: ChartStyle) => void }) {
+  return (
+    <div className="chart-controls">
+      <div role="group" aria-label="Chart type" className="segmented small">
+        {KINDS.map(([k, label]) => (
+          <button key={k} type="button" aria-pressed={style.kind === k} onClick={() => onChange({ ...style, kind: k })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <button type="button" className="toggle small" aria-pressed={style.trend} onClick={() => onChange({ ...style, trend: !style.trend })} title="A straight line fitted through the periods">
+        Trend
+      </button>
+    </div>
+  )
+}
+
+// A period still running ("2026-11" this month, "2026" this year) would drag a trend down.
+function isRunning(label: string): boolean {
+  const now = new Date()
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  return label === month || label === String(now.getFullYear())
+}
+
+// A least-squares straight line through `values`, the running last period left out of the fit;
+// undefined with too few periods, or nothing at all, to fit.
+export function trendLine(values: number[], labels: string[]): { points: number[]; slope: number; mean: number } | undefined {
+  const n = values.length && isRunning(labels[labels.length - 1]) ? values.length - 1 : values.length
+  if (n < 3 || values.slice(0, n).every((v) => v === 0)) return undefined
+  const mx = (n - 1) / 2
+  const my = values.slice(0, n).reduce((a, v) => a + v, 0) / n
+  let sxy = 0
+  let sxx = 0
+  for (let i = 0; i < n; i++) {
+    sxy += (i - mx) * (values[i] - my)
+    sxx += (i - mx) ** 2
+  }
+  const slope = sxy / sxx
+  return { points: values.map((_, i) => my + slope * (i - mx)), slope, mean: my }
+}
+
+// "Spending rising about 12 300 Ft a month", for a trend's slope.
+// A net below zero "rising" reads oddly: net improves or worsens instead.
+function trendText(name: string, t: { slope: number; mean: number }, unit: string): string {
+  if (Math.abs(t.slope) < Math.abs(t.mean) * 0.01) return `${name} flat`
+  const way = name === 'Net' ? (t.slope > 0 ? 'improving' : 'worsening') : t.slope > 0 ? 'rising' : 'falling'
+  return `${name} ${way} about ${formatMoney(Math.abs(t.slope), 'HUF')} a ${unit}`
+}
+
+// Income and expense per period ("2026-07" labels read as month names): side-by-side bars, two
+// lines, or one net bar per period, with an optional trend line each. Selecting a period calls
+// onPick with its index.
+export function IncomeExpenseBars({
+  labels,
+  income,
+  expense,
+  height = 260,
+  onPick,
+  kind = 'bar',
+  trend = false,
+}: {
+  labels: string[]
+  income: number[]
+  expense: number[]
+  height?: number
+  onPick?: (index: number) => void
+  kind?: ChartKind
+  trend?: boolean
+}) {
   const theme = useThemeColours()
-  const config: ChartConfiguration | null = useMemo(() => {
+  const built = useMemo(() => {
     if (!labels.length) return null
     const css = getComputedStyle(document.documentElement)
+    const colour = (name: string) => css.getPropertyValue(name).trim()
     // Months as "Mar", or "Mar 25" when the chart spans more than one year.
     const manyYears = new Set(labels.map((l) => l.slice(0, 4))).size > 1
     const short = labels.map((l) => {
       const d = new Date(`${l}-01T00:00:00`)
       return /^\d{4}-\d{2}$/.test(l) && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-GB', { month: 'short', year: manyYears ? '2-digit' : undefined }) : l
     })
-    return {
+    const unit = /^\d{4}-\d{2}$/.test(labels[0]) ? 'month' : 'year'
+    const net = income.map((v, i) => v - expense[i])
+    // A series with nothing in it (a spending category's income) isn't drawn as a line or trend.
+    const series =
+      kind === 'net'
+        ? [{ name: 'Net', values: net, colour: colour('--net') || colour('--accent') }]
+        : [
+            { name: 'Income', values: income, colour: colour('--income') },
+            { name: 'Expense', values: expense, colour: colour('--expense') },
+          ].filter((s) => kind === 'bar' || s.values.some((v) => v !== 0))
+
+    const datasets: ChartConfiguration['data']['datasets'] =
+      kind === 'net'
+        ? [{ type: 'bar', label: 'Net', data: net, backgroundColor: net.map((v) => (v >= 0 ? colour('--income') : colour('--expense'))), borderRadius: 3 }]
+        : series.map((s) =>
+            kind === 'line'
+              ? { type: 'line' as const, label: s.name, data: s.values, borderColor: s.colour, backgroundColor: s.colour, tension: 0.25, pointRadius: 3, borderWidth: 2 }
+              : { type: 'bar' as const, label: s.name, data: s.values, backgroundColor: s.colour, borderRadius: 3 },
+          )
+    const captions: string[] = []
+    if (trend) {
+      for (const s of series) {
+        const t = trendLine(s.values, labels)
+        if (!t) continue
+        datasets.push({ type: 'line', label: `${s.name} trend`, data: t.points, borderColor: s.colour, borderDash: [6, 4], borderWidth: 2, pointRadius: 0, pointHitRadius: 0, fill: false, tension: 0 })
+        captions.push(trendText(s.name === 'Expense' ? 'Spending' : s.name, t, unit))
+      }
+    }
+    const config: ChartConfiguration = {
       type: 'bar',
-      data: {
-        labels: short,
-        datasets: [
-          { label: 'Income', data: income, backgroundColor: css.getPropertyValue('--income').trim(), borderRadius: 3 },
-          { label: 'Expense', data: expense, backgroundColor: css.getPropertyValue('--expense').trim(), borderRadius: 3 },
-        ],
-      },
+      data: { labels: short, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatMoney(Number(c.parsed.y), 'HUF')}` } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatMoney(Number(c.parsed.y), 'HUF', { sign: kind === 'net' })}` } },
         },
         scales: {
           x: { ticks: { color: theme.muted }, grid: { display: false } },
@@ -159,22 +266,35 @@ export function IncomeExpenseBars({ labels, income, expense, height = 260, onPic
         },
       },
     }
-  }, [labels, income, expense, theme])
-  if (!config) return null
-  return <ChartCanvas config={config} height={height} label="Income and expense per period" onPick={onPick ? (i) => onPick(i) : undefined} />
+    return { config, captions }
+  }, [labels, income, expense, theme, kind, trend])
+  if (!built) return null
+  return (
+    <>
+      <ChartCanvas config={built.config} height={height} label="Income and expense per period" onPick={onPick ? (i) => onPick(i) : undefined} />
+      {built.captions.length > 0 && <p className="muted small trend-caption">Trend: {built.captions.join(' · ')}</p>}
+    </>
+  )
 }
 
-export function Legend() {
+// With `data`, a line chart's legend leaves out a series with nothing in it, as the chart does.
+export function Legend({ kind = 'bar', data }: { kind?: ChartKind; data?: { income: number[]; expense: number[] } }) {
+  const drawn = (values: number[] | undefined) => kind !== 'line' || !values || values.some((v) => v !== 0)
+  const entries: [string, string][] =
+    kind === 'net'
+      ? [
+          ['var(--income)', 'More in'],
+          ['var(--expense)', 'More out'],
+        ]
+      : ([['var(--income)', 'Income', data?.income], ['var(--expense)', 'Expense', data?.expense]] as [string, string, number[] | undefined][]).filter((e) => drawn(e[2])).map(([c, l]) => [c, l])
   return (
     <div className="legend">
-      <span>
-        <i style={{ background: 'var(--income)' }} />
-        Income
-      </span>
-      <span>
-        <i style={{ background: 'var(--expense)' }} />
-        Expense
-      </span>
+      {entries.map(([c, label]) => (
+        <span key={label}>
+          <i style={{ background: c }} />
+          {label}
+        </span>
+      ))}
     </div>
   )
 }

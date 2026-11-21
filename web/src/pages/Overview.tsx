@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { api, cachedNames, type Me, type QueryDef, type Section } from '../api'
 import { Icon } from '../components/Icons'
+import { AccountLink, CategoryTag } from '../components/TopicLinks'
+import { TopicSearch } from '../components/TopicSearch'
 import {
   BarList,
   change,
@@ -128,6 +130,7 @@ export function Overview({ me }: { me: Me }) {
 
   return (
     <div className="page">
+      <TopicSearch period={period} />
       {stale !== undefined && stale > STALE_DAYS && (
         <div className="notice" role="status">
           <strong>The newest transaction is {stale} days old</strong> ({formatDate(me.last_record_date!.replace(/\./g, '-'), { year: true })}). Import the latest
@@ -242,7 +245,7 @@ export function Overview({ me }: { me: Me }) {
                     <th>Date</th>
                     <th>Client</th>
                     <th className="hide-narrow">Category</th>
-                    <th className="hide-narrow">Account</th>
+                    {!account && <th className="hide-narrow">Account</th>}
                     <th className="num">Amount</th>
                   </tr>
                 </thead>
@@ -260,15 +263,19 @@ export function Overview({ me }: { me: Me }) {
                         )}
                       </td>
                       <td className="hide-narrow">
-                        <span className="tag">{shortCategory(t.category)}</span>
+                        <CategoryTag id={t.category_id} name={t.category} period={period} />
                       </td>
-                      <td className="muted hide-narrow">{t.account}</td>
+                      {!account && (
+                        <td className="hide-narrow">
+                          <AccountLink def={periodDef} account={t.account_full} />
+                        </td>
+                      )}
                       <td className={`num strong${t.amount > 0 ? ' pos' : ''}`}>{formatMoney(t.amount, t.currency, { sign: true })}</td>
                     </tr>
                   ))}
                   {recent.data.transactions.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="empty">
+                      <td colSpan={account ? 4 : 5} className="empty">
                         No transactions in this period
                       </td>
                     </tr>

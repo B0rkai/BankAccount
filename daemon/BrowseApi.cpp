@@ -1,6 +1,7 @@
 #include "BrowseApi.h"
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -49,6 +50,9 @@ nlohmann::json TransactionToJson(const Transaction& tr, const AccountManager& mg
 	const Currency* currency = MakeCurrency(tr.GetCurrencyType());
 	nlohmann::json j;
 	j["account"] = Utf8(printed[Transaction::ACCOUNT_NAME]);
+	// The full "Bank::Name": short names repeat across banks, and it's what an accounts filter takes.
+	const INameResolve& names = mgr; // privately-overridden; go through the interface
+	j["account_full"] = Utf8(names.GetName(QueryTopic::ACCOUNT, tr.GetAccountId()));
 	j["date"] = IsoDate(tr.GetDate());
 	j["type"] = Utf8(printed[Transaction::TYPE]);
 	j["client"] = Utf8(printed[Transaction::CLIENT]);
@@ -106,13 +110,21 @@ QueryApiResult ListTransactions(const std::string& request_body, const AccountMa
 		}
 		result.push_back(tr);
 	}
+	// Newest first by default; "largest" orders by size, in HUF at the issue date's rate so a
+	// foreign-currency amount compares fairly, the newer first between equals.
+	std::reverse(result.begin(), result.end());
+	if (ReadString(body, "order") == "largest") {
+		auto huf = [](const Transaction* tr) {
+			return std::abs(static_cast<int64_t>(Money(tr->GetCurrencyType(), tr->GetAmount()).GetValue(HUF, tr->GetDate())));
+		};
+		std::stable_sort(result.begin(), result.end(), [&](const Transaction* a, const Transaction* b) { return huf(a) > huf(b); });
+	}
 	nlohmann::json out;
 	out["total"] = result.size();
 	out["offset"] = offset;
 	out["transactions"] = nlohmann::json::array();
-	// Newest first: walk the oldest-first result from the back.
 	for (size_t i = offset; i < result.size() && i < offset + limit; ++i) {
-		out["transactions"].push_back(TransactionToJson(*result[result.size() - 1 - i], mgr));
+		out["transactions"].push_back(TransactionToJson(*result[i], mgr));
 	}
 	return { 200, out.dump() };
 }

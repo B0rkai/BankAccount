@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api, cachedNames, type QueryDef } from '../api'
 import { NamePicker } from '../components/NamePicker'
-import { clientLink, displayName, transactionsLink, useNameIndex } from '../drill'
-import { formatCount, formatDate, formatMoney, RELATIVE_PERIODS, shortCategory } from '../format'
+import { AccountLink, CategoryTag, ClientName, periodOf } from '../components/TopicLinks'
+import { displayName, useNameIndex } from '../drill'
+import { formatCount, formatDate, formatMoney, RELATIVE_PERIODS } from '../format'
 import { useAsync } from '../hooks'
 import { describeRange } from '../periods'
 import { linkHandler, navigate } from '../router'
@@ -33,12 +34,13 @@ export function Transactions({ params }: { params: URLSearchParams }) {
   const clientNames = useAsync(() => cachedNames('clients'), 'clients')
   const categoryNames = useAsync(() => cachedNames('categories'), 'categories')
 
-  const go = (next: QueryDef, nextSearch = search, nextDir = direction) => {
+  const linkTo = (next: QueryDef, nextSearch = search, nextDir = direction) => {
     const p = new URLSearchParams({ q: JSON.stringify(JSON.parse(JSON.stringify(next))) })
     if (nextSearch) p.set('search', nextSearch)
     if (nextDir) p.set('dir', nextDir)
-    navigate(`/transactions?${p}`, { replace: true })
+    return `/transactions?${p}`
   }
+  const go = (next: QueryDef, nextSearch = search, nextDir = direction) => navigate(linkTo(next, nextSearch, nextDir), { replace: true })
   const set = (patch: Partial<QueryDef>) => go({ ...def, ...patch })
 
   // Typing searches once it pauses.
@@ -59,6 +61,17 @@ export function Transactions({ params }: { params: URLSearchParams }) {
   const dateMode = def.relative_period ? def.relative_period : def.date_from ? 'custom' : ''
   const total = page.data?.total ?? 0
   const filtered = JSON.stringify(def) !== JSON.stringify(DEFAULT) || search || direction
+  const rows = page.data?.transactions ?? []
+
+  // A column every matching transaction has the same value in - the filter pins it to one, or
+  // all of them fit on this page and agree - says nothing, so it goes.
+  const exactOne = (values: string[] | undefined, excluded: boolean | undefined) => !excluded && values?.length === 1 && /^#\d+$/.test(values[0])
+  const allSame = (pick: (t: (typeof rows)[number]) => string | number) => rows.length > 0 && offset === 0 && total <= PAGE && rows.every((t) => pick(t) === pick(rows[0]))
+  const showClient = !(exactOne(def.clients, def.exclude_clients) || allSame((t) => t.client_id))
+  const showCategory = !(exactOne(def.categories, def.exclude_categories) || allSame((t) => t.category_id))
+  const showAccount = !(def.accounts?.length === 1 || allSame((t) => t.account_full))
+  const columns = 4 + Number(showCategory) + Number(showAccount)
+  const period = periodOf(def)
 
   return (
     <div className="page">
@@ -165,46 +178,44 @@ export function Transactions({ params }: { params: URLSearchParams }) {
               <thead>
                 <tr>
                   <th className="hide-narrow">Date</th>
-                  <th>Client</th>
-                  <th className="hide-narrow">Category</th>
+                  <th>{showClient ? 'Client' : 'Note'}</th>
+                  {showCategory && <th className="hide-narrow">Category</th>}
                   <th className="hide-narrow">Type</th>
-                  <th className="hide-narrow">Account</th>
+                  {showAccount && <th className="hide-narrow">Account</th>}
                   <th className="num">Amount</th>
                 </tr>
               </thead>
               <tbody className={page.loading ? 'stale' : undefined}>
-                {page.data?.transactions.map((t, i) => {
-                  const byCategory = transactionsLink({ def: { ...def, categories: [`#${t.category_id}`], exclude_categories: undefined } })
+                {rows.map((t, i) => {
+                  const note = [t.description, t.memo].filter(Boolean).join(' · ')
                   return (
                     <tr key={`${offset}:${i}`}>
                       <td className="muted nowrap hide-narrow">{formatDate(t.date, { year: true })}</td>
                       <td className="fill">
-                        {t.client ? (
-                          <a className="strong clip" href={clientLink(t.client_id)} onClick={linkHandler(clientLink(t.client_id))}>
-                            {t.client}
-                          </a>
-                        ) : (
-                          <div className="strong">—</div>
-                        )}
+                        {showClient ? <ClientName id={t.client_id} name={t.client} /> : <div className="strong clip">{note || t.type}</div>}
                         <div className="muted small clip">
                           <span className="show-narrow-inline">{formatDate(t.date, { year: true })}</span>
-                          {(t.description || t.memo) && <span>{[t.description, t.memo].filter(Boolean).join(' · ')}</span>}
+                          {showClient && note && <span>{note}</span>}
                         </div>
                       </td>
-                      <td className="hide-narrow">
-                        <a className="tag" href={byCategory} onClick={linkHandler(byCategory)} title={`Only ${t.category}`}>
-                          {shortCategory(t.category)}
-                        </a>
-                      </td>
+                      {showCategory && (
+                        <td className="hide-narrow">
+                          <CategoryTag id={t.category_id} name={t.category} period={period} />
+                        </td>
+                      )}
                       <td className="muted hide-narrow">{t.type}</td>
-                      <td className="muted hide-narrow">{t.account}</td>
+                      {showAccount && (
+                        <td className="hide-narrow">
+                          <AccountLink account={t.account_full} href={linkTo({ ...def, accounts: [t.account_full] })} />
+                        </td>
+                      )}
                       <td className={`num strong nowrap${t.amount > 0 ? ' pos' : ''}`}>{formatMoney(t.amount, t.currency, { sign: true })}</td>
                     </tr>
                   )
                 })}
                 {page.data?.transactions.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="empty">
+                    <td colSpan={columns} className="empty">
                       No transactions match
                     </td>
                   </tr>

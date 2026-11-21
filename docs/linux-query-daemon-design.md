@@ -497,7 +497,8 @@ only the favorites files are writable.
   as `2025-Q3` turned back into dates, `web/src/periods.ts`) and Income/Expense side.
 - **Transactions**: `search` (case- and accent-insensitive across client, notes, type, category and
   account, or an amount such as "12 990" — `MatchesSearch()`, independent of the C locale) and
-  `direction` (`in`/`out`). The page keeps all its state in the URL.
+  `direction` (`in`/`out`), and `order: "largest"` (by size, in HUF at the issue date's rate;
+  newest first otherwise). The page keeps all its state in the URL.
 - **Comparisons**: the overview compares its totals with the period before and the same period a
   year earlier; a period still running is compared over the same number of days. The browser
   resolves relative periods with the same rules as `RelativePeriod.cpp`.
@@ -517,6 +518,19 @@ only the favorites files are writable.
   income and shown apart as "other money in"; net and the savings rate follow the narrower income.
   Both lists hold category ids, not names, and the code no longer guesses "Internal Transfer"-like
   categories by name - nothing is left out until it's chosen.
+- **Topic search and links** (2026-11-21): a "Find a client or category" box on the overview and
+  on client/category pages jumps straight to a page (case- and accent-insensitive, names starting
+  with the text first). One rule for names everywhere: a client or category name opens its page; a
+  number (bar, cell, KPI) or an account name, which has no page, opens the transactions behind it,
+  narrowed to that account. Client and category pages break their money down by account (and by
+  category / client), or say "All on <account>" when there is only one, and list their top 5
+  transactions on their main side (payments, or money received for an employer-like one).
+  Their period charts switch between bars, lines and net (remembered per browser) and can draw a
+  least-squares trend line per series, the running month or year left out of the fit, with a
+  one-line reading ("Spending falling about 21 577 Ft a month"). A transaction list drops a
+  column every matching row agrees on - the filter pins it, or all results fit on one page and
+  share it. Transaction rows carry `account_full` ("Bank::Name"): short names repeat across banks,
+  and the full one is what an `accounts` filter takes.
 - **Favorites** (`daemon/FavoritesStore.h`): the files are re-read when they change on disk, so
   desktop edits appear without a restart. `POST`/`DELETE /favorites/queries|reports` edit the raw
   JSON array, keeping every other entry exactly as it is, never overwrite a file that isn't a JSON

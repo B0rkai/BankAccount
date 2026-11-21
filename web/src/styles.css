@@ -373,3 +373,27 @@ a.tag:hover { background: var(--accent-soft); color: var(--accent-strong); }
   }
   .tabbar a[aria-current='page'] { color: var(--accent); }
 }
+
+/* Find a client or category */
+.topic-search { position: relative; display: flex; align-items: center; gap: 8px; max-width: 420px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-2); }
+.topic-search:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.topic-search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 9px 0; font-size: 14px; }
+.topic-search input:focus-visible { outline: none; }
+.topic-results { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.14); }
+.topic-results a { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 6px; color: var(--text); }
+.topic-results a.active { background: var(--accent-soft); }
+.topic-results .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-results .empty { padding: 8px 10px; }
+.only-one { margin: 12px 0 0; }
+.subhead { margin-top: 22px; }
+a.quiet-link { color: var(--text-2); }
+a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
+@media (max-width: 760px) { .topic-search { max-width: none; } }
+
+/* Topic pages: chart type and trend */
+.chart-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.segmented.small button { padding: 5px 10px; min-height: 30px; font-size: 12px; }
+.toggle { border: 1px dashed var(--border-strong); background: transparent; color: var(--text-2); border-radius: 8px; padding: 5px 10px; min-height: 30px; font-size: 12px; font-weight: 500; cursor: pointer; }
+.toggle[aria-pressed='true'] { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+.trend-caption { margin: 10px 0 0; }
+.card-head .head-right { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }

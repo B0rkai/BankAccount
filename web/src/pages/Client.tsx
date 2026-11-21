@@ -1,8 +1,12 @@
 import { useMemo } from 'react'
 import { api, type QueryDef } from '../api'
 import { ResultSection } from '../components/ResultSection'
-import { BarList, datasetTotal, goTo, IncomeExpenseBars, Kpi, Legend, periodSeries, topicTotals, transactionCount } from '../components/Summary'
-import { drillLink, transactionsLink, useNameIndex } from '../drill'
+import { Breakdown, topicLabels } from '../components/Breakdown'
+import { ChartStyleControls, datasetTotal, goTo, IncomeExpenseBars, Kpi, Legend, useChartStyle, periodSeries, transactionCount } from '../components/Summary'
+import { AccountLink, CategoryTag } from '../components/TopicLinks'
+import { LargestTransactions } from '../components/LargestTransactions'
+import { TopicSearch } from '../components/TopicSearch'
+import { categoryLink, drillLink, transactionsLink, useNameIndex } from '../drill'
 import { formatCount, formatDate, formatMoney, shortCategory } from '../format'
 import { useAsync } from '../hooks'
 import { linkHandler } from '../router'
@@ -13,6 +17,7 @@ import { Skeleton } from './Overview'
 export function Client({ params }: { params: URLSearchParams }) {
   const id = Number(params.get('id'))
   const names = useNameIndex()
+  const [style, setStyle] = useChartStyle()
   const name = names?.clientName.get(id)
   const def: QueryDef = useMemo(() => ({ clients: [`#${id}`] }), [id])
   const key = String(id)
@@ -21,6 +26,7 @@ export function Client({ params }: { params: URLSearchParams }) {
   const months = useAsync(() => api.query({ ...def, relative_period: 'last_12_months', period: 'monthly' }), key)
   const years = useAsync(() => api.query({ ...def, period: 'yearly' }), key)
   const categories = useAsync(() => api.query({ ...def, aggregate_by: ['category'] }), key)
+  const accounts = useAsync(() => api.query({ ...def, aggregate_by: ['account'] }), key)
   const newest = useAsync(() => api.transactions({ ...def, limit: 10 }), key)
   const payments = useAsync(() => api.transactions({ ...def, direction: 'out', limit: 1 }), key)
   const oldest = useAsync(
@@ -34,10 +40,15 @@ export function Client({ params }: { params: URLSearchParams }) {
   const count = transactionCount(section)
   const paymentCount = payments.data?.total
   const monthly = useMemo(() => periodSeries(months.data?.[0]), [months.data])
-  const categoryRows = topicTotals(categories.data?.[0], 'expense')
-    .concat(topicTotals(categories.data?.[0], 'income'))
-    .slice(0, 6)
-    .map((r) => ({ label: shortCategory(r.label), title: r.label, value: r.value, href: drillLink(def, { topic: 'category', label: r.label }, names) }))
+  // Mostly paid, or mostly paid by (an employer): the breakdowns follow suit.
+  const side = (income ?? 0) > Math.abs(spent ?? 0) ? 'income' : 'expense'
+  const categoryHref = (label: string) => {
+    const ids = names?.categoryIds.get(label)
+    return ids?.length === 1 ? categoryLink(ids[0], 'all') : undefined
+  }
+  // One category or one account only: the transactions below needn't name it on every line.
+  const oneCategory = topicLabels(categories.data?.[0]).length === 1
+  const oneAccount = topicLabels(accounts.data?.[0]).length === 1
 
   const all = transactionsLink({ def })
   const first = oldest.data?.transactions[0]?.date
@@ -47,6 +58,7 @@ export function Client({ params }: { params: URLSearchParams }) {
 
   return (
     <div className="page">
+      <TopicSearch />
       <div className="page-head">
         <div>
           <p className="eyebrow">Client</p>
@@ -77,12 +89,15 @@ export function Client({ params }: { params: URLSearchParams }) {
         <section className="card grow-2">
           <div className="card-head">
             <h2>Last 12 months</h2>
-            <Legend />
+            <div className="head-right">
+              <Legend kind={style.kind} data={monthly} />
+              <ChartStyleControls style={style} onChange={setStyle} />
+            </div>
           </div>
           {months.loading ? (
             <Skeleton rows={5} />
           ) : monthly.labels.length ? (
-            <IncomeExpenseBars {...monthly} onPick={(i) => goTo(drillLink({ ...def, relative_period: 'last_12_months' }, { period: monthly.labels[i] }, names))} />
+            <IncomeExpenseBars {...monthly} kind={style.kind} trend={style.trend} onPick={(i) => goTo(drillLink({ ...def, relative_period: 'last_12_months' }, { period: monthly.labels[i] }, names))} />
           ) : (
             <p className="muted">Nothing in the last 12 months.</p>
           )}
@@ -90,11 +105,19 @@ export function Client({ params }: { params: URLSearchParams }) {
         <section className="card grow-1">
           <h2>Categories</h2>
           <p className="muted small">Where this client's transactions are filed</p>
-          {categories.loading ? <Skeleton rows={4} /> : categoryRows.length ? <BarList rows={categoryRows} colour="var(--accent)" /> : <p className="muted">None.</p>}
+          {categories.loading ? <Skeleton rows={4} /> : <Breakdown section={categories.data?.[0]} topic="category" side={side} href={categoryHref} label={shortCategory} limit={6} />}
+          <h2 className="subhead">Accounts</h2>
+          {accounts.loading ? (
+            <Skeleton rows={2} />
+          ) : (
+            <Breakdown section={accounts.data?.[0]} topic="account" side={side} href={(a) => transactionsLink({ def: { ...def, accounts: [a] } })} limit={6} />
+          )}
         </section>
       </div>
 
       {years.data?.map((s, i) => <ResultSection key={`${key}:${i}`} section={{ ...s, heading: 'By year' }} def={def} />)}
+
+      <LargestTransactions def={def} side={side} show={{ category: !oneCategory, account: !oneAccount }} period="all" />
 
       <section className="card">
         <div className="card-head">
@@ -110,8 +133,8 @@ export function Client({ params }: { params: URLSearchParams }) {
                 <tr>
                   <th>Date</th>
                   <th>Note</th>
-                  <th className="hide-narrow">Category</th>
-                  <th className="hide-narrow">Account</th>
+                  {!oneCategory && <th className="hide-narrow">Category</th>}
+                  {!oneAccount && <th className="hide-narrow">Account</th>}
                   <th className="num">Amount</th>
                 </tr>
               </thead>
@@ -120,10 +143,16 @@ export function Client({ params }: { params: URLSearchParams }) {
                   <tr key={i}>
                     <td className="muted nowrap">{formatDate(t.date, { year: true })}</td>
                     <td className="muted small fill"><span className="clip">{[t.description, t.memo].filter(Boolean).join(' · ') || t.type}</span></td>
-                    <td className="hide-narrow">
-                      <span className="tag">{shortCategory(t.category)}</span>
-                    </td>
-                    <td className="muted hide-narrow">{t.account}</td>
+                    {!oneCategory && (
+                      <td className="hide-narrow">
+                        <CategoryTag id={t.category_id} name={t.category} period="all" />
+                      </td>
+                    )}
+                    {!oneAccount && (
+                      <td className="hide-narrow">
+                        <AccountLink def={def} account={t.account_full} />
+                      </td>
+                    )}
                     <td className={`num strong nowrap${t.amount > 0 ? ' pos' : ''}`}>{formatMoney(t.amount, t.currency, { sign: true })}</td>
                   </tr>
                 ))}
