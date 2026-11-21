@@ -144,10 +144,10 @@ const post = <T>(path: string, body: unknown) => request<T>(path, { method: 'POS
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' })
 const put = <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) })
 
-// The web app's settings, kept by the daemon so every browser shares them. Categories by name.
+// The web app's settings, kept by the daemon so every browser shares them. Category ids.
 export interface WebSettings {
-  excluded_categories?: string[] | null // left out of the overview's totals
-  income_categories?: string[] | null // counted as income; null or missing: every category
+  excluded_categories?: number[] | null // left out of the overview's totals
+  other_income_categories?: number[] | null // money in under these isn't counted as income
 }
 
 export type NameTopic = 'accounts' | 'categories' | 'clients'

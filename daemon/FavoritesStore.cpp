@@ -15,8 +15,8 @@
 namespace {
 
 constexpr size_t MAX_NAME_LENGTH = 120;
-constexpr size_t MAX_SETTING_NAMES = 1000;
-const std::set<std::string> SETTING_KEYS = { "excluded_categories", "income_categories" };
+constexpr size_t MAX_SETTING_IDS = 1000;
+const std::set<std::string> SETTING_KEYS = { "excluded_categories", "other_income_categories" };
 const std::set<std::string> CHART_KINDS = { "pie", "doughnut", "polar_area", "bar", "stacked_bar", "line" };
 const std::set<std::string> CHART_SIDES = { "net", "income", "expense" };
 
@@ -269,10 +269,10 @@ QueryApiResult FavoritesStore::SaveSettings(const std::string& request_body) {
 		if (!SETTING_KEYS.count(key)) {
 			return MakeErrorResult(400, "Unknown setting '" + key + "'");
 		}
-		bool names = value.is_null() || (value.is_array() && value.size() <= MAX_SETTING_NAMES &&
-			std::all_of(value.begin(), value.end(), [](const nlohmann::json& v) { return v.is_string() && v.get<std::string>().size() <= 200; }));
-		if (!names) {
-			return MakeErrorResult(400, "Setting '" + key + "' must be a list of names");
+		bool ids = value.is_null() || (value.is_array() && value.size() <= MAX_SETTING_IDS &&
+			std::all_of(value.begin(), value.end(), [](const nlohmann::json& v) { return v.is_number_unsigned() && v.get<uint64_t>() < INVALID_ID; }));
+		if (!ids) {
+			return MakeErrorResult(400, "Setting '" + key + "' must be a list of category ids");
 		}
 	}
 	std::lock_guard<std::mutex> lock(m_mutex);

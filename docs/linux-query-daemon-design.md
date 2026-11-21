@@ -439,8 +439,9 @@ now:
 - `allowed_kinds`/`colour`/`palette`/`others_colour` come from `ChartPresentation.h`, so the
   frontend carries no chart-kind rules or colours of its own: a dataset's `colour` is used when the
   chart has a single entry, the shared categorical `palette` (by rank) when it has several topics.
-- `native` is one `ChartData` per currency present; `converted` (only when there's more than one
-  currency) is, per target currency, every currency's data exchanged into it - each transaction
+- `native` is one `ChartData` per currency present; `converted` (when there's more than one
+  currency, or a single one that isn't HUF - then HUF is a target too, so totals can always be
+  added up in HUF) is, per target currency, every currency's data exchanged into it - each transaction
   at its own date's MNB rate, as the query aggregates (`ChartSeries::m_exchanged`) - and merged (`MergeConvertedToCurrency()` in the GUI-free
   [include/ChartConversion.h](../include/ChartConversion.h) - the same code the desktop
   `ChartTabPanel`'s "Convert all to this currency" checkbox uses). `default_currency` is HUF when
@@ -510,11 +511,12 @@ only the favorites files are writable.
   12 months up to it.
 - **Settings page** (2026-11-21): `/settings`, saved by the daemon (`GET`/`PUT /api/v1/settings`,
   `web_settings.json` next to the favorites) so the phone and the LAN browser share them. It moved
-  the overview's left-out categories off per-browser storage (the first load still picks them up
-  from there), and adds which categories count as income: the overview's and year in review's
-  income is those categories only, with the rest of the money coming in (loans, money passed on
-  through the accounts) shown apart as "other money in"; net and the savings rate follow the
-  narrower income.
+  the overview's left-out categories off per-browser storage (the first load moves them to the
+  server), and adds a second list of the same kind, "not income": money in under those categories
+  (loans, money passed on through the accounts) is left out of the overview's and year in review's
+  income and shown apart as "other money in"; net and the savings rate follow the narrower income.
+  Both lists hold category ids, not names, and the code no longer guesses "Internal Transfer"-like
+  categories by name - nothing is left out until it's chosen.
 - **Favorites** (`daemon/FavoritesStore.h`): the files are re-read when they change on disk, so
   desktop edits appear without a restart. `POST`/`DELETE /favorites/queries|reports` edit the raw
   JSON array, keeping every other entry exactly as it is, never overwrite a file that isn't a JSON

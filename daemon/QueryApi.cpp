@@ -84,13 +84,21 @@ nlohmann::json ChartDatasetsToJson(const ChartResult& result, ChartShape shape) 
 		for (const auto& pair : by_currency) {
 			dj["native"].push_back(ChartDataToJson(pair.second));
 		}
-		// Only meaningful with something to merge - a single-currency dataset's "converted" view
-		// would just be its native one again.
+		// Everything in one currency: one view per currency present. A single-currency dataset
+		// needs none - unless that currency isn't HUF, when the HUF view is what the web app's
+		// totals add up (next to its own currency, which stays the default).
 		dj["converted"] = nlohmann::json::array();
-		if (by_currency.size() > 1) {
-			for (const auto& pair : by_currency) {
-				dj["converted"].push_back(ChartDataToJson(MergeConvertedToCurrency(by_currency, pair.first, shape)));
-			}
+		std::vector<CurrencyType> targets;
+		for (const auto& pair : by_currency) {
+			targets.push_back(pair.first);
+		}
+		if (by_currency.size() == 1 && !by_currency.count(HUF)) {
+			targets.push_back(HUF);
+		} else if (by_currency.size() == 1) {
+			targets.clear();
+		}
+		for (CurrencyType target : targets) {
+			dj["converted"].push_back(ChartDataToJson(MergeConvertedToCurrency(by_currency, target, shape)));
 		}
 		datasets.push_back(std::move(dj));
 	}

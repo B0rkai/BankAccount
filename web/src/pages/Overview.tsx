@@ -22,7 +22,7 @@ import { formatCount, formatDate, formatMoney, periodTitle, shortCategory } from
 import { useAsync, useStoredState } from '../hooks'
 import { comparisonsFor, describeRange } from '../periods'
 import { linkHandler } from '../router'
-import { incomeSplit, useSettings, type IncomeSplit } from '../settings'
+import { incomeSplit, useSettings, withoutExcluded, type IncomeSplit } from '../settings'
 
 const PERIODS = [
   { key: 'this_month', label: 'This month' },
@@ -45,12 +45,17 @@ export function daysSince(dotted: string | undefined): number | undefined {
   return Math.round((today.getTime() - d.getTime()) / 86_400_000)
 }
 
-// The categories the overview (and year in review) leave out of their totals - set on the settings
-// page; by default the "Internal Transfer"-like ones, which would otherwise count the same money as
-// spent and earned. null until the settings are loaded.
+// The categories (ids) the overview and year in review leave out of their totals - chosen on the
+// settings page; typically internal transfers, which would otherwise count the same money as spent
+// and earned. null until the settings are loaded.
 export function useExcludedCategories() {
   const settings = useSettings()
   return { excluded: settings ? (settings.excluded_categories ?? []) : null, settings }
+}
+
+// "Internal Transfer, Savings" - the left-out categories by their current names.
+export function excludedNames(excluded: number[] | null, names: NameIndex | undefined): string {
+  return (excluded ?? []).map((id) => shortCategory(names?.categoryName.get(id) ?? `#${id}`)).join(', ')
 }
 
 export function Overview({ me }: { me: Me }) {
@@ -61,17 +66,11 @@ export function Overview({ me }: { me: Me }) {
   const names = useNameIndex()
 
   const base: QueryDef = useMemo(() => {
-    const def: QueryDef = {}
-    if (account) def.accounts = [account]
-    if (excluded?.length) {
-      def.categories = excluded
-      def.exclude_categories = true
-    }
-    return def
+    return withoutExcluded(account ? { accounts: [account] } : {}, excluded ?? [])
   }, [account, excluded])
-  const split = useMemo(() => incomeSplit(settings, names), [settings, names])
-  const ready = excluded !== null && (!settings?.income_categories || !!names)
-  const key = JSON.stringify([period, base, ready, settings?.income_categories])
+  const split = useMemo(() => incomeSplit(settings), [settings])
+  const ready = excluded !== null
+  const key = JSON.stringify([period, base, ready, settings?.other_income_categories])
   // Until the settings are known, wait rather than show totals that change a moment later.
   const once = <T,>(load: () => Promise<T>) => () => (!ready ? new Promise<T>(() => {}) : load())
 
@@ -141,7 +140,7 @@ export function Overview({ me }: { me: Me }) {
           <h1>{periodTitle(period)}</h1>
           <p className="muted">
             {account || 'All accounts'} · amounts converted to HUF at issue-date rates
-            {excluded?.length ? ` · leaving out ${excluded.map(shortCategory).join(', ')}` : ''}
+            {excluded?.length ? ` · leaving out ${excludedNames(excluded, names)}` : ''}
           </p>
         </div>
         <div className="toolbar">
@@ -182,7 +181,7 @@ export function Overview({ me }: { me: Me }) {
           value={income !== undefined ? formatMoney(income, 'HUF') : undefined}
           colour="var(--income)"
           changes={comparisons.map((c, i) => change(income, realBefore(i), c.label, true, describeRange(c.range)))}
-          href={transactionsLink({ def: (split ? split.real(periodDef) : periodDef) ?? periodDef, direction: 'in' })}
+          href={transactionsLink({ def: split ? split.real(periodDef) : periodDef, direction: 'in' })}
           extra={split && otherIncome !== undefined ? <OtherIncome amount={otherIncome} href={transactionsLink({ def: split.other(periodDef), direction: 'in' })} /> : undefined}
         />
         <Kpi
@@ -301,16 +300,11 @@ export function Overview({ me }: { me: Me }) {
   )
 }
 
-// Income from the categories chosen in settings, for each query in `defs`; undefined when no
-// choice was made (every category is income, and the totals already say so).
-async function realIncome(split: IncomeSplit | undefined, defs: QueryDef[]): Promise<(number | undefined)[] | undefined> {
+// Income without the categories chosen as "not income" in settings, for each query in `defs`;
+// undefined when none were chosen (all of it is income, and the totals already say so).
+export async function realIncome(split: IncomeSplit | undefined, defs: QueryDef[]): Promise<number[] | undefined> {
   if (!split) return undefined
-  return Promise.all(
-    defs.map((d) => {
-      const narrowed = split.real(d)
-      return narrowed ? api.query(narrowed).then((r) => datasetTotal(r[0], 'income') ?? 0) : Promise.resolve(0)
-    }),
-  )
+  return Promise.all(defs.map((d) => api.query(split.real(d)).then((r) => datasetTotal(r[0], 'income') ?? 0)))
 }
 
 // The money that came in from categories not counted as income - loans, transfers, money passed on.

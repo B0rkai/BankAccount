@@ -122,19 +122,21 @@ invalid) — `ChangelogManifest::EntriesBetween()`/`AllEntries()` operate only o
 
 Persely's settings, next to its favorites (on borkai-server: `~/.local/share/bankaccount/`), read
 and replaced whole by `GET`/`PUT /api/v1/settings` (`daemon/FavoritesStore.h`). One JSON object;
-missing or malformed means defaults. Unknown keys are refused on save.
+missing or malformed means defaults. Unknown keys are refused on save. Categories are ids (the
+`ids` of `GET /api/v1/names?topic=categories`), never names, so renaming a category in the
+desktop app doesn't drop it.
 
 ```json
 {
-  "excluded_categories": ["Special::Internal Transfer"],
-  "income_categories": ["Business::Revenue", "Income::Salary"]
+  "excluded_categories": [28],
+  "other_income_categories": [27]
 }
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
-| `excluded_categories` | `string[]` \| `null` | Categories left out of the overview's and year in review's totals. Missing: the "Internal Transfer"-like categories. |
-| `income_categories` | `string[]` \| `null` | The categories counted as income; money in under any other category shows as "other money in". Missing or `null`: every category counts. |
+| `excluded_categories` | `number[]` \| `null` | Categories left out of the overview's and year in review's totals. Missing: none (a browser that still has the old per-browser list moves it here on first load). |
+| `other_income_categories` | `number[]` \| `null` | Money in under these isn't counted as income; it shows as "other money in". Missing or empty: all money in is income. |
 
 ## `db\favorite_queries.json`
 

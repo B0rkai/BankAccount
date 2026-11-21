@@ -20,7 +20,8 @@
 // can't leave half a file behind.
 //
 // It also keeps the web app's settings, `<dir>/web_settings.json`: one JSON object, so the phone and
-// the LAN browser agree on them. Settings name categories, as the desktop app shows them.
+// the LAN browser agree on them. Settings refer to categories by id, so a category renamed in the
+// desktop app keeps its place in them.
 class FavoritesStore {
 public:
 	explicit FavoritesStore(std::string dir);
@@ -42,9 +43,9 @@ public:
 
 	// GET /api/v1/settings: the settings object ({} before anything was saved).
 	QueryApiResult Settings();
-	// PUT /api/v1/settings: replaces the settings. Known keys only, each null or a list of names:
-	// "excluded_categories" (left out of the overview's totals), "income_categories" (the ones
-	// counted as income; null = every category). 400 for anything else.
+	// PUT /api/v1/settings: replaces the settings. Known keys only, each null or a list of category
+	// ids: "excluded_categories" (left out of the overview's totals), "other_income_categories"
+	// (money in under these isn't counted as income). 400 for anything else.
 	QueryApiResult SaveSettings(const std::string& request_body);
 
 private:

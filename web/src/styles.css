@@ -203,11 +203,12 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 }
 .fav-link:hover { background: var(--surface-2); color: var(--text); }
 .fav-link > span { display: flex; flex-direction: column; gap: 2px; }
-.check-list { list-style: none; margin: 12px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2px 24px; }
-.check-list label { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--grid); cursor: pointer; }
-.check-list label.disabled { cursor: default; opacity: 0.6; }
-.check-list input { width: 18px; height: 18px; accent-color: var(--income); flex: none; }
-.check-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0; }
+.chip-button {
+  font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px dashed var(--border-strong); background: transparent; color: var(--text);
+}
+.chip-button:hover { border-style: solid; }
 .income-text { color: var(--income); }
 .other-income { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .other-income:hover { color: var(--text); }

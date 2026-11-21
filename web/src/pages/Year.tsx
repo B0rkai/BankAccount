@@ -6,8 +6,8 @@ import { clientLink, drillLink, drillOrCategoryLink, transactionsLink, useNameIn
 import { formatMoney, shortCategory } from '../format'
 import { useAsync } from '../hooks'
 import { linkHandler } from '../router'
-import { incomeSplit } from '../settings'
-import { OtherIncome, Skeleton, useExcludedCategories } from './Overview'
+import { incomeSplit, withoutExcluded } from '../settings'
+import { excludedNames, OtherIncome, realIncome, Skeleton, useExcludedCategories } from './Overview'
 
 const yearDef = (year: number, base: QueryDef): QueryDef => ({ ...base, date_from: `${year}-01-01`, date_to: `${year}-12-31` })
 
@@ -19,34 +19,24 @@ export function Year({ params }: { params: URLSearchParams }) {
   const firstYear = useAsync(() => cachedFirstYear(), 'first-year')
   const { excluded, settings } = useExcludedCategories()
   const names = useNameIndex()
-  const split = useMemo(() => incomeSplit(settings, names), [settings, names])
-  const ready = excluded !== null && (!settings?.income_categories || !!names)
+  const split = useMemo(() => incomeSplit(settings), [settings])
+  const ready = excluded !== null
 
-  const base: QueryDef = useMemo(() => (excluded?.length ? { categories: excluded, exclude_categories: true } : {}), [excluded])
+  const base: QueryDef = useMemo(() => withoutExcluded({}, excluded ?? []), [excluded])
   const def = useMemo(() => yearDef(year, base), [year, base])
-  const key = JSON.stringify([year, base, ready, settings?.income_categories])
+  const key = JSON.stringify([year, base, ready, settings?.other_income_categories])
   const once = <T,>(load: () => Promise<T>) => () => (!ready ? new Promise<T>(() => {}) : load())
 
   const totals = useAsync(once(() => Promise.all([api.query(def), api.query(yearDef(year - 1, base))])), key)
   const months = useAsync(once(() => api.query({ ...def, period: 'monthly' })), key)
   const categories = useAsync(once(() => Promise.all([api.query({ ...def, aggregate_by: ['category'] }), api.query({ ...yearDef(year - 1, base), aggregate_by: ['category'] })])), key)
   const clients = useAsync(once(() => api.query({ ...def, aggregate_by: ['client'] })), key)
-  // Income from the categories chosen in settings, this year and the one before.
-  const real = useAsync(
-    once(() =>
-      split
-        ? Promise.all([def, yearDef(year - 1, base)].map((d) => {
-            const narrowed = split.real(d)
-            return narrowed ? api.query(narrowed).then((r) => datasetTotal(r[0], 'income') ?? 0) : Promise.resolve(0)
-          }))
-        : Promise.resolve(undefined),
-    ),
-    key,
-  )
+  // Income without the categories chosen as "not income" in settings, this year and the one before.
+  const real = useAsync(once(() => realIncome(split, [def, yearDef(year - 1, base)])), key)
 
   const [now, prev] = (totals.data ?? []).map((r) => r[0] as Section | undefined)
   const abs = (v: number | undefined) => (v === undefined ? undefined : Math.abs(v))
-  // Income counts only the categories chosen in settings (all of them when none are chosen); net
+  // Income leaves out the categories chosen as "not income" in settings; net
   // and the savings rate follow it.
   const incomeOf = (s: Section | undefined, i: number) => (split ? real.data?.[i] : datasetTotal(s, 'income'))
   const netOf = (s: Section | undefined, i: number) => {
@@ -118,7 +108,7 @@ export function Year({ params }: { params: URLSearchParams }) {
             {year === thisYear ? ' so far' : ''}
           </h1>
           <p className="muted">
-            All accounts · in HUF{excluded?.length ? ` · leaving out ${excluded.map(shortCategory).join(', ')}` : ''}
+            All accounts · in HUF{excluded?.length ? ` · leaving out ${excludedNames(excluded, names)}` : ''}
           </p>
         </div>
         <div className="toolbar">
@@ -148,7 +138,7 @@ export function Year({ params }: { params: URLSearchParams }) {
       {error && <div className="alert">{error}</div>}
 
       <div className="kpi-grid">
-        <Kpi label="Income" value={income !== undefined ? formatMoney(income, 'HUF') : undefined} colour="var(--income)" changes={prevHasData ? [change(income, incomeOf(prev, 1), vs, true)] : []} href={transactionsLink({ def: (split ? split.real(def) : def) ?? def, direction: 'in' })} extra={split && otherIncome !== undefined ? <OtherIncome amount={otherIncome} href={transactionsLink({ def: split.other(def), direction: 'in' })} /> : undefined} />
+        <Kpi label="Income" value={income !== undefined ? formatMoney(income, 'HUF') : undefined} colour="var(--income)" changes={prevHasData ? [change(income, incomeOf(prev, 1), vs, true)] : []} href={transactionsLink({ def: split ? split.real(def) : def, direction: 'in' })} extra={split && otherIncome !== undefined ? <OtherIncome amount={otherIncome} href={transactionsLink({ def: split.other(def), direction: 'in' })} /> : undefined} />
         <Kpi label="Spent" value={spent !== undefined ? formatMoney(Math.abs(spent), 'HUF') : undefined} colour="var(--expense)" changes={prevHasData ? [change(abs(spent), abs(datasetTotal(prev, 'expense')), vs, false)] : []} href={transactionsLink({ def, direction: 'out' })} />
         <Kpi label="Net" value={net !== undefined ? formatMoney(net, 'HUF', { sign: true }) : undefined} colour="var(--net)" changes={prevHasData ? [change(net, netOf(prev, 1), vs, true)] : []} />
         <Kpi

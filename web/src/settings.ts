@@ -1,33 +1,40 @@
 import { useEffect, useState } from 'react'
-import { api, cachedNames, type QueryDef, type WebSettings } from './api'
-import type { NameIndex } from './drill'
+import { api, cachedNameList, type QueryDef, type WebSettings } from './api'
 
 // The settings page's choices, shared by every page: loaded once, saved to the daemon (so the phone
-// and the LAN browser agree), and pushed to every page using them as soon as they change.
+// and the LAN browser agree), and pushed to every page using them as soon as they change. They hold
+// category ids, never names, so a category renamed in the desktop app keeps its place in them.
 
 let current: WebSettings | undefined
 let loading: Promise<WebSettings> | undefined
 const listeners = new Set<(s: WebSettings) => void>()
 
-// Before the settings were kept on the server, the overview's left-out categories lived in this
-// browser's storage; the first load picks them up from there.
-function fromBrowser(): string[] | undefined {
+// Before the settings were kept on the server, the overview's left-out categories were names in
+// this browser's storage. The first load turns them into ids and saves them on the server.
+async function fromBrowser(): Promise<number[] | undefined> {
+  let names: unknown
   try {
     const raw = window.localStorage.getItem('overview.excluded')
-    const value = raw ? (JSON.parse(raw) as unknown) : undefined
-    return Array.isArray(value) ? (value as string[]) : undefined
+    names = raw ? JSON.parse(raw) : undefined
   } catch {
     return undefined
   }
+  if (!Array.isArray(names) || !names.length) return undefined
+  const list = await cachedNameList('categories')
+  return names.flatMap((n) => {
+    const i = list.names.indexOf(n as string)
+    return i >= 0 && list.ids?.[i] !== undefined ? [list.ids[i]] : []
+  })
 }
 
-const DEFAULT_EXCLUDED = /internal transfer|belső átvezetés/i
-
 async function load(): Promise<WebSettings> {
-  const [saved, categories] = await Promise.all([api.settings(), cachedNames('categories').catch(() => [] as string[])])
-  const settings: WebSettings = { ...saved }
+  const settings: WebSettings = { ...(await api.settings()) }
   if (!Array.isArray(settings.excluded_categories)) {
-    settings.excluded_categories = fromBrowser() ?? categories.filter((c) => DEFAULT_EXCLUDED.test(c))
+    const moved = await fromBrowser().catch(() => undefined)
+    if (moved) {
+      settings.excluded_categories = moved
+      await api.saveSettings(settings).catch(() => {})
+    }
   }
   return settings
 }
@@ -63,7 +70,7 @@ export function useSettings(): WebSettings | undefined {
   const [value, setValue] = useState<WebSettings | undefined>(current)
   useEffect(() => {
     listeners.add(setValue)
-    loadSettings().then(setValue, () => setValue({ excluded_categories: [] }))
+    loadSettings().then(setValue, () => setValue({}))
     return () => {
       listeners.delete(setValue)
     }
@@ -71,29 +78,27 @@ export function useSettings(): WebSettings | undefined {
   return value
 }
 
-// Category names as exact "#id" filters (a name the db no longer has is kept as typed).
-function exact(names: string[], index: NameIndex | undefined): string[] {
-  return names.flatMap((n) => index?.categoryIds.get(n)?.map((id) => `#${id}`) ?? [n])
+export const asFilter = (ids: number[]) => ids.map((id) => `#${id}`)
+
+// A query leaving out the categories chosen in settings.
+export function withoutExcluded(def: QueryDef, excluded: number[]): QueryDef {
+  return excluded.length ? { ...def, categories: asFilter(excluded), exclude_categories: true } : def
 }
 
-// What counts as income: the categories chosen in settings, or everything when none are chosen.
-// `real` and `other` narrow a query (already leaving out the excluded categories) to each part.
+// Money in under the categories chosen as "not income" in settings is shown apart. `real` and
+// `other` narrow a query (already leaving out the excluded categories) to each part; undefined
+// when nothing was chosen, as all of it is income then.
 export interface IncomeSplit {
-  real: (def: QueryDef) => QueryDef | undefined // undefined: no income category chosen, so none
+  real: (def: QueryDef) => QueryDef
   other: (def: QueryDef) => QueryDef
 }
 
-export function incomeSplit(settings: WebSettings | undefined, index: NameIndex | undefined): IncomeSplit | undefined {
-  const chosen = settings?.income_categories
-  if (!chosen || !index) return undefined
-  const excluded = new Set(settings?.excluded_categories ?? [])
-  const income = exact(
-    chosen.filter((c) => !excluded.has(c)),
-    index,
-  )
-  const left = exact([...excluded], index)
+export function incomeSplit(settings: WebSettings | undefined): IncomeSplit | undefined {
+  const excluded = settings?.excluded_categories ?? []
+  const notIncome = (settings?.other_income_categories ?? []).filter((id) => !excluded.includes(id))
+  if (!notIncome.length) return undefined
   return {
-    real: (def) => (income.length ? { ...def, categories: income, exclude_categories: undefined } : undefined),
-    other: (def) => ({ ...def, categories: [...left, ...income], exclude_categories: true }),
+    real: (def) => ({ ...def, categories: asFilter([...excluded, ...notIncome]), exclude_categories: true }),
+    other: (def) => ({ ...def, categories: asFilter(notIncome), exclude_categories: undefined }),
   }
 }
