@@ -139,7 +139,7 @@ export function Category({ params }: { params: URLSearchParams }) {
           )}
         </section>
         <section className="card grow-1">
-          <h2>{side === 'income' ? 'Paid by' : 'Paid to'}</h2>
+          <h2>Clients</h2>
           <p className="muted small">{periodLabelFor(period, custom)}</p>
           {clients.loading ? <Skeleton rows={6} /> : <Breakdown section={clients.data?.[0]} topic="client" side={side} href={clientHref} label={(l) => l || '(no client)'} />}
         </section>

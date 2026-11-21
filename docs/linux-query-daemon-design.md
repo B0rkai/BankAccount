@@ -523,7 +523,8 @@ only the favorites files are writable.
   with the text first). One rule for names everywhere: a client or category name opens its page; a
   number (bar, cell, KPI) or an account name, which has no page, opens the transactions behind it,
   narrowed to that account. Client and category pages break their money down by account (and by
-  category / client), or say "All on <account>" when there is only one, and list their top 5
+  category / client) - money out and money in apart when it went both ways - or say "All on
+  <account>" when there is only one, and list their top 5
   transactions on their main side (payments, or money received for an employer-like one).
   Their period charts switch between bars, lines and net (remembered per browser) and can draw a
   least-squares trend line per series, the running month or year left out of the fit, with a

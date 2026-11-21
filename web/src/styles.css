@@ -397,3 +397,5 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .toggle[aria-pressed='true'] { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
 .trend-caption { margin: 10px 0 0; }
 .card-head .head-right { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.breakdown-side + .breakdown-side { margin-top: 18px; }
+.breakdown-side h3 { margin: 12px 0 10px; font-weight: 600; text-transform: none; }

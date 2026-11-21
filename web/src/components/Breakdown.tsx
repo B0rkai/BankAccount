@@ -12,7 +12,8 @@ export function topicLabels(section: Section | undefined): string[] {
 const ALL = { account: 'All on', client: 'All with', category: 'All under' }
 
 // Where a client's or a category's money went, per account (or per client, per category): bars
-// when there are several, one line naming the only one otherwise. `side` picks the bars' totals.
+// when there are several - money out and money in apart, `side` first - one line naming the
+// only one otherwise.
 export function Breakdown({
   section,
   topic,
@@ -48,13 +49,20 @@ export function Breakdown({
       </p>
     )
   }
-  // Mostly the other side (a category spent from but rarely paid into): bars for whichever has some.
-  const rows = topicTotals(section, side)
-  const shown = rows.length ? rows : topicTotals(section, side === 'income' ? 'expense' : 'income')
+  // Both ways when money went both ways, the page's main side first, each under its own heading.
+  const names = topic === 'client' ? { expense: 'Paid to', income: 'Paid by' } : { expense: 'Spent', income: 'Received' }
+  const sides = (side === 'income' ? (['income', 'expense'] as const) : (['expense', 'income'] as const)).map((k) => ({ key: k, rows: topicTotals(section, k) })).filter((x) => x.rows.length)
   return (
-    <BarList
-      colour="var(--accent)"
-      rows={shown.slice(0, limit).map((r) => ({ label: label(r.label) || '—', title: r.label, value: r.value, href: href(r.label) }))}
-    />
+    <>
+      {sides.map(({ key, rows }) => (
+        <div key={key} className="breakdown-side">
+          <h3 className="muted small">{names[key]}</h3>
+          <BarList
+            colour={key === 'income' ? 'var(--income)' : 'var(--expense)'}
+            rows={rows.slice(0, limit).map((r) => ({ label: label(r.label) || '—', title: r.label, value: r.value, href: href(r.label) }))}
+          />
+        </div>
+      ))}
+    </>
   )
 }
