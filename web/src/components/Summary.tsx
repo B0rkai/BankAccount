@@ -122,9 +122,11 @@ export function IncomeExpenseBars({ labels, income, expense, height = 260, onPic
   const config: ChartConfiguration | null = useMemo(() => {
     if (!labels.length) return null
     const css = getComputedStyle(document.documentElement)
+    // Months as "Mar", or "Mar 25" when the chart spans more than one year.
+    const manyYears = new Set(labels.map((l) => l.slice(0, 4))).size > 1
     const short = labels.map((l) => {
       const d = new Date(`${l}-01T00:00:00`)
-      return /^\d{4}-\d{2}$/.test(l) && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-GB', { month: 'short' }) : l
+      return /^\d{4}-\d{2}$/.test(l) && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-GB', { month: 'short', year: manyYears ? '2-digit' : undefined }) : l
     })
     return {
       type: 'bar',

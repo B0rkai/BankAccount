@@ -69,8 +69,8 @@ A second, non-MSBuild build lives alongside the Windows solution: the top-level 
 a read-only subset of `BankAccountCore` for Linux (no import/mutation/Windows-only file-locking
 code) plus `daemon/`, an HTTP+JSON server (vendored [cpp-httplib](https://github.com/yhirose/cpp-httplib)
 as `include/httplib.h`) exposing the `Query` engine under `/api/v1`, and serving `web/` — "Persely", a
-React + TypeScript + Vite web app (Overview/Explore/Transactions/Reports, client and
-year-in-review pages) over the live db — read-only except for its own favorites files
+React + TypeScript + Vite web app (Overview/Explore/Transactions/Reports, client, category
+and year-in-review pages) over the live db — read-only except for its own favorites files
 (`daemon/FavoritesStore.h`, kept on the server's disk, not shared with the desktop app). It
 listens twice: a tailnet port behind `tailscale serve` (trusts `Tailscale-User-Login`, allowlisted)
 and a LAN port (shared password, session cookie) — `daemon/WebAuth.h`. Ships as one Docker image

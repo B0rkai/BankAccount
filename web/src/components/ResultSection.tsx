@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { DatasetKey, QueryDef, Section } from '../api'
 import { buildChartConfig, currencyChoices, defaultCurrencyChoice, KIND_LABELS, pickData } from '../charts'
-import { drillLink, sectionTopic, useNameIndex, type Drill } from '../drill'
+import { drillOrCategoryLink, sectionTopic, useNameIndex, type Drill } from '../drill'
 import { useThemeColours } from '../hooks'
 import { bucketRange } from '../periods'
 import { navigate } from '../router'
@@ -26,7 +26,8 @@ const SLICE_KINDS = new Set(['pie', 'doughnut', 'polar_area'])
 
 // One result section: its chart (when the section has chart data) above its table. Every chart
 // draws exactly one dataset - Net, Income or Expense. With `def` (the query that produced it),
-// selecting a bar, slice or table cell opens the transactions behind that number.
+// selecting a bar, slice or table cell opens the transactions behind that number - or, for a
+// category, its page.
 export function ResultSection({ section, pref, def }: { section: Section; pref?: ChartPreference; def?: QueryDef }) {
   const theme = useThemeColours()
   const names = useNameIndex()
@@ -64,7 +65,7 @@ export function ResultSection({ section, pref, def }: { section: Section; pref?:
           } else {
             drill.label = labels[index]
           }
-          const href = drillLink(def, drill, names)
+          const href = drillOrCategoryLink(def, drill, names)
           if (href) navigate(href)
         }
       : undefined
@@ -79,7 +80,7 @@ export function ResultSection({ section, pref, def }: { section: Section; pref?:
           if (bucketRange(header)) drill.period = header
           if (header === 'Income') drill.side = 'income'
           if (header === 'Expense') drill.side = 'expense'
-          return drillLink(def, drill, names)
+          return drillOrCategoryLink(def, drill, names)
         }
       : undefined
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, onUnauthorized, type Me } from './api'
 import { Icon, type IconName } from './components/Icons'
 import { formatDate, formatDateTime } from './format'
+import { Category } from './pages/Category'
 import { Client } from './pages/Client'
 import { Explore } from './pages/Explore'
 import { Login } from './pages/Login'
@@ -91,6 +92,7 @@ export function App() {
         {route === 'reports' && <Reports />}
         {route === 'client' && <Client params={params} />}
         {route === 'year' && <Year params={params} />}
+        {route === 'category' && <Category params={params} />}
         <footer className="footer muted small">Persely · BankAccount {me.version} · read-only view of the desktop database (favorites can be saved)</footer>
       </main>
 

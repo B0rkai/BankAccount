@@ -18,7 +18,7 @@ import {
   topicTotals,
   transactionCount,
 } from '../components/Summary'
-import { clientLink, drillLink, transactionsLink, useNameIndex, type NameIndex } from '../drill'
+import { clientLink, drillLink, drillOrCategoryLink, transactionsLink, useNameIndex, type NameIndex } from '../drill'
 import { formatCount, formatDate, formatMoney, periodTitle, shortCategory } from '../format'
 import { useAsync, useStoredState } from '../hooks'
 import { comparisonsFor, describeRange } from '../periods'
@@ -116,7 +116,7 @@ export function Overview({ me }: { me: Me }) {
         title: b.label,
         value: b.value,
         others: b.others,
-        href: b.others ? undefined : drillLink(periodDef, { topic: 'category', label: b.label, side: 'expense' }, names),
+        href: b.others ? undefined : drillOrCategoryLink(periodDef, { topic: 'category', label: b.label, side: 'expense' }, names),
       })),
     [byCategory.data, names, periodDef],
   )
@@ -327,7 +327,7 @@ function CategoryTrends({ section, loading, base, names }: { section: Section | 
   }, [section])
 
   const range: QueryDef = { ...base, relative_period: 'last_12_months' }
-  const link = (name: string) => drillLink(range, { topic: 'category', label: name, side: 'expense' }, names) ?? '/transactions'
+  const link = (name: string) => drillOrCategoryLink(range, { topic: 'category', label: name, side: 'expense' }, names) ?? '/transactions'
   // Leave out small categories, whose percentages swing wildly on a single purchase.
   const meaningful = rows.filter((r) => Math.max(r.usual, r.lastMonth) >= 10_000)
   const grew = [...meaningful].filter((r) => r.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 3)

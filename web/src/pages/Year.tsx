@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { api, cachedFirstYear, type QueryDef, type Section } from '../api'
 import { Icon } from '../components/Icons'
 import { BarList, change, datasetTotal, foldBars, formatPct, goTo, IncomeExpenseBars, Kpi, Legend, periodSeries, topicTotals } from '../components/Summary'
-import { clientLink, drillLink, transactionsLink, useNameIndex } from '../drill'
+import { clientLink, drillLink, drillOrCategoryLink, transactionsLink, useNameIndex } from '../drill'
 import { formatMoney, shortCategory } from '../format'
 import { useAsync } from '../hooks'
 import { linkHandler } from '../router'
@@ -55,7 +55,7 @@ export function Year({ params }: { params: URLSearchParams }) {
     value: r.value,
     others: r.others,
     note: spentTotal ? ` ${Math.round((r.value / spentTotal) * 100)}%` : undefined,
-    href: r.others ? undefined : drillLink(def, { topic: 'category', label: r.label, side: 'expense' }, names),
+    href: r.others ? undefined : drillOrCategoryLink(def, { topic: 'category', label: r.label, side: 'expense' }, names),
   }))
   const clientBars = topicTotals(clients.data?.[0], 'expense')
     .slice(0, 10)
@@ -181,7 +181,7 @@ function YearMoves({ title, rows, def, names }: { title: string; rows: { label: 
       <h3>{title}</h3>
       {rows.length === 0 && <p className="muted small">Nothing notable.</p>}
       {rows.map((m) => {
-        const href = drillLink(def, { topic: 'category', label: m.label, side: 'expense' }, names) ?? '/transactions'
+        const href = drillOrCategoryLink(def, { topic: 'category', label: m.label, side: 'expense' }, names) ?? '/transactions'
         return (
           <a key={m.label} className="mover" href={href} onClick={linkHandler(href)}>
             <span className="mover-name" title={m.label}>

@@ -502,6 +502,12 @@ only the favorites files are writable.
   resolves relative periods with the same rules as `RelativePeriod.cpp`.
 - **New pages**: `/client?id=` and `/year?y=`, plus a category-trends card on the overview — all
   built from existing `/query` results.
+- **Category pages** (2026-11-21): `/category?id=` with `period=` (a relative keyword or `all`) or
+  `from`/`to`. A drill-down on a category (overview bars and trends, year in review, any
+  category-grouped result) opens this page over the dates the clicked number covers, instead of
+  the bare transaction list. A query also narrowed by account, client or type still opens
+  transactions, since the page would drop those filters. A period under ~3 months is charted as the
+  12 months up to it.
 - **Favorites** (`daemon/FavoritesStore.h`): the files are re-read when they change on disk, so
   desktop edits appear without a restart. `POST`/`DELETE /favorites/queries|reports` edit the raw
   JSON array, keeping every other entry exactly as it is, never overwrite a file that isn't a JSON

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { cachedNameList, type DatasetKey, type QueryDef } from './api'
-import { bucketRange, intersect, rangeOf } from './periods'
+import { bucketRange, intersect, rangeOf, type DateRange } from './periods'
 
 // Click-through: from a number in a chart or table to the transactions behind it. A drill-down
 // keeps the query's own filters and narrows them by what was clicked - a topic (category, client,
@@ -112,3 +112,32 @@ export function drillLink(base: QueryDef, drill: Drill, names: NameIndex | undef
 }
 
 export const clientLink = (id: number) => `/client?id=${id}`
+
+// A category's own page, over a relative period ("last_12_months"), a date range, or all time.
+export function categoryLink(id: number, period?: string | DateRange): string {
+  const params = new URLSearchParams({ id: String(id) })
+  if (typeof period === 'string') params.set('period', period)
+  else if (period) {
+    params.set('from', period.from)
+    params.set('to', period.to)
+  }
+  return `/category?${params}`
+}
+
+// A drill-down on a category goes to its page - charts as well as transactions - over the dates
+// the clicked number covers. A query narrowed by anything else (accounts, clients, types) keeps
+// going to its transactions, since the category page would drop those filters.
+export function categoryDrillLink(base: QueryDef, drill: Drill, names: NameIndex | undefined): string | undefined {
+  const label = drill.label?.trim()
+  if (drill.topic !== 'category' || !label || NOT_A_TOPIC.has(label)) return undefined
+  if (base.accounts?.length || base.clients?.length || base.types?.length) return undefined
+  const ids = names?.categoryIds.get(label)
+  if (ids?.length !== 1) return undefined
+  const bucket = drill.period ? bucketRange(drill.period) : undefined
+  if (bucket) return categoryLink(ids[0], intersect(bucket, rangeOf(base)))
+  if (base.relative_period) return categoryLink(ids[0], base.relative_period)
+  return categoryLink(ids[0], rangeOf(base) ?? 'all')
+}
+
+// Where a click on a number goes: a category's page when it is one, else its transactions.
+export const drillOrCategoryLink = (base: QueryDef, drill: Drill, names: NameIndex | undefined) => categoryDrillLink(base, drill, names) ?? drillLink(base, drill, names)
