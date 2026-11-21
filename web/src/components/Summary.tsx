@@ -1,5 +1,5 @@
 import type { ChartConfiguration } from 'chart.js'
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import type { Section } from '../api'
 import { fold, pickHuf } from '../charts'
 import { formatMoney, formatMoneyCompact } from '../format'
@@ -84,15 +84,23 @@ export function ChangeBadge({ c }: { c: Change }) {
   )
 }
 
-export function Kpi({ label, value, sub, colour, changes = [], href }: { label: string; value?: string; sub?: string; colour?: string; changes?: (Change | undefined)[]; href?: string }) {
+// A headline number. With `extra` (a line holding links of its own) only the number links to
+// `href`, since links can't nest; otherwise the whole card does.
+export function Kpi({ label, value, sub, colour, changes = [], href, extra }: { label: string; value?: string; sub?: string; colour?: string; changes?: (Change | undefined)[]; href?: string; extra?: ReactNode }) {
   const shown = changes.filter((c): c is Change => !!c)
   const body = (
     <>
       <h2>{label}</h2>
       {value !== undefined ? (
-        <div className="kpi-value" style={{ color: colour }}>
-          {value}
-        </div>
+        extra && href ? (
+          <a className="kpi-value" style={{ color: colour }} href={href} onClick={linkHandler(href)}>
+            {value}
+          </a>
+        ) : (
+          <div className="kpi-value" style={{ color: colour }}>
+            {value}
+          </div>
+        )
       ) : (
         <div className="skeleton-line wide" />
       )}
@@ -104,9 +112,10 @@ export function Kpi({ label, value, sub, colour, changes = [], href }: { label: 
         </div>
       )}
       {sub && <div className="muted small">{sub}</div>}
+      {extra}
     </>
   )
-  return href ? (
+  return href && !extra ? (
     <a className="card kpi kpi-link" href={href} onClick={linkHandler(href)}>
       {body}
     </a>

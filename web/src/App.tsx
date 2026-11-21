@@ -9,6 +9,7 @@ import { Login } from './pages/Login'
 import { daysSince, Overview, STALE_DAYS } from './pages/Overview'
 import { Reports } from './pages/Reports'
 import { Transactions } from './pages/Transactions'
+import { Settings } from './pages/Settings'
 import { Year } from './pages/Year'
 import { linkHandler, menuRoute, ROUTES, useRoute } from './router'
 
@@ -93,6 +94,7 @@ export function App() {
         {route === 'client' && <Client params={params} />}
         {route === 'year' && <Year params={params} />}
         {route === 'category' && <Category params={params} />}
+        {route === 'settings' && <Settings />}
         <footer className="footer muted small">Persely · BankAccount {me.version} · read-only view of the desktop database (favorites can be saved)</footer>
       </main>
 

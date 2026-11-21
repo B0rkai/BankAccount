@@ -1,7 +1,6 @@
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import { api, cachedNames, type Me, type QueryDef, type Section } from '../api'
 import { Icon } from '../components/Icons'
-import { NamePicker } from '../components/NamePicker'
 import {
   BarList,
   change,
@@ -23,6 +22,7 @@ import { formatCount, formatDate, formatMoney, periodTitle, shortCategory } from
 import { useAsync, useStoredState } from '../hooks'
 import { comparisonsFor, describeRange } from '../periods'
 import { linkHandler } from '../router'
+import { incomeSplit, useSettings, type IncomeSplit } from '../settings'
 
 const PERIODS = [
   { key: 'this_month', label: 'This month' },
@@ -45,25 +45,18 @@ export function daysSince(dotted: string | undefined): number | undefined {
   return Math.round((today.getTime() - d.getTime()) / 86_400_000)
 }
 
-// The categories the overview (and year in review) leave out of their totals - by default the
-// "Internal Transfer"-like ones, which would otherwise count the same money as spent and earned.
+// The categories the overview (and year in review) leave out of their totals - set on the settings
+// page; by default the "Internal Transfer"-like ones, which would otherwise count the same money as
+// spent and earned. null until the settings are loaded.
 export function useExcludedCategories() {
-  const [excluded, setExcluded] = useStoredState<string[] | null>('overview.excluded', null)
-  const categories = useAsync(() => cachedNames('categories'), 'categories')
-  useEffect(() => {
-    if (excluded === null && categories.data) {
-      setExcluded(categories.data.filter((c) => /internal transfer|belső átvezetés/i.test(c)))
-    } else if (excluded === null && categories.error) {
-      setExcluded([])
-    }
-  }, [excluded, categories.data, categories.error, setExcluded])
-  return { excluded, setExcluded, categories: categories.data ?? [] }
+  const settings = useSettings()
+  return { excluded: settings ? (settings.excluded_categories ?? []) : null, settings }
 }
 
 export function Overview({ me }: { me: Me }) {
   const [period, setPeriod] = useStoredState('overview.period', 'this_month')
   const [account, setAccount] = useStoredState('overview.account', '')
-  const { excluded, setExcluded, categories } = useExcludedCategories()
+  const { excluded, settings } = useExcludedCategories()
   const accounts = useAsync(() => cachedNames('accounts'), 'accounts')
   const names = useNameIndex()
 
@@ -76,9 +69,11 @@ export function Overview({ me }: { me: Me }) {
     }
     return def
   }, [account, excluded])
-  const key = JSON.stringify([period, base, excluded === null])
-  // Until the default exclusions are known, wait rather than show totals that change a moment later.
-  const once = <T,>(load: () => Promise<T>) => () => (excluded === null ? new Promise<T>(() => {}) : load())
+  const split = useMemo(() => incomeSplit(settings, names), [settings, names])
+  const ready = excluded !== null && (!settings?.income_categories || !!names)
+  const key = JSON.stringify([period, base, ready, settings?.income_categories])
+  // Until the settings are known, wait rather than show totals that change a moment later.
+  const once = <T,>(load: () => Promise<T>) => () => (!ready ? new Promise<T>(() => {}) : load())
 
   const comparisons = useMemo(() => comparisonsFor(period), [period])
   const totals = useAsync(once(() => api.query({ ...base, relative_period: period })), key)
@@ -87,12 +82,17 @@ export function Overview({ me }: { me: Me }) {
   const trend = useAsync(once(() => api.query({ ...base, relative_period: 'last_12_months', period: 'monthly' })), key)
   const categoryTrend = useAsync(once(() => api.query({ ...base, relative_period: 'last_12_months', period: 'monthly', aggregate_by: ['category'] })), key)
   const recent = useAsync(once(() => api.transactions({ ...base, relative_period: period, limit: 8 })), key)
+  // Income from the categories chosen in settings, now and in each comparison period.
+  const real = useAsync(once(() => realIncome(split, [{ ...base, relative_period: period }, ...comparisons.map((c) => ({ ...base, date_from: c.range.from, date_to: c.range.to }))])), key)
   const favorites = useAsync(() => api.favoriteQueries(), 'favorites')
 
   const summary = totals.data?.[0]
   const spent = datasetTotal(summary, 'expense')
-  const income = datasetTotal(summary, 'income')
-  const net = datasetTotal(summary, 'net')
+  const allIncome = datasetTotal(summary, 'income')
+  const income = split ? real.data?.[0] : allIncome
+  const otherIncome = split && allIncome !== undefined && income !== undefined ? allIncome - income : undefined
+  const net = income !== undefined && spent !== undefined ? income - Math.abs(spent) : undefined
+  const realBefore = (i: number) => (split ? real.data?.[i + 1] : datasetTotal(before.data?.[i]?.[0], 'income'))
   const count = transactionCount(summary)
   const changes = (metric: (s: Section | undefined) => number | undefined, now: number | undefined, higherIsGood: boolean | undefined) =>
     comparisons.map((c, i) => change(now, metric(before.data?.[i]?.[0]), c.label, higherIsGood, describeRange(c.range)))
@@ -181,14 +181,19 @@ export function Overview({ me }: { me: Me }) {
           label="Income"
           value={income !== undefined ? formatMoney(income, 'HUF') : undefined}
           colour="var(--income)"
-          changes={changes((s) => datasetTotal(s, 'income'), income, true)}
-          href={transactionsLink({ def: periodDef, direction: 'in' })}
+          changes={comparisons.map((c, i) => change(income, realBefore(i), c.label, true, describeRange(c.range)))}
+          href={transactionsLink({ def: (split ? split.real(periodDef) : periodDef) ?? periodDef, direction: 'in' })}
+          extra={split && otherIncome !== undefined ? <OtherIncome amount={otherIncome} href={transactionsLink({ def: split.other(periodDef), direction: 'in' })} /> : undefined}
         />
         <Kpi
           label="Net"
           value={net !== undefined ? formatMoney(net, 'HUF', { sign: true }) : undefined}
           colour="var(--net)"
-          changes={changes((s) => datasetTotal(s, 'net'), net, true)}
+          changes={comparisons.map((c, i) => {
+            const inc = realBefore(i)
+            const out = absExpense(before.data?.[i]?.[0])
+            return change(net, inc !== undefined && out !== undefined ? inc - out : undefined, c.label, true, describeRange(c.range))
+          })}
           sub={net !== undefined && income ? (net >= 0 ? `Kept ${Math.round((net / income) * 100)}% of income` : 'Spent more than came in') : undefined}
         />
         <Kpi
@@ -290,13 +295,31 @@ export function Overview({ me }: { me: Me }) {
             </a>
           ))}
           {favorites.data?.length === 0 && <p className="muted">No favorite queries yet.</p>}
-          <details className="settings">
-            <summary>Overview settings</summary>
-            <NamePicker label="Leave these categories out of the totals" values={excluded ?? []} options={categories} onChange={setExcluded} placeholder="e.g. Internal Transfer" />
-          </details>
         </section>
       </div>
     </div>
+  )
+}
+
+// Income from the categories chosen in settings, for each query in `defs`; undefined when no
+// choice was made (every category is income, and the totals already say so).
+async function realIncome(split: IncomeSplit | undefined, defs: QueryDef[]): Promise<(number | undefined)[] | undefined> {
+  if (!split) return undefined
+  return Promise.all(
+    defs.map((d) => {
+      const narrowed = split.real(d)
+      return narrowed ? api.query(narrowed).then((r) => datasetTotal(r[0], 'income') ?? 0) : Promise.resolve(0)
+    }),
+  )
+}
+
+// The money that came in from categories not counted as income - loans, transfers, money passed on.
+export function OtherIncome({ amount, href }: { amount: number; href: string }) {
+  if (amount <= 0) return <div className="muted small">No other money in</div>
+  return (
+    <a className="other-income" href={href} onClick={linkHandler(href)} title="Money in from categories not counted as income (Settings)">
+      + {formatMoney(amount, 'HUF')} other money in
+    </a>
   )
 }
 

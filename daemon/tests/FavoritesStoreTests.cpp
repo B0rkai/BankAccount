@@ -51,6 +51,26 @@ TEST_F(FavoritesStoreTests, SavingAQueryAddsItAndKeepsOtherEntriesAsTheyWere) {
 	EXPECT_EQ(store.Queries()[1].name, "New");
 }
 
+TEST_F(FavoritesStoreTests, SettingsStartEmptyAndSaveKnownKeysOnly) {
+	FavoritesStore store(dir.string());
+	EXPECT_EQ(store.Settings().body, "{}");
+
+	QueryApiResult saved = store.SaveSettings(R"({"excluded_categories": ["Internal Transfer"], "income_categories": ["Salary", "Gifts"]})");
+	ASSERT_EQ(saved.http_status, 200) << saved.body;
+	nlohmann::json read = nlohmann::json::parse(store.Settings().body);
+	EXPECT_EQ(read["income_categories"], nlohmann::json({ "Salary", "Gifts" }));
+	EXPECT_EQ(Read("web_settings.json"), read);
+
+	EXPECT_EQ(store.SaveSettings(R"({"income_categories": null})").http_status, 200);
+	EXPECT_TRUE(nlohmann::json::parse(store.Settings().body)["income_categories"].is_null());
+
+	EXPECT_EQ(store.SaveSettings(R"({"theme": "dark"})").http_status, 400);
+	EXPECT_EQ(store.SaveSettings(R"({"income_categories": [1, 2]})").http_status, 400);
+	EXPECT_EQ(store.SaveSettings(R"([])").http_status, 400);
+	// A refused save leaves the file as it was.
+	EXPECT_TRUE(Read("web_settings.json")["income_categories"].is_null());
+}
+
 TEST_F(FavoritesStoreTests, ATakenNameNeedsReplace) {
 	FavoritesStore store(dir.string());
 	ASSERT_EQ(store.SaveQuery(R"({"name": "Mine", "relative_period": "this_month"})").http_status, 200);

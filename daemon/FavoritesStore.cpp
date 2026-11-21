@@ -15,6 +15,8 @@
 namespace {
 
 constexpr size_t MAX_NAME_LENGTH = 120;
+constexpr size_t MAX_SETTING_NAMES = 1000;
+const std::set<std::string> SETTING_KEYS = { "excluded_categories", "income_categories" };
 const std::set<std::string> CHART_KINDS = { "pie", "doughnut", "polar_area", "bar", "stacked_bar", "line" };
 const std::set<std::string> CHART_SIDES = { "net", "income", "expense" };
 
@@ -100,7 +102,7 @@ bool WriteAtomically(const std::string& path, const std::string& content, std::s
 } // namespace
 
 FavoritesStore::FavoritesStore(std::string dir)
-	: m_queries_path(dir + "/favorite_queries.json"), m_reports_path(dir + "/favorite_reports.json") {}
+	: m_queries_path(dir + "/favorite_queries.json"), m_reports_path(dir + "/favorite_reports.json"), m_settings_path(dir + "/web_settings.json") {}
 
 void FavoritesStore::RefreshLocked() {
 	auto queries_mtime = MTime(m_queries_path);
@@ -240,4 +242,45 @@ QueryApiResult FavoritesStore::DeleteReport(const std::string& name) {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	QueryApiResult result = EditLocked(m_reports_path, name, nullptr, false);
 	return result.http_status == 200 ? QueryApiResult{ 200, R"({"ok":true})" } : result;
+}
+
+QueryApiResult FavoritesStore::Settings() {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	std::ifstream in(m_settings_path);
+	if (!in.is_open()) {
+		return { 200, "{}" };
+	}
+	std::stringstream buffer;
+	buffer << in.rdbuf();
+	nlohmann::json settings = nlohmann::json::parse(buffer.str(), nullptr, false);
+	if (settings.is_discarded() || !settings.is_object()) {
+		LogWarn("SETTINGS") << m_settings_path << " isn't a JSON object - using defaults";
+		return { 200, "{}" };
+	}
+	return { 200, settings.dump() };
+}
+
+QueryApiResult FavoritesStore::SaveSettings(const std::string& request_body) {
+	nlohmann::json body = nlohmann::json::parse(request_body, nullptr, false);
+	if (body.is_discarded() || !body.is_object()) {
+		return MakeErrorResult(400, "Malformed request: body must be a well-formed JSON object");
+	}
+	for (const auto& [key, value] : body.items()) {
+		if (!SETTING_KEYS.count(key)) {
+			return MakeErrorResult(400, "Unknown setting '" + key + "'");
+		}
+		bool names = value.is_null() || (value.is_array() && value.size() <= MAX_SETTING_NAMES &&
+			std::all_of(value.begin(), value.end(), [](const nlohmann::json& v) { return v.is_string() && v.get<std::string>().size() <= 200; }));
+		if (!names) {
+			return MakeErrorResult(400, "Setting '" + key + "' must be a list of names");
+		}
+	}
+	std::lock_guard<std::mutex> lock(m_mutex);
+	std::string error;
+	if (!WriteAtomically(m_settings_path, body.dump(2) + "\n", error)) {
+		LogError("SETTINGS") << "Couldn't write " << m_settings_path << ": " << error;
+		return MakeErrorResult(500, "Couldn't save the settings: " + error);
+	}
+	LogInfo("SETTINGS") << "Saved the web app's settings";
+	return { 200, body.dump() };
 }

@@ -6,7 +6,8 @@ import { clientLink, drillLink, drillOrCategoryLink, transactionsLink, useNameIn
 import { formatMoney, shortCategory } from '../format'
 import { useAsync } from '../hooks'
 import { linkHandler } from '../router'
-import { Skeleton, useExcludedCategories } from './Overview'
+import { incomeSplit } from '../settings'
+import { OtherIncome, Skeleton, useExcludedCategories } from './Overview'
 
 const yearDef = (year: number, base: QueryDef): QueryDef => ({ ...base, date_from: `${year}-01-01`, date_to: `${year}-12-31` })
 
@@ -16,29 +17,52 @@ export function Year({ params }: { params: URLSearchParams }) {
   const thisYear = new Date().getFullYear()
   const year = Number(params.get('y')) || thisYear - 1
   const firstYear = useAsync(() => cachedFirstYear(), 'first-year')
-  const { excluded } = useExcludedCategories()
+  const { excluded, settings } = useExcludedCategories()
   const names = useNameIndex()
+  const split = useMemo(() => incomeSplit(settings, names), [settings, names])
+  const ready = excluded !== null && (!settings?.income_categories || !!names)
 
   const base: QueryDef = useMemo(() => (excluded?.length ? { categories: excluded, exclude_categories: true } : {}), [excluded])
   const def = useMemo(() => yearDef(year, base), [year, base])
-  const key = JSON.stringify([year, base, excluded === null])
-  const once = <T,>(load: () => Promise<T>) => () => (excluded === null ? new Promise<T>(() => {}) : load())
+  const key = JSON.stringify([year, base, ready, settings?.income_categories])
+  const once = <T,>(load: () => Promise<T>) => () => (!ready ? new Promise<T>(() => {}) : load())
 
   const totals = useAsync(once(() => Promise.all([api.query(def), api.query(yearDef(year - 1, base))])), key)
   const months = useAsync(once(() => api.query({ ...def, period: 'monthly' })), key)
   const categories = useAsync(once(() => Promise.all([api.query({ ...def, aggregate_by: ['category'] }), api.query({ ...yearDef(year - 1, base), aggregate_by: ['category'] })])), key)
   const clients = useAsync(once(() => api.query({ ...def, aggregate_by: ['client'] })), key)
+  // Income from the categories chosen in settings, this year and the one before.
+  const real = useAsync(
+    once(() =>
+      split
+        ? Promise.all([def, yearDef(year - 1, base)].map((d) => {
+            const narrowed = split.real(d)
+            return narrowed ? api.query(narrowed).then((r) => datasetTotal(r[0], 'income') ?? 0) : Promise.resolve(0)
+          }))
+        : Promise.resolve(undefined),
+    ),
+    key,
+  )
 
   const [now, prev] = (totals.data ?? []).map((r) => r[0] as Section | undefined)
-  const income = datasetTotal(now, 'income')
-  const spent = datasetTotal(now, 'expense')
-  const net = datasetTotal(now, 'net')
-  const rate = (s: Section | undefined) => {
-    const i = datasetTotal(s, 'income')
-    const n = datasetTotal(s, 'net')
-    return i && n !== undefined ? (n / i) * 100 : undefined
-  }
   const abs = (v: number | undefined) => (v === undefined ? undefined : Math.abs(v))
+  // Income counts only the categories chosen in settings (all of them when none are chosen); net
+  // and the savings rate follow it.
+  const incomeOf = (s: Section | undefined, i: number) => (split ? real.data?.[i] : datasetTotal(s, 'income'))
+  const netOf = (s: Section | undefined, i: number) => {
+    const inc = incomeOf(s, i)
+    const out = abs(datasetTotal(s, 'expense'))
+    return inc !== undefined && out !== undefined ? inc - out : undefined
+  }
+  const rateOf = (s: Section | undefined, i: number) => {
+    const inc = incomeOf(s, i)
+    const n = netOf(s, i)
+    return inc && n !== undefined ? (n / inc) * 100 : undefined
+  }
+  const income = incomeOf(now, 0)
+  const spent = datasetTotal(now, 'expense')
+  const net = netOf(now, 0)
+  const otherIncome = split && now && income !== undefined ? (datasetTotal(now, 'income') ?? 0) - income : undefined
   const vs = `vs ${year - 1}`
   const prevHasData = prev !== undefined && (datasetTotal(prev, 'income') || datasetTotal(prev, 'expense'))
 
@@ -124,13 +148,13 @@ export function Year({ params }: { params: URLSearchParams }) {
       {error && <div className="alert">{error}</div>}
 
       <div className="kpi-grid">
-        <Kpi label="Income" value={income !== undefined ? formatMoney(income, 'HUF') : undefined} colour="var(--income)" changes={prevHasData ? [change(income, datasetTotal(prev, 'income'), vs, true)] : []} href={transactionsLink({ def, direction: 'in' })} />
+        <Kpi label="Income" value={income !== undefined ? formatMoney(income, 'HUF') : undefined} colour="var(--income)" changes={prevHasData ? [change(income, incomeOf(prev, 1), vs, true)] : []} href={transactionsLink({ def: (split ? split.real(def) : def) ?? def, direction: 'in' })} extra={split && otherIncome !== undefined ? <OtherIncome amount={otherIncome} href={transactionsLink({ def: split.other(def), direction: 'in' })} /> : undefined} />
         <Kpi label="Spent" value={spent !== undefined ? formatMoney(Math.abs(spent), 'HUF') : undefined} colour="var(--expense)" changes={prevHasData ? [change(abs(spent), abs(datasetTotal(prev, 'expense')), vs, false)] : []} href={transactionsLink({ def, direction: 'out' })} />
-        <Kpi label="Net" value={net !== undefined ? formatMoney(net, 'HUF', { sign: true }) : undefined} colour="var(--net)" changes={prevHasData ? [change(net, datasetTotal(prev, 'net'), vs, true)] : []} />
+        <Kpi label="Net" value={net !== undefined ? formatMoney(net, 'HUF', { sign: true }) : undefined} colour="var(--net)" changes={prevHasData ? [change(net, netOf(prev, 1), vs, true)] : []} />
         <Kpi
           label="Savings rate"
-          value={rate(now) !== undefined ? `${Math.round(rate(now)!)}%` : now ? '—' : undefined}
-          sub={rate(prev) !== undefined && prevHasData ? `${Math.round(rate(prev)!)}% in ${year - 1}` : 'Net as a share of income'}
+          value={rateOf(now, 0) !== undefined ? `${Math.round(rateOf(now, 0)!)}%` : now && net !== undefined ? '—' : undefined}
+          sub={rateOf(prev, 1) !== undefined && prevHasData ? `${Math.round(rateOf(prev, 1)!)}% in ${year - 1}` : 'Net as a share of income'}
         />
       </div>
 

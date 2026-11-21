@@ -317,7 +317,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		SendResult(res, ListFavoriteReports(ctx.favorites.Reports()));
 	});
 
-	// Saving and deleting favorites is the one thing the web app writes - never the database.
+	// Favorites and settings are the only things the web app writes - never the database.
 	server.Post("/api/v1/favorites/queries", [&ctx](const httplib::Request& req, httplib::Response& res) {
 		SendResult(res, ctx.favorites.SaveQuery(req.body));
 	});
@@ -332,6 +332,14 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 
 	server.Delete("/api/v1/favorites/reports", [&ctx](const httplib::Request& req, httplib::Response& res) {
 		SendResult(res, ctx.favorites.DeleteReport(req.get_param_value("name")));
+	});
+
+	server.Get("/api/v1/settings", [&ctx](const httplib::Request&, httplib::Response& res) {
+		SendResult(res, ctx.favorites.Settings());
+	});
+
+	server.Put("/api/v1/settings", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		SendResult(res, ctx.favorites.SaveSettings(req.body));
 	});
 
 	server.Get("/api/v1/favorites/queries/run", [&ctx](const httplib::Request& req, httplib::Response& res) {

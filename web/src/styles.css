@@ -203,9 +203,14 @@ input[type='checkbox'] { width: 18px; height: 18px; min-height: 0; accent-color:
 }
 .fav-link:hover { background: var(--surface-2); color: var(--text); }
 .fav-link > span { display: flex; flex-direction: column; gap: 2px; }
-.settings { margin-top: 6px; }
-.settings summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 6px 0; }
-.settings .field { margin-top: 8px; }
+.check-list { list-style: none; margin: 12px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2px 24px; }
+.check-list label { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--grid); cursor: pointer; }
+.check-list label.disabled { cursor: default; opacity: 0.6; }
+.check-list input { width: 18px; height: 18px; accent-color: var(--income); flex: none; }
+.check-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.income-text { color: var(--income); }
+.other-income { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.other-income:hover { color: var(--text); }
 
 /* ---- tables ---- */
 .table-wrap { overflow-x: auto; }
@@ -356,7 +361,7 @@ a.tag:hover { background: var(--accent-soft); color: var(--accent-strong); }
   .show-narrow-inline:not(:last-child)::after { content: " · "; }
   .changes .change { font-size: 12px; }
   .tabbar {
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
     background: var(--surface); border-top: 1px solid var(--border);
     padding: 4px 4px calc(6px + env(safe-area-inset-bottom));

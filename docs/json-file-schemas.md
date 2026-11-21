@@ -118,6 +118,24 @@ Root must be a JSON object, or the manifest is `valid = false` — same effectiv
 missing file. Within a valid root, a missing/non-array `released` just means no entries (not
 invalid) — `ChangelogManifest::EntriesBetween()`/`AllEntries()` operate only on whatever parsed.
 
+## `web_settings.json` (Linux web app only)
+
+Persely's settings, next to its favorites (on borkai-server: `~/.local/share/bankaccount/`), read
+and replaced whole by `GET`/`PUT /api/v1/settings` (`daemon/FavoritesStore.h`). One JSON object;
+missing or malformed means defaults. Unknown keys are refused on save.
+
+```json
+{
+  "excluded_categories": ["Special::Internal Transfer"],
+  "income_categories": ["Business::Revenue", "Income::Salary"]
+}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `excluded_categories` | `string[]` \| `null` | Categories left out of the overview's and year in review's totals. Missing: the "Internal Transfer"-like categories. |
+| `income_categories` | `string[]` \| `null` | The categories counted as income; money in under any other category shows as "other money in". Missing or `null`: every category counts. |
+
 ## `db\favorite_queries.json`
 
 > The Linux web app (Persely) keeps its own files in this format, separate from the desktop

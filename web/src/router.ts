@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react'
 // carries a page's state (so a query in Explore can be bookmarked), and navigate() pushes history
 // entries.
 
-export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year' | 'category'
+export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year' | 'category' | 'settings'
 
 export const ROUTES: { route: Route; path: string; label: string }[] = [
   { route: 'overview', path: '/', label: 'Overview' },
   { route: 'explore', path: '/explore', label: 'Explore' },
   { route: 'transactions', path: '/transactions', label: 'Transactions' },
   { route: 'reports', path: '/reports', label: 'Reports' },
+  { route: 'settings', path: '/settings', label: 'Settings' },
 ]
 
 // Pages reached by links rather than the menu, and the menu entry they belong under.

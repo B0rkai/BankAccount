@@ -9,7 +9,8 @@
                        "Persely: click any chart or table number for its transactions; transaction search; comparisons, category trends and a stale-data notice on the overview; client pages; year in review; save and delete favorites (the web app's own, kept on the server)",
                        "Persely: transaction lists fit a phone's width - long names end in an ellipsis, and the date moves under the name",
                        "Persely: 4-digit amounts are grouped too (3 380 Ft, not 3380 Ft)",
-                       "Persely: clicking a category opens its own page - month-by-month and yearly charts, who was paid, latest transactions - over the clicked period"
+                       "Persely: clicking a category opens its own page - month-by-month and yearly charts, who was paid, latest transactions - over the clicked period",
+                       "Persely: a Settings tab, shared by every device - choose which categories count as income (the rest shows as small grey 'other money in'; net and savings rate follow), and which are left out of the totals"
                    ],
     "released":  [
                      {

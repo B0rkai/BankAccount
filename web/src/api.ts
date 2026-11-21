@@ -142,6 +142,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const post = <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) })
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' })
+const put = <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) })
+
+// The web app's settings, kept by the daemon so every browser shares them. Categories by name.
+export interface WebSettings {
+  excluded_categories?: string[] | null // left out of the overview's totals
+  income_categories?: string[] | null // counted as income; null or missing: every category
+}
 
 export type NameTopic = 'accounts' | 'categories' | 'clients'
 export interface NameList {
@@ -189,6 +196,8 @@ export const api = {
   saveFavoriteReport: (report: FavoriteReport, replace = false) =>
     post<FavoriteReport>('/api/v1/favorites/reports', { ...report, replace }).then(favoritesChanged),
   deleteFavoriteQuery: (name: string) => del(`/api/v1/favorites/queries?name=${encodeURIComponent(name)}`).then(favoritesChanged),
+  settings: () => request<WebSettings>('/api/v1/settings'),
+  saveSettings: (settings: WebSettings) => put<WebSettings>('/api/v1/settings', settings),
   deleteFavoriteReport: (name: string) => del(`/api/v1/favorites/reports?name=${encodeURIComponent(name)}`).then(favoritesChanged),
 }
 

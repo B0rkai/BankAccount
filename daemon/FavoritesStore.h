@@ -18,6 +18,9 @@
 // anything hand-written. A file that isn't a JSON array is never overwritten. Each write goes to a
 // temporary file in the same folder that is then renamed over the old one, so a crash mid-write
 // can't leave half a file behind.
+//
+// It also keeps the web app's settings, `<dir>/web_settings.json`: one JSON object, so the phone and
+// the LAN browser agree on them. Settings name categories, as the desktop app shows them.
 class FavoritesStore {
 public:
 	explicit FavoritesStore(std::string dir);
@@ -37,6 +40,13 @@ public:
 	// DELETE /api/v1/favorites/reports?name=: 404 if missing.
 	QueryApiResult DeleteReport(const std::string& name);
 
+	// GET /api/v1/settings: the settings object ({} before anything was saved).
+	QueryApiResult Settings();
+	// PUT /api/v1/settings: replaces the settings. Known keys only, each null or a list of names:
+	// "excluded_categories" (left out of the overview's totals), "income_categories" (the ones
+	// counted as income; null = every category). 400 for anything else.
+	QueryApiResult SaveSettings(const std::string& request_body);
+
 private:
 	struct Cached {
 		std::filesystem::file_time_type mtime{};
@@ -50,6 +60,7 @@ private:
 
 	std::string m_queries_path;
 	std::string m_reports_path;
+	std::string m_settings_path;
 	std::mutex m_mutex;
 	Cached m_queries_cache;
 	Cached m_reports_cache;

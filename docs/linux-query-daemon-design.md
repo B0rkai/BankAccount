@@ -508,6 +508,13 @@ only the favorites files are writable.
   the bare transaction list. A query also narrowed by account, client or type still opens
   transactions, since the page would drop those filters. A period under ~3 months is charted as the
   12 months up to it.
+- **Settings page** (2026-11-21): `/settings`, saved by the daemon (`GET`/`PUT /api/v1/settings`,
+  `web_settings.json` next to the favorites) so the phone and the LAN browser share them. It moved
+  the overview's left-out categories off per-browser storage (the first load still picks them up
+  from there), and adds which categories count as income: the overview's and year in review's
+  income is those categories only, with the rest of the money coming in (loans, money passed on
+  through the accounts) shown apart as "other money in"; net and the savings rate follow the
+  narrower income.
 - **Favorites** (`daemon/FavoritesStore.h`): the files are re-read when they change on disk, so
   desktop edits appear without a restart. `POST`/`DELETE /favorites/queries|reports` edit the raw
   JSON array, keeping every other entry exactly as it is, never overwrite a file that isn't a JSON

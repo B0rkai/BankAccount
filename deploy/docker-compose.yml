@@ -19,7 +19,8 @@ services:
     volumes:
       # Read-only: the service never writes the db (the desktop app is its only writer).
       - "${BANKACCOUNT_DB_DIR:?}:/data:ro"
-      # The web app's own favorites (favorite_queries.json/favorite_reports.json), writable. A whole
+      # The web app's own favorites (favorite_queries.json/favorite_reports.json) and settings
+      # (web_settings.json), writable. A whole
       # folder rather than the two files: saving renames a new file over the old one, which a
       # single-file mount refuses.
       - "${BANKACCOUNT_FAVORITES_DIR:?}:/app/db"

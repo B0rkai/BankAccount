@@ -13,7 +13,7 @@ lives at `https://persely.tail61796b.ts.net`; the repo, image, container and env
 |---|---|
 | Live checkout (built from GitHub, detached at the deployed commit) | `~/bankaccount-live` |
 | Database (mounted read-only) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
-| The web app's favorites (its own, not the desktop app's; the only thing it writes) | `~/.local/share/bankaccount/favorite_{queries,reports}.json` |
+| The web app's favorites and settings (its own, not the desktop app's; the only things it writes) | `~/.local/share/bankaccount/favorite_{queries,reports}.json`, `web_settings.json` |
 | Secrets (allowed logins, LAN password hash; `chmod 600`) | `~/.config/bankaccount/web.env` |
 | Tailnet port (behind `tailscale serve`, identity headers trusted) | `127.0.0.1:8300` → `https://persely.tail61796b.ts.net` |
 | LAN port (plain HTTP, shared password) | `http://192.168.1.100:8400` |
