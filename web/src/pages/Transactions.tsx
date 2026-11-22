@@ -64,14 +64,37 @@ export function Transactions({ params }: { params: URLSearchParams }) {
   const rows = page.data?.transactions ?? []
 
   // A column every matching transaction has the same value in - the filter pins it to one, or
-  // all of them fit on this page and agree - says nothing, so it goes.
+  // all of them fit on this page and agree - moves above the list, said once. A single
+  // transaction keeps its columns: there's nothing to say once for.
   const exactOne = (values: string[] | undefined, excluded: boolean | undefined) => !excluded && values?.length === 1 && /^#\d+$/.test(values[0])
   const allSame = (pick: (t: (typeof rows)[number]) => string | number) => rows.length > 0 && offset === 0 && total <= PAGE && rows.every((t) => pick(t) === pick(rows[0]))
-  const showClient = !(exactOne(def.clients, def.exclude_clients) || allSame((t) => t.client_id))
-  const showCategory = !(exactOne(def.categories, def.exclude_categories) || allSame((t) => t.category_id))
-  const showAccount = !(def.accounts?.length === 1 || allSame((t) => t.account_full))
-  const columns = 4 + Number(showCategory) + Number(showAccount)
+  const shared = (pinned: boolean | undefined, same: boolean) => total > 1 && rows.length > 0 && (!!pinned || same)
+  const showClient = !shared(exactOne(def.clients, def.exclude_clients), allSame((t) => t.client_id))
+  const showCategory = !shared(exactOne(def.categories, def.exclude_categories), allSame((t) => t.category_id))
+  const showAccount = !shared(def.accounts?.length === 1, allSame((t) => t.account_full))
   const period = periodOf(def)
+  const first = rows[0]
+  const common = first && (!showClient || !showCategory || !showAccount) && (
+    <p className="common">
+      All{' '}
+      {!showClient && (
+        <span>
+          with {first.client ? <ClientName id={first.client_id} name={first.client} className="strong" /> : <strong>no client</strong>}
+        </span>
+      )}
+      {!showCategory && (
+        <span>
+          under <CategoryTag id={first.category_id} name={first.category} period={period} />
+        </span>
+      )}
+      {!showAccount && (
+        <span>
+          on <strong title={first.account_full}>{first.account_full}</strong>
+        </span>
+      )}
+    </p>
+  )
+  const columns = 4 + Number(showCategory) + Number(showAccount)
 
   return (
     <div className="page">
@@ -173,6 +196,8 @@ export function Transactions({ params }: { params: URLSearchParams }) {
         {page.loading && !page.data ? (
           <Skeleton rows={10} />
         ) : (
+          <>
+          {common}
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -223,6 +248,7 @@ export function Transactions({ params }: { params: URLSearchParams }) {
               </tbody>
             </table>
           </div>
+          </>
         )}
         {total > PAGE && (
           <div className="pager">

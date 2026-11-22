@@ -399,3 +399,5 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .card-head .head-right { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .breakdown-side + .breakdown-side { margin-top: 18px; }
 .breakdown-side h3 { margin: 12px 0 10px; font-weight: 600; text-transform: none; }
+.common { margin: 0 0 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.common span { display: inline-flex; align-items: center; gap: 6px; }

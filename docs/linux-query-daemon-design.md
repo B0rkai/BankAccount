@@ -528,9 +528,10 @@ only the favorites files are writable.
   transactions on their main side (payments, or money received for an employer-like one).
   Their period charts switch between bars, lines and net (remembered per browser) and can draw a
   least-squares trend line per series, the running month or year left out of the fit, with a
-  one-line reading ("Spending falling about 21 577 Ft a month"). A transaction list drops a
-  column every matching row agrees on - the filter pins it, or all results fit on one page and
-  share it. Transaction rows carry `account_full` ("Bank::Name"): short names repeat across banks,
+  one-line reading ("Spending falling about 21 577 Ft a month"). A transaction list moves a
+  column every matching row agrees on (the filter pins it, or all results fit on one page and
+  share it) to one line above the list - "All with LIDL under Groceries" - unless there is only
+  one transaction. Transaction rows carry `account_full` ("Bank::Name"): short names repeat across banks,
   and the full one is what an `accounts` filter takes.
 - **Favorites** (`daemon/FavoritesStore.h`): the files are re-read when they change on disk, so
   desktop edits appear without a restart. `POST`/`DELETE /favorites/queries|reports` edit the raw
