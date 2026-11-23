@@ -15,7 +15,8 @@
                        "Persely: client and category charts switch between bars, lines and net, with an optional trend line and a one-line reading of it",
                        "Persely: client and category breakdowns show money out and money in apart (paid to / paid by, spent / received) when it went both ways",
                        "Persely: a client, category or account every listed transaction shares is named once above the list, as a link; a single transaction keeps all its columns",
-                       "Linux daemon: a result in a single foreign currency also carries its HUF conversion, so Persely's totals no longer count euros as forints"
+                       "Linux daemon: a result in a single foreign currency also carries its HUF conversion, so Persely's totals no longer count euros as forints",
+                       "Persely: runs from its own SQLite database on the server, converted from BData.baf and verified identical (bankaccount-migrate, refreshed with deploy/migrate-db.sh); the server build is optimized, so queries answer 4-8x faster"
                    ],
     "released":  [
                      {

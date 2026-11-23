@@ -266,4 +266,28 @@ public:
 		}
 		m_logger.LogDebug() << size << " children loaded from file";
 	}
+
+	// Storage access (SqliteStore). ForEachStored() visits exactly the children StreamOut()
+	// writes - all but the built-in default (ID 0), if this manager has one. AppendLoaded() is
+	// StreamIn()'s per-child step: IDs are positions, so children must be appended in ID order,
+	// starting at FirstStoredId().
+	template <class Fn>
+	void ForEachStored(Fn&& fn) const {
+		for (const Child* child : m_children) {
+			if (m_hasDefault && (child->GetId() == Id::Type(0))) {
+				continue;
+			}
+			fn(*child);
+		}
+	}
+	Id::Type FirstStoredId() const {
+		return m_hasDefault ? 1 : 0;
+	}
+	Child& AppendLoaded(const Id id, const String& name, const String& group_name) {
+		m_children.push_back(new Child(id, name));
+		if (!group_name.empty()) {
+			m_children.back()->SetGroupName(group_name);
+		}
+		return *m_children.back();
+	}
 };

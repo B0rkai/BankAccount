@@ -37,6 +37,7 @@ public:
 	CurrencyType GetCurrencyType() const;
 	void AddDescription(const String& desc);
 	inline String GetDescription() const { return m_desc_ptr ? *m_desc_ptr : cStringEmpty; }
+	inline String GetMemo() const { return m_memo_ptr ? *m_memo_ptr : cStringEmpty; }
 	inline void SetDiscription(String* ptr) { m_desc_ptr = ptr; }
 
 	// Indices into the StringVector PrintDebug() returns - must stay in exactly this order

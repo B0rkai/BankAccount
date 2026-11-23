@@ -48,6 +48,11 @@ public:
 	// For UI listings: definitive keywords as-is, suggestion-tier ones with a trailing '*' -
 	// never exposes the internal marker convention outside this class.
 	StringVector GetDisplayKeywords() const;
+	// Storage access (SqliteStore): every stored keyword as its bare text plus tier (true =
+	// definitive), and the reverse. LoadKeyword() inserts exactly what was stored - unlike
+	// AddKeyword() it doesn't skip an empty keyword - so a load reproduces the saved set exactly.
+	std::vector<std::pair<String, bool>> GetKeywordsWithTier() const;
+	void LoadKeyword(const String& bare, bool definitive);
 	bool Merge(const MappedType* other);
 	virtual bool DoMerge(const MappedType* other) { return false; }; // optional for extra data
 	void Stream(std::ostream& out) const;

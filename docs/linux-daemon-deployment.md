@@ -12,7 +12,8 @@ lives at `https://persely.tail61796b.ts.net`; the repo, image, container and env
 | What | Where |
 |---|---|
 | Live checkout (built from GitHub, detached at the deployed commit) | `~/bankaccount-live` |
-| Database (mounted read-only) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
+| Database: Persely's own SQLite file, on the system drive (mounted read-only for now) | `~/.local/share/bankaccount/data/bankaccount.db` |
+| The desktop app's database it is converted from (read only by `deploy/migrate-db.sh`) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
 | The web app's favorites and settings (its own, not the desktop app's; the only things it writes) | `~/.local/share/bankaccount/favorite_{queries,reports}.json`, `web_settings.json` |
 | Secrets (allowed logins, LAN password hash; `chmod 600`) | `~/.config/bankaccount/web.env` |
 | Tailnet port (behind `tailscale serve`, identity headers trusted) | `127.0.0.1:8300` → `https://persely.tail61796b.ts.net` |
@@ -43,6 +44,26 @@ deploy/deploy.sh <ref>      # a branch, tag, or an older commit to roll back to
 It checks out the commit in `~/bankaccount-live`, builds the image (which also runs the daemon's
 unit tests — a failure stops the deploy), starts the new container and waits for it to report
 healthy. The container restarts on its own after a reboot (`restart: unless-stopped`).
+
+## The database
+
+Since 2026-11-23 Persely reads its own SQLite database (`bankaccount.db`, see
+[persely-sqlite-import-design.md](persely-sqlite-import-design.md)), not the desktop app's `.baf`.
+It is a converted copy: `deploy/migrate-db.sh` runs `bankaccount-migrate` from the live image,
+which converts `BData.baf`, reads the result back, checks it is identical to the `.baf`'s
+content, and only then puts it in place. The first deploy without a database runs it by itself.
+
+Until Persely can import bank files, new transactions still come in through the desktop app.
+After saving there, refresh Persely's copy:
+
+```bash
+deploy/migrate-db.sh
+```
+
+The running service notices the new file within a few seconds; no redeploy needed. It refuses to
+replace a database that Persely has changed itself (none can yet - that starts with the design
+doc's story 2), so it can never throw away work done in Persely. The `.baf` itself is never
+written to.
 
 ## First-time setup (done once)
 

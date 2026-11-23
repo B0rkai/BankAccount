@@ -15,9 +15,11 @@
 // Instead this calls the same protected StreamIn() BankAccountFile itself calls, with none of
 // the journal bookkeeping around it.
 //
-// --db can point at either layout: a path ending in ".baf" is opened via BafArchive::ReadInto
-// (the vendored, portable ZipLib - see docs/ziplib-vendoring.md); anything else is read as the
-// plain-text db\BankAccount.txt export. See docs/db-encryption-design.md for why the .baf
+// --db can point at any of three layouts: a path ending in ".db"/".sqlite" is the SQLite
+// database bankaccount-migrate writes (SqliteStore, read-only here - see
+// docs/persely-sqlite-import-design.md); ".baf" is opened via BafArchive::ReadInto (the vendored,
+// portable ZipLib - see docs/ziplib-vendoring.md); anything else is read as the plain-text
+// db\BankAccount.txt export. See docs/db-encryption-design.md for why the .baf
 // password ("pass") isn't real security yet.
 class DaemonDb {
 public:

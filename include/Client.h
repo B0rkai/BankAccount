@@ -19,6 +19,8 @@ public:
 // Write Access
 	void AddAccountNumber(const AccountNumber& acc);
 	void AddAccountNumber(const String& acc);
+	// Storage access (SqliteStore): the same insert StreamIn() does for each stored number.
+	void LoadAccountNumber(const String& acc);
 	virtual bool DoMerge(const Client* other);
 
 // Query

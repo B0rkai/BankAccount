@@ -6,11 +6,17 @@
 #include <string_view>
 #include "BafArchive.h"
 #include "Logger.h"
+#include "SqliteStore.h"
 
 namespace {
+	bool HasExtension(const std::string& path, std::string_view ext) {
+		return path.size() >= ext.size() && path.compare(path.size() - ext.size(), ext.size(), ext) == 0;
+	}
 	bool HasBafExtension(const std::string& path) {
-		static constexpr std::string_view kExt = ".baf";
-		return path.size() >= kExt.size() && path.compare(path.size() - kExt.size(), kExt.size(), kExt) == 0;
+		return HasExtension(path, ".baf");
+	}
+	bool HasSqliteExtension(const std::string& path) {
+		return HasExtension(path, ".db") || HasExtension(path, ".sqlite");
 	}
 }
 
@@ -28,7 +34,13 @@ bool DaemonDb::ReloadIfChanged() {
 	}
 
 	auto candidate = std::make_unique<Manager>(m_null_journal);
-	if (HasBafExtension(m_path)) {
+	if (HasSqliteExtension(m_path)) {
+		SqliteStore store(m_path, SqliteStore::Mode::ReadOnly);
+		if (!store.LoadAll(*candidate)) {
+			LogWarn("DAEMONDB") << "Could not load SQLite database '" << m_path << "': " << store.LastError();
+			return false;
+		}
+	} else if (HasBafExtension(m_path)) {
 		bool loaded = BafArchive::ReadInto(m_path, [&candidate](std::istream& in) {
 			candidate->LoadFrom(in);
 		});

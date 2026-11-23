@@ -4,7 +4,7 @@ name: bankaccount
 services:
   app:
     image: bankaccount:live
-    # Runs as the server's user, who can read the db share.
+    # Runs as the server's user, who owns the database folder.
     user: "${BANKACCOUNT_UID:?}:${BANKACCOUNT_GID:?}"
     # 8300: only `tailscale serve` (svc:persely) may reach it, as its identity headers are
     # trusted there. 8400: the home LAN (the server's LAN address only, never 0.0.0.0), where
@@ -17,7 +17,9 @@ services:
     environment:
       BANKACCOUNT_DB: "/data/${BANKACCOUNT_DB_FILE:?}"
     volumes:
-      # Read-only: the service never writes the db (the desktop app is its only writer).
+      # Persely's SQLite database (deploy/migrate-db.sh). Read-only until Persely writes to it
+      # (docs/persely-sqlite-import-design.md, story 2). A whole folder, so a refreshed file
+      # renamed over the old one shows up inside.
       - "${BANKACCOUNT_DB_DIR:?}:/data:ro"
       # The web app's own favorites (favorite_queries.json/favorite_reports.json) and settings
       # (web_settings.json), writable. A whole

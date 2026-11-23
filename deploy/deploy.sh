@@ -3,14 +3,17 @@
 # Usage: deploy/deploy.sh [ref]     (default origin/master; any ref that is on GitHub)
 #
 # The live service is built from its own checkout (~/bankaccount-live), never the dev one. It
-# only reads the database share (mounted read-only); the desktop app stays its only writer.
+# reads its own SQLite database on the system drive (mounted read-only for now); the first deploy
+# without one converts the desktop app's BData.baf into it (deploy/migrate-db.sh).
 set -euo pipefail
 
 LIVE_DIR=${BANKACCOUNT_LIVE_DIR:-$HOME/bankaccount-live}
 REPO=https://github.com/B0rkai/BankAccount.git
-# The folder holding BData.baf (on the share, read-only to the service).
-export BANKACCOUNT_DB_DIR=${BANKACCOUNT_DB_DIR:-/mnt/storage/dev/BankAccount/db}
-export BANKACCOUNT_DB_FILE=${BANKACCOUNT_DB_FILE:-BData.baf}
+# Persely's SQLite database, on the system drive - never on the share.
+export BANKACCOUNT_DB_DIR=${BANKACCOUNT_DB_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bankaccount/data}
+export BANKACCOUNT_DB_FILE=${BANKACCOUNT_DB_FILE:-bankaccount.db}
+# The desktop app's database it is converted from (deploy/migrate-db.sh).
+export BANKACCOUNT_BAF=${BANKACCOUNT_BAF:-/mnt/storage/dev/BankAccount/db/BData.baf}
 # The web app's own favorite_queries.json/favorite_reports.json - on the system disk, not shared
 # with the desktop app; the one folder the service writes to.
 export BANKACCOUNT_FAVORITES_DIR=${BANKACCOUNT_FAVORITES_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bankaccount}
@@ -29,7 +32,7 @@ if [ ! -f "$BANKACCOUNT_ENV_FILE" ]; then
     exit 1
 fi
 
-mkdir -p "$BANKACCOUNT_FAVORITES_DIR"
+mkdir -p "$BANKACCOUNT_FAVORITES_DIR" "$BANKACCOUNT_DB_DIR"
 [ -d "$LIVE_DIR/.git" ] || git clone -q "$REPO" "$LIVE_DIR"
 git -C "$LIVE_DIR" fetch -q --prune origin
 commit=$(git -C "$LIVE_DIR" rev-parse --verify "$ref^{commit}")
@@ -43,6 +46,11 @@ echo "deploying $(git -C "$LIVE_DIR" log -1 --format='%h %s')"
 # The build also runs the daemon's unit tests; a failing test stops the deploy here.
 docker build -q -f "$LIVE_DIR/deploy/Dockerfile" -t bankaccount:live \
     --label "org.opencontainers.image.revision=$commit" "$LIVE_DIR" >/dev/null
+
+if [ ! -f "$BANKACCOUNT_DB_DIR/$BANKACCOUNT_DB_FILE" ]; then
+    echo "no $BANKACCOUNT_DB_DIR/$BANKACCOUNT_DB_FILE yet - converting $BANKACCOUNT_BAF"
+    "$LIVE_DIR/deploy/migrate-db.sh"
+fi
 
 docker compose -f "$LIVE_DIR/deploy/docker-compose.yml" up -d --remove-orphans --quiet-pull
 

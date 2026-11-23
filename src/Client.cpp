@@ -19,6 +19,10 @@ void Client::AddAccountNumber(const AccountNumber& acc) {
 	m_account_numbers.push_back(AccountNumber(acc));
 }
 
+void Client::LoadAccountNumber(const String& acc) {
+	m_account_numbers.insert(m_account_numbers.end(), acc);
+}
+
 void Client::AddAccountNumber(const String& acc) {
 	m_account_numbers.push_back(acc);
 }

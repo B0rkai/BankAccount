@@ -75,7 +75,13 @@ settings files (`daemon/FavoritesStore.h`, kept on the server's disk, not shared
 listens twice: a tailnet port behind `tailscale serve` (trusts `Tailscale-User-Login`, allowlisted)
 and a LAN port (shared password, session cookie) — `daemon/WebAuth.h`. Ships as one Docker image
 (`deploy/Dockerfile`, `deploy/deploy.sh`); the daemon's own GoogleTest suite is `daemon/tests/`
-(`make daemon-tests`, runs in the image build), not `tests/`. Design and story-by-story history:
+(`make daemon-tests`, runs in the image build), not `tests/`. Persely is becoming the only app
+(desktop app and CLI retire) with its own SQLite database —
+[docs/persely-sqlite-import-design.md](docs/persely-sqlite-import-design.md); so far
+`include/SqliteStore.h` (vendored `third_party/sqlite/`) and `bankaccount-migrate` (`.baf` →
+SQLite, verified byte for byte) exist, and the live service reads that SQLite copy
+(`~/.local/share/bankaccount/data/bankaccount.db`), refreshed from the `.baf` with
+`deploy/migrate-db.sh` until Persely can import. Design and story-by-story history:
 [docs/linux-query-daemon-design.md](docs/linux-query-daemon-design.md); deployment/secrets:
 [docs/linux-daemon-deployment.md](docs/linux-daemon-deployment.md).
 

@@ -49,6 +49,7 @@ public:
 	inline String GetAccNumber() const { return m_acc_number->GetString(); }
 	bool CheckAccNumber(const String& other);
 	bool IsOpen() const { return m_open; }
+	void SetOpen(bool open) { m_open = open; }
 
 	bool PrepareImport(const uint16_t date);
 
@@ -68,6 +69,10 @@ public:
 	const PtrVector<const Transaction> GetLastRecords(unsigned int cnt) const;
 	size_t IndexOf(const Transaction* tr) const;
 	Transaction& GetTransactionAt(size_t index);
+	const Transaction& GetTransactionAt(size_t index) const { return m_transactions.at(index); }
+	// Storage access (SqliteStore): appends one stored transaction exactly as StreamIn() does -
+	// unlike AddTransaction(), nothing is journaled, since nothing changed.
+	void AppendLoadedTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const Id category_id, const String& memo, const String& desc);
 
 	// Appends this account's own transaction history for client_id: one category id per matching
 	// transaction (duplicates included), so a caller tallying frequency across every account (see

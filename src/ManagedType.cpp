@@ -80,6 +80,23 @@ bool MappedType::Merge(const MappedType* other) {
     return (ori != m_keywords.size());
 }
 
+std::vector<std::pair<String, bool>> MappedType::GetKeywordsWithTier() const {
+    std::vector<std::pair<String, bool>> result;
+    for (const String& key : m_keywords) {
+        String bare;
+        if (ExtractSuggested(key, bare)) {
+            result.emplace_back(bare, false);
+        } else {
+            result.emplace_back(key, true);
+        }
+    }
+    return result;
+}
+
+void MappedType::LoadKeyword(const String& bare, bool definitive) {
+    m_keywords.insert(definitive ? bare : (String(SUGGESTED_KEYWORD_MARKER) + bare));
+}
+
 void MappedType::Stream(std::ostream& out) const {
     StreamContainer(out, m_keywords);
 }

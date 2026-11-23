@@ -36,6 +36,8 @@ public:
 		Id account_id;
 		size_t position;
 	};
+	// Reads and rebuilds the private collections below directly - see include/SqliteStore.h.
+	friend class SqliteStore;
 private:
 	ManagerType<TransactionType> m_ttype_man;
 	ClientManager m_client_man;

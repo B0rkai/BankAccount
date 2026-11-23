@@ -190,6 +190,20 @@ void Account::Sort() {
 	});
 }
 
+void Account::AppendLoadedTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const Id category_id, const String& memo, const String& desc) {
+	if (!memo.empty()) {
+		m_memos.push_back(memo);
+	}
+	if (!desc.empty()) {
+		m_descriptions.push_back(desc);
+	}
+	Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, Money(m_curr->Type(), amount), date, client_id, type_id, !memo.empty() ? &m_memos.back() : nullptr);
+	if (!desc.empty()) {
+		new_tra.SetDiscription(&m_descriptions.back());
+	}
+	new_tra.GetCategoryId() = category_id;
+}
+
 void Account::StreamOut(std::ostream& out) const {
 	StreamString(out, GetGroupName());
 	out << COMMA;
