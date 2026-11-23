@@ -27,6 +27,8 @@ public:
 	}
 
 	inline size_t size() const { return m_children.size(); }
+	// Keywords match the whole text (types) rather than any part of it (clients, categories).
+	inline bool FullMapping() const { return m_full_mapping; }
 	// Read access to one entry (throws if out of bounds).
 	const Child& At(const Id id) const { return *m_children.at(id); }
 	inline unsigned int GetNewChildCount() const { return m_new_children; }

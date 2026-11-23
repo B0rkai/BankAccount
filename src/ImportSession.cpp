@@ -59,7 +59,87 @@ public:
 	}
 };
 
+// Runs of whitespace squeezed to one space, ends trimmed.
+String Squeeze(const String& text) {
+	String squeezed;
+	bool space = false;
+	for (wxUniChar c : text) {
+		if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+			space = !squeezed.empty();
+			continue;
+		}
+		if (space) {
+			squeezed.Append(' ');
+			space = false;
+		}
+		squeezed.Append(c);
+	}
+	return squeezed;
+}
+
+// Enable Banking passes a bank's transaction type through cut to this many characters.
+constexpr size_t CUT_TYPE_LENGTH = 35;
+
+// What ImportEngine::AlignToKeywords() rewrites `text` to, or "" to leave it: the text holding
+// the longest definitive keyword that matches it once spaces are squeezed - all of it, for
+// entities whose keywords match whole texts - or, for a text cut at `cut_length`, that starts
+// with it; if all such keywords belong to one entity.
+template<class Manager>
+String Aligned(const Manager& entities, const String& text, size_t cut_length) {
+	const bool full = entities.FullMapping();
+	const String squeezed = Squeeze(text);
+	const String lower = squeezed.Lower();
+	Id match = Id(INVALID_ID);
+	String keyword;
+	bool whole = false;     // keyword replaces the whole text (a cut text)
+	size_t at = 0, length = 0; // otherwise: where its squeezed form sits in `squeezed`
+	for (size_t i = 0; i < entities.size(); ++i) {
+		for (const auto& [key, definitive] : entities.At(Id((Id::Type)i)).GetKeywordsWithTier()) {
+			if (!definitive || key.empty()) {
+				continue;
+			}
+			const String key_lower = Squeeze(key).Lower();
+			const size_t pos = full ? (key_lower == lower ? 0 : String::npos) : lower.find(key_lower);
+			const bool cut = pos == String::npos && cut_length && text.length() >= cut_length && key_lower.StartsWith(lower);
+			if (pos == String::npos && !cut) {
+				continue;
+			}
+			if (match != Id(INVALID_ID) && match != Id((Id::Type)i)) {
+				return String(); // two entities: leave it to a question
+			}
+			match = Id((Id::Type)i);
+			if (key.length() > keyword.length()) {
+				keyword = key;
+				whole = cut;
+				at = pos;
+				length = key_lower.length();
+			}
+		}
+	}
+	if (match == Id(INVALID_ID)) {
+		return String();
+	}
+	return whole ? keyword : squeezed.Mid(0, at) + keyword + squeezed.Mid(at + length);
+}
+
 } // namespace
+
+void ImportEngine::AlignToKeywords(const AccountManager& manager, RawImportData& data) {
+	for (RawTransactionData& raw : data.data) {
+		if (!raw.type.empty() && manager.SearchIds(QueryTopic::TYPE, raw.type, false).empty()) {
+			const String aligned = Aligned(manager.m_ttype_man, raw.type, CUT_TYPE_LENGTH);
+			if (!aligned.empty()) {
+				raw.type = aligned;
+			}
+		}
+		if (!raw.client.empty() && manager.SearchIds(QueryTopic::CLIENT, raw.client, false).empty()) {
+			const String aligned = Aligned(manager.m_client_man, raw.client, 0);
+			if (!aligned.empty()) {
+				raw.client = aligned;
+			}
+		}
+	}
+}
 
 bool ImportEngine::Start(const AccountManager& manager, const RawImportData& data, const String& source_name, const String& source_format, ImportSession& session, std::string& error) {
 	if (data.data.empty()) {

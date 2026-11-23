@@ -136,6 +136,13 @@ public:
 	// if the account changed since the upload.
 	static bool Commit(AccountManager& manager, ImportSession& session, std::string& error);
 
+	// Bank APIs write some texts differently from the files the keywords were made from: Enable
+	// Banking cuts types at 35 characters and squeezes runs of spaces in names. A type or client
+	// text that no keyword matches as it is, but that one entity's keywords match once that's
+	// undone, is rewritten to hold that keyword - so it resolves the way the file's text did.
+	// Call before Start().
+	static void AlignToKeywords(const AccountManager& manager, RawImportData& data);
+
 	// Follows AccountManager::Merge()'s renumbering: merged ids become the target, later ids shift
 	// down. `to` is the target's id before the merge.
 	static void RemapAfterMerge(ImportSession& session, QueryTopic topic, const IdSet& from, Id to);

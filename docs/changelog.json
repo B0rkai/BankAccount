@@ -1,6 +1,7 @@
 {
     "unreleased": [
-        "Retired the Windows desktop app, the CLI and their build; the core's own tests now run on Linux with every build. Fixed on Linux: MBH CSV files with Windows line endings imported nothing, and euro amounts lost their € sign. Persely's Settings shows What's new"
+        "Retired the Windows desktop app, the CLI and their build; the core's own tests now run on Linux with every build. Fixed on Linux: MBH CSV files with Windows line endings imported nothing, and euro amounts lost their € sign. Persely's Settings shows What's new",
+        "Enable Banking groundwork: bank API transactions become import rows (Gránit's day-early dates corrected, cut type names and squeezed spaces matched to existing keywords), and the daemon can make signed bank API calls"
     ],
     "released": [
         {
