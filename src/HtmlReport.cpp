@@ -37,13 +37,7 @@ std::vector<ReportSection> BuildReportSections(Query& q, const AccountManager& m
 }
 
 namespace {
-	// Forward slash, not backslash: Windows accepts both interchangeably, but a literal backslash
-	// is just an ordinary filename character on Linux (the same class of bug
-	// FavoriteQueryFilePath()/FavoriteReportFilePath() had - see docs/linux-query-daemon-design.md
-	// story 4) - std::ifstream would look for a file literally named "resources\chart.umd.min.js"
-	// instead of descending into a "resources" directory, so the Linux daemon's frontend (story 5,
-	// which reuses these loaders to inline Chart.js/Grid.js the same way BuildHtmlReport() does)
-	// would silently always render tables/charts as missing.
+	// Relative to the daemon's working directory (/app in the image).
 	const char* CHARTJS_PATH = "resources/chart.umd.min.js";
 	const char* GRIDJS_JS_PATH = "resources/gridjs.umd.js";
 	const char* GRIDJS_CSS_PATH = "resources/gridjs.mermaid.min.css";
@@ -106,8 +100,8 @@ namespace {
 		}
 	}
 
-	// BuildFoldedTopicSlices()/BuildFoldedPeriodicSeries() (ChartFolding.h) sort largest-first,
-	// matching the live wxCharts dialog's legend convention - but a static report reads more like
+	// BuildFoldedTopicSlices()/BuildFoldedPeriodicSeries() (ChartFolding.h) sort largest-first -
+	// but a static report reads more like
 	// the report table (see QuerySumByTopic::GetSortedSubQueries()/PeriodicQuery::
 	// GetSortedSubQueries(), both already ascending by amount), so report charts are re-sorted
 	// ascending here rather than reusing the fold's own order. Folding itself (which topics get
@@ -117,8 +111,8 @@ namespace {
 	//
 	// Colours, on the other hand, are assigned in the fold's own largest-first order *before* that
 	// re-sort (ChartEntryColour() - the dataset's fixed colour for a single-entry chart, otherwise
-	// categorical palette index 0 to the largest topic), the same way ChartDialog assigns them, so
-	// the same topic gets the same colour in both renderers.
+	// categorical palette index 0 to the largest topic), the same way the web app assigns them, so
+	// the same topic gets the same colour in both.
 	bool IsOthersLabel(const String& label) { return label == "Others"; }
 
 	std::string ColourFor(ChartDataset dataset, const String& label, size_t rank, size_t entry_count) {
@@ -135,8 +129,7 @@ namespace {
 		std::string colour;
 	};
 
-	// One slice per topic, folded via BuildFoldedTopicSlices (ChartFolding.h) - the same fold the
-	// live wxCharts dialog applies - so a report chart with dozens of categories/clients doesn't
+	// One slice per topic, folded via BuildFoldedTopicSlices (ChartFolding.h) - so a report chart with dozens of categories/clients doesn't
 	// render as an unreadable wall of wedges/bars. For PERIODIC data each topic's series is
 	// aggregated into its total-across-periods first (the same simplification ChartTabPanel::
 	// BuildSliceChart uses: a topic's total and its average-per-period are proportional by the same

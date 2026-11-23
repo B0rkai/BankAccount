@@ -230,8 +230,15 @@ export interface TransactionEdit {
 // The transaction to edit, as the list showed it - the server checks date and amount still match.
 const address = (t: TransactionRow) => ({ account_id: t.account_id, seq: t.seq, date: t.date, amount: t.amount })
 
+// docs/changelog.json: what changed since the last version, then each version's changes.
+export interface Changelog {
+  unreleased?: string[]
+  released?: { version: string; date: string; changes: string[] }[] // oldest first
+}
+
 export const api = {
   me: () => request<Me>('/api/v1/me'),
+  changelog: () => request<Changelog>('/api/v1/changelog'),
   login: (password: string, remember: boolean) => post<{ ok: boolean }>('/api/v1/login', { password, remember }),
   logout: () => post<{ ok: boolean }>('/api/v1/logout', {}),
   names: (topic: NameTopic) => request<NameList>(`/api/v1/names?topic=${topic}`),
@@ -387,7 +394,7 @@ export const imports = {
   discard: (id: number, takeOver = false) => request<{ ok: boolean }>(imp(id), { method: 'DELETE', body: JSON.stringify({ take_over: takeOver }) }),
 }
 
-// Names change when the desktop app saves or an edit here does (dataChanged clears this).
+// Names change with an edit or import here (dataChanged clears this).
 const nameCache = new Map<string, Promise<NameList>>()
 export function cachedNameList(topic: NameTopic): Promise<NameList> {
   let p = nameCache.get(topic)

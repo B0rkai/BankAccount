@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, canEdit } from '../api'
 import { Maintenance } from '../components/Maintenance'
 import { NamePicker } from '../components/NamePicker'
+import { WhatsNew } from '../components/WhatsNew'
 import { topicTotals } from '../components/Summary'
 import { useNameIndex, type NameIndex } from '../drill'
 import { formatMoney, shortCategory } from '../format'
@@ -11,8 +12,8 @@ import { Skeleton } from './Overview'
 
 const YEARS = 3
 
-// A list of categories, typed or picked by name but kept as ids, so renaming a category in the
-// desktop app doesn't drop it from the list.
+// A list of categories, typed or picked by name but kept as ids, so renaming a category doesn't
+// drop it from the list.
 function CategoryList({ label, ids, names, onChange, placeholder }: { label: string; ids: number[]; names: NameIndex; onChange: (ids: number[]) => void; placeholder: string }) {
   const options = [...names.categoryIds.keys()]
   return (
@@ -124,6 +125,7 @@ export function Settings() {
         )}
       </section>
       {canEdit() && <Maintenance />}
+      <WhatsNew />
     </div>
   )
 }

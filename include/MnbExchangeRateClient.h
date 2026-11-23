@@ -1,32 +1,20 @@
 #pragma once
 #include <atomic>
 #include <functional>
-#include <mutex>
 #include <set>
 #include <string>
 #include <cstdint>
 
 class ExchangeRateHistory;
 
-// Cooperative cancellation for an in-flight DownloadAllRates() call. WinHttpCloseHandle() on a
-// handle that has a blocking call outstanding on another thread makes that call fail promptly -
-// the documented way to cancel a synchronous WinHTTP operation mid-flight - so Cancel() just
-// closes whichever WinHTTP handle HttpGet() currently has open. Safe to call from any thread,
-// including while no fetch is in progress (a no-op then).
+// Cooperative cancellation for an in-flight DownloadAllRates() call: Cancel() from any thread, and
+// the download stops at its next chunk.
 class FetchCancelToken {
 public:
-    void Cancel();
+    void Cancel() { m_cancelled = true; }
     bool IsCancelled() const { return m_cancelled.load(); }
-    void SetActiveHandle(void* handle); // WinHTTP HINTERNET, kept as void* so this header stays windows.h-free
-    // Atomically clears 'handle' iff it's still the one registered, returning true in that case.
-    // Both the normal cleanup path and Cancel() must go through this before closing a handle, so
-    // that whichever one reaches it first "wins" and the other skips its own close - otherwise a
-    // Cancel() racing against normal completion could close the same handle twice.
-    bool TryClaimHandle(void* handle);
 private:
     std::atomic<bool> m_cancelled{ false };
-    std::mutex m_mutex;
-    void* m_active_handle = nullptr;
 };
 
 // Downloads MNB's official daily exchange-rate archive - a single spreadsheet covering every
@@ -45,19 +33,15 @@ private:
 // This call is synchronous and can take anywhere from a few seconds to 20-30+ seconds (the TLS
 // handshake to MNB's server, specifically, has been observed taking that long on its own - see
 // the phase timings this logs at INFO level), and - rarely - can hang far longer if the
-// connection dies without the OS noticing. If report_phase is set, it's called from whatever
-// thread this function runs on with a short human-readable description of the current phase
-// (connecting/downloading/parsing) - callers driving a UI progress indicator should run this
-// function on a background thread and marshal report_phase's calls back to the UI thread
-// themselves; this function does no threading or UI work of its own. If cancel_token is set,
-// calling cancel_token->Cancel() from another thread aborts the fetch promptly instead of
-// leaving it to hang indefinitely.
+// connection dies without the OS noticing. If report_phase is set, it's called on this thread with
+// a short description of the current phase (connecting/downloading/parsing). If cancel_token is
+// set, cancel_token->Cancel() from another thread aborts the fetch.
 bool DownloadAllRates(ExchangeRateHistory& history, const std::function<void(const std::string&)>& report_phase = nullptr,
                       const std::set<uint16_t>* wanted_dates = nullptr, FetchCancelToken* cancel_token = nullptr);
 
 // Injectable seam around the network fetch above, so AccountManager::UpdateExchangeRates() can
 // be exercised (e.g. in a test) without ever making a real HTTPS request to MNB - the domain
-// code depends only on this interface, not on WinHTTP or the MNB archive format directly.
+// code depends only on this interface, not on the download or the MNB archive format directly.
 class IExchangeRateFetcher {
 public:
     virtual ~IExchangeRateFetcher() = default;
@@ -65,8 +49,7 @@ public:
                         const std::set<uint16_t>* wanted_dates, FetchCancelToken* cancel_token) = 0;
 };
 
-// Production default: a thin pass-through to DownloadAllRates() above - MnbExchangeRateClient's
-// actual WinHTTP/parsing logic is completely unchanged by this seam's existence.
+// Production default: a thin pass-through to DownloadAllRates() above.
 class MnbExchangeRateFetcher : public IExchangeRateFetcher {
 public:
     static MnbExchangeRateFetcher& Instance();

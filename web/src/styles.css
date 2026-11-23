@@ -471,3 +471,9 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
   .question-actions .button { flex: 1 1 auto; white-space: nowrap; }
   .question-actions .spacer { display: none; }
 }
+
+/* ---- what's new ---- */
+.whats-new { display: flex; flex-direction: column; gap: 14px; }
+.whats-new h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.whats-new ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--text-2); }
+.whats-new .link-button { align-self: flex-start; }

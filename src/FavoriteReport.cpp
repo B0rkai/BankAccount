@@ -51,12 +51,6 @@ namespace {
 	}
 }
 
-const char* FavoriteReportFilePath() {
-	// Forward slash - see FavoriteQueryFilePath()'s comment (FavoriteQuery.cpp) for why a literal
-	// backslash here would break on Linux.
-	return "db/favorite_reports.json";
-}
-
 std::vector<FavoriteReportDef> ParseFavoriteReports(std::istream& in) {
 	std::vector<FavoriteReportDef> result;
 	nlohmann::json j;
@@ -76,17 +70,6 @@ std::vector<FavoriteReportDef> ParseFavoriteReports(std::istream& in) {
 			result.push_back(*def);
 		}
 	}
-	return result;
-}
-
-std::vector<FavoriteReportDef> LoadFavoriteReports() {
-	std::ifstream in(FavoriteReportFilePath());
-	if (!in.is_open()) {
-		LogDebug() << "No " << FavoriteReportFilePath() << " found - no favorite reports";
-		return {};
-	}
-	std::vector<FavoriteReportDef> result = ParseFavoriteReports(in);
-	LogInfo() << "Loaded " << result.size() << " favorite report" << (result.size() == 1 ? "" : "s");
 	return result;
 }
 
@@ -120,22 +103,4 @@ void WriteFavoriteReports(const std::vector<FavoriteReportDef>& defs, std::ostre
 		arr.push_back(ToJson(def));
 	}
 	out << arr.dump(2);
-}
-
-void SaveFavoriteReports(const std::vector<FavoriteReportDef>& defs) {
-	// Serialize before truncating the file - see SaveFavoriteQueries().
-	std::ostringstream buffer;
-	try {
-		WriteFavoriteReports(defs, buffer);
-	} catch (const nlohmann::json::exception& e) {
-		LogError() << "Failed to serialize favorite reports (" << e.what() << ") - not saved";
-		return;
-	}
-	std::ofstream out(FavoriteReportFilePath());
-	if (!out.is_open()) {
-		LogError() << "Failed to open " << FavoriteReportFilePath() << " for writing - favorite reports not saved";
-		return;
-	}
-	out << buffer.str();
-	LogInfo() << "Saved " << defs.size() << " favorite report" << (defs.size() == 1 ? "" : "s");
 }

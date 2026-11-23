@@ -20,18 +20,21 @@ COPY include include
 COPY src src
 COPY third_party third_party
 COPY daemon daemon
-# The daemon's own tests run as part of every build: a failing test fails the deploy.
-RUN make -j"$(nproc)" all daemon-tests
+COPY tests tests
+# The tests run as part of every build: a failing test fails the deploy.
+RUN make -j"$(nproc)" all test
 
 FROM debian:trixie-slim
 # ca-certificates: the daemon downloads MNB's exchange rates over HTTPS.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libwxbase3.2-1t64 libssl3t64 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-# The daemon resolves resources/ (Chart.js/Grid.js for downloaded reports) and
+# The daemon resolves resources/ (Chart.js/Grid.js for downloaded reports), changelog.json and
 # db/favorite_*.json relative to its working directory.
 WORKDIR /app
 COPY resources resources
+# Settings' "What's new" (GET /api/v1/changelog).
+COPY docs/changelog.json changelog.json
 COPY --from=daemon /src/build/linux/bin/daemon /usr/local/bin/bankaccount-daemon
 # .baf -> SQLite converter, run by deploy/migrate-db.sh with this same image.
 COPY --from=daemon /src/build/linux/bin/bankaccount-migrate /usr/local/bin/bankaccount-migrate

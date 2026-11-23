@@ -152,20 +152,6 @@ String ContainerAsString(const Container& container, int max = -1) {
 
 bool caseInsensitiveStringContains(const String& string, const String& sub);
 
-// Joins folder + filename with exactly one backslash between them, regardless of whether
-// folder already ends in one (or in a forward slash) - shared by every place that appends a
-// specific file to a configured folder (network db path, network release path, ...).
-String JoinPath(const String& folder, const String& filename);
-
-// Strips characters Windows forbids in a file name - shared by every generated-report writer
-// (cMain's Favorite Reports menu, the headless BankAccountCli) since a report name is free text
-// (whatever the user hand-wrote as "name" in db\favorite_reports.json), not already filename-safe.
-String SanitizeFileNameComponent(const String& name);
-
-// "YYYYMMDD_HHMMSS" for the current local time - appended to generated report file names so
-// repeated runs of the same favorite report don't overwrite each other.
-String TimestampForFilename();
-
 void DumpChar(std::istream& in);
 void StreamString(std::ostream& out, const String& str);
 void StreamString(std::istream& in, String& str);
@@ -215,8 +201,7 @@ void SetToday(Today* ptr);
 // "last_30_days", ...; see RelativePeriod.h) resolves against whatever GetToday() currently
 // returns, which is null until something calls SetToday(). Every entry point that can reach
 // ResolveRelativePeriod()/ResolveRelativeDate() outside of a test (which installs its own fake
-// Today instead) must call this once at startup - the GUI app (cMain's constructor) and
-// BankAccountCli both do.
+// Today instead) must call this once at startup - the daemon's main() does.
 void SetRealToday();
 
 int CountChars(const String& text, const char c);

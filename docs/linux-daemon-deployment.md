@@ -14,8 +14,8 @@ lives at `https://persely.tail61796b.ts.net`; the repo, image, container and env
 | Live checkout (built from GitHub, detached at the deployed commit) | `~/bankaccount-live` |
 | Database: Persely's own SQLite file, on the system drive | `~/.local/share/bankaccount/data/bankaccount.db` |
 | Daily snapshots of it (folder private to the server user) | `/mnt/storage/dev/BankAccount/backup/` |
-| The desktop app's database it is converted from (read only by `deploy/migrate-db.sh`) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
-| The web app's favorites and settings (its own, not the desktop app's) | `~/.local/share/bankaccount/favorite_{queries,reports}.json`, `web_settings.json` |
+| The retired desktop app's database, converted from once (`deploy/migrate-db.sh`; stale since the cutover) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
+| The web app's favorites and settings | `~/.local/share/bankaccount/favorite_{queries,reports}.json`, `web_settings.json` |
 | Secrets (allowed logins, LAN password hash; `chmod 600`) | `~/.config/bankaccount/web.env` |
 | Tailnet port (behind `tailscale serve`, identity headers trusted) | `127.0.0.1:8300` → `https://persely.tail61796b.ts.net` |
 | LAN port (plain HTTP, shared password) | `http://192.168.1.100:8400` |
@@ -48,32 +48,21 @@ healthy. The container restarts on its own after a reboot (`restart: unless-stop
 
 ## The database
 
-Since 2026-11-23 Persely reads its own SQLite database (`bankaccount.db`, see
-[persely-sqlite-import-design.md](persely-sqlite-import-design.md)), not the desktop app's `.baf`.
-It is a converted copy: `deploy/migrate-db.sh` runs `bankaccount-migrate` from the live image,
-which converts `BData.baf`, reads the result back, checks it is identical to the `.baf`'s
-content, and only then puts it in place. The first deploy without a database runs it by itself.
-
-Until Persely can import bank files, new transactions still come in through the desktop app.
-After saving there, refresh Persely's copy:
-
-```bash
-deploy/migrate-db.sh
-```
-
-The running service notices the new file within a few seconds; no redeploy needed. It refuses to
-replace a database that Persely has changed itself, so it can never throw away work done in
-Persely. The `.baf` itself is never written to.
+Persely keeps its own SQLite database (`bankaccount.db`, see
+[persely-sqlite-import-design.md](persely-sqlite-import-design.md)). It started as a converted copy
+of the retired desktop app's `BData.baf`: `deploy/migrate-db.sh` runs `bankaccount-migrate` from
+the live image, which converts the `.baf`, reads the result back, checks it is identical to the
+`.baf`'s content, and only then puts it in place (the first deploy without a database runs it by
+itself). Since the cutover (2026-11-23) new transactions come in through Persely's Import page, and
+`migrate-db.sh` refuses to replace a database Persely has changed - so it can never throw away
+work done in Persely. Only a fresh setup still needs it.
 
 ### Editing in Persely (on since the cutover, 2026-11-23)
 
 Persely can edit (transaction category/client/note, keywords, rename, merge, categorize by
 keywords, exchange rates - design doc story 3) and import bank files step by step (the Import
-page - stories 4 and 5), but only with `BANKACCOUNT_EDITS=on`. It is off by default because
-**the first change made in Persely ends the refresh above for good**: from then on a desktop
-import can't be brought over, and new transactions come in through Persely's Import page only.
-The live service has it on since 2026-11-23 (the cutover, after a final `deploy/migrate-db.sh`); the
-desktop app no longer imports. To switch it on elsewhere:
+page - stories 4 and 5), but only with `BANKACCOUNT_EDITS=on`; without it, it is read-only. The
+live service has it on since the cutover (2026-11-23). To switch it on elsewhere:
 
 ```bash
 echo BANKACCOUNT_EDITS=on >> ~/.config/bankaccount/web.env

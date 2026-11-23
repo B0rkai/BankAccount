@@ -17,7 +17,7 @@ import { linkHandler, menuRoute, ROUTES, useRoute } from './router'
 
 type Session = { state: 'loading' } | { state: 'signed-out' } | { state: 'error'; message: string } | { state: 'ready'; me: Me }
 
-// "2026.11.13" (the desktop's date format) -> "2026-11-13"
+// "2026.11.13" (last_record_date's format) -> "2026-11-13"
 const dotted = (d?: string) => d?.replace(/\./g, '-')
 
 export function App() {

@@ -5,10 +5,9 @@
 #include <vector>
 #include "ChartData.h"
 
-// GUI-free chart presentation rules shared by every chart renderer this app has - ChartDialog
-// (wxCharts, desktop), HtmlReport (Chart.js, offline .html) and the Linux daemon's frontend
-// (Chart.js, fed through QueryApi's JSON) - so which chart kinds a dataset may be drawn as, and
-// which colours it's drawn in, can't drift between them.
+// Chart presentation rules shared by both chart renderers - HtmlReport (Chart.js, offline .html)
+// and the web app (Chart.js, fed through QueryApi's JSON) - so which chart kinds a dataset may be
+// drawn as, and which colours it's drawn in, can't drift between them.
 
 // Which chart widget draws a dataset - distinct from ChartShape (see ChartData.h), which says what
 // the underlying data *is*.

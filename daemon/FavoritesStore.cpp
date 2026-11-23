@@ -66,7 +66,7 @@ std::filesystem::file_time_type MTime(const std::string& path) {
 }
 
 // Writes `content` to a temporary file next to `path` and renames it over `path`. Keeps the old
-// file's permissions (the folder is shared with the desktop app over Samba).
+// file's permissions.
 bool WriteAtomically(const std::string& path, const std::string& content, std::string& error) {
 	std::filesystem::path target(path);
 	std::string tmpl = (target.parent_path() / ("." + target.filename().string() + ".XXXXXX")).string();

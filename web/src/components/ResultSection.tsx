@@ -34,7 +34,7 @@ export function ResultSection({ section, pref, def }: { section: Section; pref?:
   const topic = sectionTopic(section.heading)
   const datasets = section.chart?.datasets ?? []
   const preferred = datasets.find((d) => d.key === pref?.side)?.key
-  // Net (always first) unless a favorite names a side - the desktop dialog's and HTML reports' default.
+  // Net (always first) unless a favorite names a side - HTML reports' default too.
   const [key, setKey] = useState<DatasetKey | undefined>(preferred ?? datasets[0]?.key)
   const ds = datasets.find((d) => d.key === key) ?? datasets[0]
   const [currency, setCurrency] = useState<string | undefined>(undefined)

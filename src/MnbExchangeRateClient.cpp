@@ -8,15 +8,9 @@
 #include <cstdlib>
 #include <cctype>
 #include <chrono>
-#ifdef _WIN32
-#define NOMINMAX // windows.h's min/max macros break ZipLib's template code (e.g. clamp<T>) once both are included here
-#include <windows.h>
-#include <winhttp.h>
-#else
-// The Linux daemon (Persely) downloads with cpp-httplib over OpenSSL instead of WinHTTP; the
-// Makefile defines CPPHTTPLIB_OPENSSL_SUPPORT for every source, so httplib is the same everywhere.
+// Downloads with cpp-httplib over OpenSSL; the Makefile defines CPPHTTPLIB_OPENSSL_SUPPORT for
+// every source, so httplib is the same everywhere.
 #include "httplib.h"
-#endif
 
 #include "MnbExchangeRateClient.h"
 #include "ExchangeRateHistory.h"
@@ -24,167 +18,12 @@
 #include "Logger.h"
 #include "ZipFile.h"
 
-#ifdef _WIN32
-#pragma comment(lib, "winhttp.lib")
-#endif
-
-void FetchCancelToken::SetActiveHandle(void* handle) {
-	std::lock_guard<std::mutex> lock(m_mutex);
-	m_active_handle = handle;
-}
-
-bool FetchCancelToken::TryClaimHandle(void* handle) {
-	std::lock_guard<std::mutex> lock(m_mutex);
-	if (m_active_handle == handle) {
-		m_active_handle = nullptr;
-		return true;
-	}
-	return false;
-}
-
-void FetchCancelToken::Cancel() {
-	m_cancelled = true;
-	void* handle;
-	{
-		std::lock_guard<std::mutex> lock(m_mutex);
-		handle = m_active_handle;
-		m_active_handle = nullptr;
-	}
-#ifdef _WIN32
-	if (handle) {
-		// Documented WinHTTP cancellation idiom: closing a handle with a blocking call
-		// outstanding on it (from another thread) makes that call fail promptly instead of
-		// waiting out whatever timeout would otherwise eventually apply - or never applies, if
-		// the connection died in a way the configured timeouts don't catch. Clearing
-		// m_active_handle under the same lock before closing means the normal cleanup path's
-		// TryClaimHandle() for this same handle will see it already gone and skip its own close,
-		// so a Cancel() racing against normal completion can never double-close a handle.
-		WinHttpCloseHandle((HINTERNET)handle);
-	}
-#else
-	(void)handle; // the Linux download checks IsCancelled() between chunks instead
-#endif
-}
-
 namespace {
 
-#ifdef _WIN32
-const wchar_t* MNB_HOST = L"www.mnb.hu";
-const wchar_t* MNB_PATH = L"/Root/ExchangeRate/arfolyam.xlsx";
-
-// Downloads the resource at MNB_HOST/MNB_PATH over HTTPS GET and returns its raw bytes, or an
-// empty string on failure or cancellation (already logged).
-std::string HttpGet(const std::function<void(const std::string&)>& report_phase, FetchCancelToken* cancel_token) {
-	auto report = [&](const std::string& phase) { if (report_phase) report_phase(phase); };
-
-	using Clock = std::chrono::steady_clock;
-	auto ms_since = [](Clock::time_point since) {
-		return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - since).count();
-	};
-	auto t_start = Clock::now();
-
-	if (cancel_token && cancel_token->IsCancelled()) {
-		return "";
-	}
-
-	report("Connecting to MNB...");
-	std::string response;
-	// WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY respects WPAD/PAC-based system proxy settings instead of
-	// the legacy machine-wide "default" WinHTTP proxy (which is usually unconfigured).
-	HINTERNET hSession = WinHttpOpen(L"BankAccount/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-	if (!hSession) {
-		LogError() << "MNB fetch: WinHttpOpen failed (error " << (unsigned long)GetLastError() << ")";
-		return response;
-	}
-	if (cancel_token) cancel_token->SetActiveHandle(hSession);
-	LogInfo() << "MNB fetch: WinHttpOpen (incl. WPAD proxy auto-detect) took " << ms_since(t_start) << " ms";
-	auto t_connect = Clock::now();
-	// Without explicit timeouts, a stalled DNS lookup or connection attempt (dead network, silently
-	// dropping firewall, missing proxy) blocks this call - and the whole UI thread - indefinitely.
-	WinHttpSetTimeouts(hSession, 10000, 10000, 15000, 20000);
-	HINTERNET hConnect = WinHttpConnect(hSession, MNB_HOST, INTERNET_DEFAULT_HTTPS_PORT, 0);
-	if (!hConnect) {
-		LogError() << "MNB fetch: WinHttpConnect failed (error " << (unsigned long)GetLastError() << ")";
-		if (!cancel_token || cancel_token->TryClaimHandle(hSession)) {
-			WinHttpCloseHandle(hSession);
-		}
-		return response;
-	}
-	if (cancel_token) cancel_token->SetActiveHandle(hConnect); // supersedes hSession as the handle to close on cancel
-	LogInfo() << "MNB fetch: WinHttpConnect (DNS + TCP connect) took " << ms_since(t_connect) << " ms";
-	HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", MNB_PATH, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-	if (!hRequest) {
-		LogError() << "MNB fetch: could not open HTTPS request (error " << (unsigned long)GetLastError() << ")";
-		// hSession was already superseded as the tracked "active" handle once hConnect
-		// succeeded (see SetActiveHandle(hConnect) above), so Cancel() can only be racing to
-		// close hConnect at this point - hSession needs no TryClaimHandle guard.
-		if (!cancel_token || cancel_token->TryClaimHandle(hConnect)) {
-			WinHttpCloseHandle(hConnect);
-		}
-		WinHttpCloseHandle(hSession);
-		return response;
-	}
-	if (cancel_token) cancel_token->SetActiveHandle(hRequest); // supersedes hConnect
-	// The TLS handshake below reliably takes 15-20+ seconds - confirmed via a plain `curl.exe`
-	// request to the same URL (twice, from separate processes, both ~18-19s) that this is a
-	// property of connecting to MNB's server from this network, not of this app's WinHTTP code
-	// or WinHTTP's (opt-in, never-enabled-here) certificate revocation checking. There is no
-	// client-side fix for this; it's inherent to reaching this specific host. It has also, once,
-	// hung far longer than that with no active connection visible at all - hence cancel_token:
-	// a user-triggered abort or an outer hard timeout can close hRequest/hConnect/hSession from
-	// another thread to force this call to fail rather than hang indefinitely.
-	report("Handshaking (TLS)...");
-	auto t_send = Clock::now();
-	bool ok = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) != FALSE;
-	if (!ok) {
-		LogError() << "MNB fetch: WinHttpSendRequest failed (error " << (unsigned long)GetLastError() << ")";
-	}
-	LogInfo() << "MNB fetch: WinHttpSendRequest (incl. TLS handshake) took " << ms_since(t_send) << " ms";
-	auto t_headers = Clock::now();
-	ok = ok && (WinHttpReceiveResponse(hRequest, NULL) != FALSE);
-	if (!ok) {
-		LogError() << "MNB fetch: WinHttpReceiveResponse failed (error " << (unsigned long)GetLastError() << ")";
-	}
-	LogInfo() << "MNB fetch: WinHttpReceiveResponse (server time-to-first-byte) took " << ms_since(t_headers) << " ms";
-	if (ok) {
-		DWORD status = 0, status_size = sizeof(status);
-		WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_FLAG_NUMBER | WINHTTP_QUERY_STATUS_CODE, WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX);
-		if (status != 200) {
-			LogError() << "MNB fetch: server returned HTTP status " << status;
-		}
-		report("Downloading exchange rate archive...");
-		auto t_read = Clock::now();
-		DWORD available = 0;
-		while (WinHttpQueryDataAvailable(hRequest, &available) && (available > 0)) {
-			std::vector<char> buffer(available);
-			DWORD read = 0;
-			if (!WinHttpReadData(hRequest, buffer.data(), available, &read)) {
-				LogError() << "MNB fetch: WinHttpReadData failed (error " << (unsigned long)GetLastError() << ")";
-				break;
-			}
-			response.append(buffer.data(), read);
-		}
-		LogInfo() << "MNB fetch: downloaded " << response.size() << " byte(s), body transfer took " << ms_since(t_read) << " ms";
-	}
-	// hConnect/hSession are no longer the tracked "active" handle (superseded by hRequest above),
-	// so only hRequest's close needs to race-guard against a concurrent Cancel().
-	if (!cancel_token || cancel_token->TryClaimHandle(hRequest)) {
-		WinHttpCloseHandle(hRequest);
-	}
-	WinHttpCloseHandle(hConnect);
-	WinHttpCloseHandle(hSession);
-	if (cancel_token && cancel_token->IsCancelled()) {
-		LogWarn() << "MNB fetch: cancelled";
-		return "";
-	}
-	LogInfo() << "MNB fetch: HttpGet total " << ms_since(t_start) << " ms";
-	return response;
-}
-#else
 const char* MNB_HOST = "www.mnb.hu";
 const char* MNB_PATH = "/Root/ExchangeRate/arfolyam.xlsx";
 
-// Same contract as the WinHTTP version above: the raw bytes, or "" on failure/cancellation.
+// Downloads MNB_HOST/MNB_PATH over HTTPS: the raw bytes, or "" on failure or cancellation (logged).
 std::string HttpGet(const std::function<void(const std::string&)>& report_phase, FetchCancelToken* cancel_token) {
 	if (report_phase) {
 		report_phase("Connecting to MNB...");
@@ -215,7 +54,6 @@ std::string HttpGet(const std::function<void(const std::string&)>& report_phase,
 		<< std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t_start).count() << " ms";
 	return response;
 }
-#endif
 
 std::string XmlUnescape(const std::string& in) {
 	std::string out;

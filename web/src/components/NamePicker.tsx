@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { Icon } from './Icons'
 
 // Chips for a list of names (categories, clients, ...), typed with autocomplete from `options`.
-// Free text is allowed too: the daemon matches names the same fuzzy way the desktop filter does.
+// Free text is allowed too: the daemon matches names fuzzily.
 // `display` names a value the chip can't show as-is (an exact "#12" filter from a drill-down).
 export function NamePicker({
   label,

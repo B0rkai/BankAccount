@@ -62,9 +62,8 @@ public:
 // A human-readable label for a QueryElement that produced a non-empty GetTableResult() -
 // distinguishes a periodic breakdown (PeriodicQuery and its Category/Client/Type/Account
 // subclasses) from a plain by-topic sum (QuerySumByTopic and its subclasses), since both report
-// the same GetTopic(). Shared by cMain's result-grid tab labels (RunAndRenderQuery) and the HTML
-// report's section headings (HtmlReport.h's BuildReportSections) so both stay consistent by
-// construction rather than as two hand-maintained copies.
+// the same GetTopic(). The HTML report's section headings (HtmlReport.h's BuildReportSections) and
+// the API's result sections (QueryApi) use it.
 String DescribeQueryElement(const QueryElement* qe);
 
 // RAII guard around QueryElement::SetResolveIf() - resets to nullptr unconditionally when the

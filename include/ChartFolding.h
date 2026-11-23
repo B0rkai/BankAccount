@@ -3,10 +3,8 @@
 #include "CommonTypes.h"
 #include "ChartData.h"
 
-// "Too many topics/series to draw individually" folding, shared by the live wxCharts dialog
-// (ChartDialog.cpp) and HTML report generation (HtmlReport.cpp) - both need the same "which
-// topics matter enough to show individually" decision, or a pie/bar/line with dozens of topics is
-// unreadable either way.
+// "Too many topics/series to draw individually" folding, for HTML reports (HtmlReport.cpp) - a
+// pie/bar/line with dozens of topics is unreadable.
 
 // Sum of one series' values across every period.
 double ChartSeriesTotal(const ChartSeries& series);

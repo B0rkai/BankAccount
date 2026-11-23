@@ -3,12 +3,10 @@
 #include <istream>
 #include <string>
 
-// Shared reader for the app's compressed, password-"protected" .baf database file (a single zip
-// entry named ENTRY_NAME, see docs/db-encryption-design.md for why PASSWORD isn't real security
-// today). Lives in BankAccountCore - rather than BankAccountFile.cpp, which is Windows/journal-
-// specific - so both the desktop app and the Linux daemon (DaemonDb) read .baf the same way,
-// against the vendored, Deflate-only third_party/ziplib (see docs/ziplib-vendoring.md). The
-// write side (ZipSave in BankAccountFile.cpp) stays desktop-only - the daemon never writes.
+// Reader for the retired desktop app's .baf database file - a single zip entry named ENTRY_NAME,
+// "protected" by PASSWORD (obfuscation, not security) - for bankaccount-migrate and DaemonDb's
+// --db .baf, against the vendored, Deflate-only third_party/ziplib (docs/ziplib-vendoring.md).
+// Read-only: nothing writes a .baf any more.
 namespace BafArchive {
 	inline constexpr const char* ENTRY_NAME = "save.data";
 	inline constexpr const char* PASSWORD = "pass";

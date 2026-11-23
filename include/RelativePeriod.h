@@ -2,18 +2,15 @@
 #include "CommonTypes.h"
 
 // An inclusive {from,to} Excel-serial-date range - valid is false (from/to both left at 0) for
-// an unrecognized keyword, the same "don't guess, just report unusable" contract
-// ParseVersion()/DbLocationSettings::Parse() etc. already use elsewhere in this codebase.
+// an unrecognized keyword ("don't guess, just report unusable").
 struct DateRange {
 	uint16_t from = 0;
 	uint16_t to = 0;
 	bool valid = false;
 };
 
-// Resolves a relative-period keyword against GetToday() (CommonTypes.h) into a DateRange - the
-// same range math cMain::PeriodShortcutSelected's "Periods" menu shortcuts use (this is that
-// logic, extracted so a favorite query's date filter - see FavoriteQuery.h - can be driven by the
-// same keywords instead of only an absolute date pair). Recognized keywords: "this_month",
+// Resolves a relative-period keyword against GetToday() (CommonTypes.h) into a DateRange, so a
+// query's date filter (FavoriteQuery.h) can be a keyword instead of only an absolute date pair. Recognized keywords: "this_month",
 // "last_month", "this_quarter", "last_quarter", "this_half", "last_half", "this_year",
 // "last_year", plus rolling-window/multi-year ones the Periods menu itself has no shortcut for:
 // "last_30_days" (today and the 29 days before it), "last_12_months" (the current calendar month

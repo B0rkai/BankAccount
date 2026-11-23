@@ -36,7 +36,7 @@ const Id& TopicId(const ImportRow& row, QueryTopic topic) {
 	return TopicId(const_cast<ImportRow&>(row), topic);
 }
 
-// The first topic of `row` still unresolved, in the order the desktop asked them.
+// The first topic of `row` still unresolved: type, then client, then category.
 std::optional<QueryTopic> NextTopic(const ImportRow& row) {
 	for (QueryTopic topic : TOPICS) {
 		if (TopicId(row, topic) == Id(INVALID_ID)) {
@@ -46,7 +46,7 @@ std::optional<QueryTopic> NextTopic(const ImportRow& row) {
 	return std::nullopt;
 }
 
-// Supplies a new account's details on commit, in place of the desktop's dialog.
+// Supplies a new account's name on commit.
 class NamedAccount : public INewAccount {
 	String m_name;
 public:
@@ -93,7 +93,7 @@ bool ImportEngine::Start(const AccountManager& manager, const RawImportData& dat
 	}
 	size_t first = 0;
 	if (account && account->Size()) {
-		// Account::PrepareImport(): rows before the day before the last stored day are already
+		// Rows before the day before the last stored day are already
 		// stored; from the first row on that day or the next, the stored ones are replaced.
 		const uint16_t last = account->GetLastRecord()->GetDate();
 		while (first < data.data.size() && data.data[first].date + 1 < last) {
@@ -130,8 +130,8 @@ bool ImportEngine::Start(const AccountManager& manager, const RawImportData& dat
 }
 
 std::vector<ImportEngine::Recallable> ImportEngine::Replaced(const AccountManager& manager, const ImportSession& session) {
-	// The stored transactions this import replaces, categorized ones only, newest first - the
-	// order Account::PrepareImport() stashed them in, so duplicates are recalled the same way.
+	// The stored transactions this import replaces, categorized ones only, newest first (the
+	// desktop's order, so duplicates are recalled the same way).
 	std::vector<Recallable> stored;
 	if ((Id::Type)session.account_id >= manager.m_accounts.size() || !session.replaced_count) {
 		return stored;
@@ -155,7 +155,7 @@ bool ImportEngine::Resolve(const AccountManager& manager, ImportSession& session
 	}
 	const ImportSession before = session;
 	std::vector<Recallable> recallable = Replaced(manager, session);
-	// In file order, as the desktop went: a row's category reuses a replaced transaction only
+	// In file order: a row's category reuses a replaced transaction only
 	// once, and topics are tried type, client, category - each needs the one before.
 	for (ImportRow& row : session.rows) {
 		for (QueryTopic topic : TOPICS) {
@@ -218,7 +218,7 @@ std::optional<ImportQuestion> ImportEngine::Question(const AccountManager& manag
 
 bool ImportEngine::TryAuto(const AccountManager& manager, ImportRow& row, QueryTopic topic, std::vector<Recallable>& recallable) {
 	if (topic == QueryTopic::TYPE || topic == QueryTopic::CLIENT) {
-		// ProcessOneTopic(): only a single definitive keyword match resolves by itself.
+		// Only a single definitive keyword match resolves by itself.
 		IdSet ids = manager.SearchIds(topic, topic == QueryTopic::TYPE ? row.type : row.client, false);
 		if (ids.size() != 1) {
 			return false;
@@ -227,7 +227,7 @@ bool ImportEngine::TryAuto(const AccountManager& manager, ImportRow& row, QueryT
 		row.how[ImportRow::HowIndex(topic)] = 'a';
 		return true;
 	}
-	// CATEGORY - ProcessOneTransaction()'s order: the file's own category, the category of the
+	// CATEGORY, in this order: the file's own category, the category of the
 	// stored transaction this row replaces, keywords on the raw texts, keywords on the names.
 	if (!row.cat.empty()) {
 		row.category_id = manager.m_category_system.GetId(row.cat);
@@ -267,8 +267,8 @@ ImportQuestion ImportEngine::Ask(const AccountManager& manager, const ImportSess
 		q.optional = true;
 		q.preselect = Id(UNCATEGORIZED);
 		if ((Id::Type)row.client_id != 0) {
-			// CategoriesUsedByClient() as the desktop's import saw it: the rows this import
-			// replaces were already gone, the ones before this row already added.
+			// The client's past categories as if the file were imported row by row: the rows this
+			// import replaces already gone, the ones before this row already added.
 			std::vector<Id> used;
 			auto add_earlier_rows = [&]() {
 				for (size_t i = 0; i < index; ++i) {
@@ -303,7 +303,7 @@ ImportQuestion ImportEngine::Ask(const AccountManager& manager, const ImportSess
 		}
 		return q;
 	}
-	// ProcessOneTopic(): several definitive matches to choose from; otherwise suggestion-tier
+	// Several definitive matches to choose from; otherwise suggestion-tier
 	// matches, then low-confidence ones, and with none a "create new" pre-filled with the raw text.
 	const String& name = topic == QueryTopic::TYPE ? row.type : row.client;
 	q.optional = topic == QueryTopic::CLIENT;
@@ -472,7 +472,7 @@ bool ImportEngine::Commit(AccountManager& manager, ImportSession& session, std::
 	}
 	for (size_t i = 0; i < end; ++i) {
 		const ImportRow& row = session.rows[i];
-		// The client's bank account number, as ProcessOneTransaction() remembered it (not for
+		// The client's bank account number from the file (not for
 		// "no client") - only now, since until Save a row's client can still change.
 		if ((Id::Type)row.client_id != 0 && manager.m_client_man.AddAccountNumber(row.client_id, row.client_account)) {
 			manager.m_journal.AppendClientAccountNumber(row.client_id, row.client_account);

@@ -13,7 +13,7 @@ Two uses converge on the same feature:
 1. **In-app convenience** — re-running the same filter/aggregation combo (e.g. "this month by
    category") today means re-setting several UI controls (account checklist, client/category/type
    text filters, date range, sum checkboxes, period combo) every time.
-2. **Mobile snapshot export** (see [mobile-spending-viewer-design.md](mobile-spending-viewer-design.md))
+2. **Mobile snapshot export** (see `mobile-spending-viewer-design.md` (retired; in git history))
    needs a fixed set of queries (current-month-by-category, monthly trend, recent transactions...)
    run and serialized on every Save. If favorite queries exist as data, the exporter doesn't need
    its own query-building code — it just runs the same definitions.
@@ -156,7 +156,7 @@ the same result objects the grid and chart already consume today.
 Once nlohmann/json is in the project for this feature, the two other existing hand-rolled
 `key=value` config readers (`db\location.cfg`, `release.cfg`) become candidates to migrate to the
 same format for consistency — see
-[json-config-migration-design.md](json-config-migration-design.md) (designed 2026-09-02).
+`json-config-migration-design.md` (retired; in git history) (designed 2026-09-02).
 
 ## Chart preference (added during implementation)
 

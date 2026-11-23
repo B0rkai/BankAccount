@@ -195,11 +195,20 @@ struct Context {
 	const String chartjs_source;
 	const String gridjs_source;
 	const String gridjs_css;
+	// changelog.json (docs/changelog.json, shipped in the image next to resources/), as read at
+	// startup - Settings' "What's new". Empty if it isn't there.
+	const std::string changelog;
 	// BANKACCOUNT_EDITS=on: the edit routes work. Off by default - see main().
 	const bool edits_enabled;
 	Backups* backups; // null: no snapshots
 	std::atomic<bool>& rates_running;
 };
+
+// The whole file, or "" if it can't be read.
+std::string ReadTextFile(const std::string& path) {
+	std::ifstream in(path, std::ios::binary);
+	return in ? std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()) : std::string();
+}
 
 // Runs `fn(const AccountManager&)` against the loaded db, or answers 503 while nothing is loaded.
 template <class Fn>
@@ -282,7 +291,7 @@ void HandleImport(Context& ctx, const httplib::Request& req, httplib::Response& 
 	});
 }
 
-// Reads an uploaded bank file with the desktop's own DataImporter, which wants a file whose
+// Reads an uploaded bank file with DataImporter, which wants a file whose
 // extension says what it is: written to a temporary one first.
 bool ExtractUpload(const std::string& file_name, const std::string& content, RawImportData& data) {
 	const std::string format = ImportFormatOf(file_name);
@@ -382,6 +391,16 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		body["status"] = "ok";
 		body["db_loaded"] = ctx.db.IsLoaded();
 		SendJson(res, 200, body);
+	});
+
+	// What changed in each version: {"unreleased": [...], "released": [{version, date, changes}]}.
+	server.Get("/api/v1/changelog", [&ctx](const httplib::Request&, httplib::Response& res) {
+		const nlohmann::json changelog = nlohmann::json::parse(ctx.changelog, nullptr, false);
+		if (changelog.is_discarded() || !changelog.is_object()) {
+			SendError(res, 404, "No changelog in this build");
+			return;
+		}
+		SendJson(res, 200, changelog);
 	});
 
 	server.Get("/api/v1/me", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
@@ -638,8 +657,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		});
 	});
 
-	// The same self-contained .html file the desktop's Reports -> Favorite Reports menu and
-	// BankAccountCli write, offered as a download.
+	// A favorite report as one self-contained .html file (HtmlReport.h), offered as a download.
 	server.Get("/api/v1/favorites/reports/html", [&ctx](const httplib::Request& req, httplib::Response& res) {
 		const String name = String::FromUTF8(req.get_param_value("name").c_str());
 		const std::vector<FavoriteQueryDef> queries = ctx.favorites.Queries();
@@ -757,14 +775,13 @@ int main(int argc, char** argv) {
 	}
 	LogInfo("DAEMON") << "Loaded database from " << args.db_path;
 
-	// db/ next to the working directory, like the desktop app's FavoriteQueryFilePath() - in the
-	// image, the web app's own favorites folder is mounted there.
+	// db/ next to the working directory - in the image, the web app's own favorites folder is
+	// mounted there.
 	FavoritesStore favorites("db");
 	LogInfo("MAIN") << "Found " << favorites.Queries().size() << " favorite queries and " << favorites.Reports().size() << " favorite reports";
 
-	// Editing stays off until BANKACCOUNT_EDITS=on: the first change made in Persely stops
-	// deploy/migrate-db.sh from refreshing this database from the desktop app's .baf, so it is
-	// switched on at the cutover (docs/persely-sqlite-import-design.md, section 7).
+	// Editing (and importing) needs BANKACCOUNT_EDITS=on - on for the live service since the
+	// cutover (docs/persely-sqlite-import-design.md, section 7); off, Persely is read-only.
 	const bool edits_enabled = Env("BANKACCOUNT_EDITS") == "on" && db.IsWritable();
 	LogInfo("DAEMON") << "Editing is " << (edits_enabled ? "on" : "off (BANKACCOUNT_EDITS)");
 	std::atomic<bool> rates_running{false};
@@ -812,7 +829,7 @@ int main(int argc, char** argv) {
 	SessionStore sessions;
 	LoginThrottle throttle;
 	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
-		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), edits_enabled, backups.get(), rates_running};
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running};
 
 	httplib::Server tailnet_server;
 	InstallAuth(tailnet_server, ctx, Listener::TAILNET);

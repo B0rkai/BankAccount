@@ -14,39 +14,6 @@ bool Account::CheckAccNumber(const String& other) {
 	return m_acc_number->IsEqual(other);
 }
 
-bool Account::PrepareImport(const uint16_t date) {
-	if (m_transactions.empty()) {
-		m_logger.LogInfo() << "PrepareImport: '" << GetName().utf8_str() << "' has no stored transactions yet, importing from " << DateAsString(date).utf8_str() << " as-is";
-		return true;
-	}
-	const uint16_t last_date = GetLastRecord()->GetDate();
-	m_logger.LogInfo() << "PrepareImport: '" << GetName().utf8_str() << "' last stored date is " << DateAsString(last_date).utf8_str()
-		<< ", new import's first date is " << DateAsString(date).utf8_str();
-	if (last_date < date) {
-		m_logger.LogWarn() << "PrepareImport: gap between stored data and import (" << DateAsString(last_date).utf8_str() << " < "
-			<< DateAsString(date).utf8_str() << ") - aborting, nothing will be imported for '" << GetName().utf8_str() << "'";
-		return false; // gap
-	} else { // delete old data on the start day, because export has higher chance to be whole
-		if ((last_date - date) > 1) { // WTF
-			m_logger.LogWarn() << "PrepareImport: overlap between stored data and import is " << (last_date - date)
-				<< " day(s) (last stored " << DateAsString(last_date).utf8_str() << ", import starts " << DateAsString(date).utf8_str()
-				<< ") - more than the 1-day overlap this expects, aborting for '" << GetName().utf8_str() << "'";
-			//m_logger.LogError() << "Import Aborted! Please import data what has 5 or less days overlap with already loaded data! (last record date on " << GetFullName().utf8_str() << " is " << GetDateFormat(GetLastRecord()->GetDate()) << ")";
-			return false;
-		}
-		size_t popped = 0;
-		do {
-			StashCategorization(m_transactions.back());
-			m_transactions.pop_back();
-			++popped;
-		} while (!m_transactions.empty() && GetLastRecord()->GetDate() >= date);
-		m_journal.AppendTruncate(GetId(), m_transactions.size());
-		m_logger.LogInfo() << "PrepareImport: dropped " << popped << " stored transaction(s) on/after " << DateAsString(date).utf8_str()
-			<< " from '" << GetName().utf8_str() << "' to re-import them fresh";
-		return true;
-	}
-}
-
 size_t Account::Size() const {
 	return m_transactions.size();
 }
@@ -140,15 +107,6 @@ const Transaction* Account::GetLastRecord() const {
 	return &m_transactions.back();
 }
 
-const PtrVector<const Transaction> Account::GetLastRecords(unsigned int cnt) const {
-	PtrVector<const Transaction> vec;
-	size_t s = Size();
-	for (size_t i = s - cnt; i < s; ++i) {
-		vec.push_back(&m_transactions[i]);
-	}
-	return vec;
-}
-
 size_t Account::IndexOf(const Transaction* tr) const {
 	return tr - m_transactions.data();
 }
@@ -157,47 +115,15 @@ Transaction& Account::GetTransactionAt(size_t index) {
 	return m_transactions.at(index);
 }
 
-void Account::AppendCategoriesForClient(Id client_id, std::vector<Id>& out) const {
-	for (const Transaction& tr : m_transactions) {
-		if (tr.GetClientId() == client_id) {
-			out.push_back(tr.GetCategoryId());
-		}
-	}
-}
-
 size_t Account::PruneLastTransactions(size_t count) {
 	count = std::min(count, m_transactions.size());
-	// Same as PrepareImport()'s own pop_back() above - the pruned entries' memo/description
-	// strings are left behind in m_memos/m_descriptions rather than tracked down and erased,
-	// since nothing else in this class ever needs the reverse (Transaction -> list iterator)
-	// mapping that would take.
-	for (auto it = m_transactions.end() - count; it != m_transactions.end(); ++it) {
-		StashCategorization(*it);
-	}
+	// The pruned entries' memo/description strings stay in m_memos/m_descriptions: nothing maps a
+	// Transaction back to its list entry.
 	m_transactions.erase(m_transactions.end() - count, m_transactions.end());
 	if (count) {
 		m_journal.AppendTruncate(GetId(), m_transactions.size());
 	}
 	return count;
-}
-
-void Account::StashCategorization(const Transaction& tr) {
-	if (tr.GetCategoryId() == Id(UNCATEGORIZED)) {
-		return; // nothing worth recognizing later
-	}
-	m_pruned_categorizations.push_back({ tr.GetDate(), tr.GetAmount(), tr.GetClientId(), tr.GetCategoryId() });
-}
-
-bool Account::RecallCategorization(uint16_t date, int32_t amount, Id client_id, Id& category_id) {
-	auto it = std::find_if(m_pruned_categorizations.begin(), m_pruned_categorizations.end(), [&](const PrunedCategorization& p) {
-		return p.date == date && p.amount == amount && p.client_id == client_id;
-	});
-	if (it == m_pruned_categorizations.end()) {
-		return false;
-	}
-	category_id = it->category_id;
-	m_pruned_categorizations.erase(it);
-	return true;
 }
 
 void Account::Sort() {

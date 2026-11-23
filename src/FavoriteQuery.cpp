@@ -104,16 +104,6 @@ namespace {
 	}
 }
 
-const char* FavoriteQueryFilePath() {
-	// Forward slash, not backslash: Windows accepts both interchangeably, but a literal backslash
-	// is just an ordinary filename character on Linux (the same class of bug Logger.cpp's
-	// DEFAULT_LOG_LOCATION had - see docs/linux-query-daemon-design.md story 2) - std::ifstream
-	// would look for a file literally named "db\favorite_queries.json" instead of descending into
-	// a "db" directory, so the Linux daemon's favorites listing (story 4) would silently always
-	// come back empty without this.
-	return "db/favorite_queries.json";
-}
-
 std::vector<FavoriteQueryDef> ParseFavoriteQueries(std::istream& in) {
 	std::vector<FavoriteQueryDef> result;
 	nlohmann::json j;
@@ -151,17 +141,6 @@ std::optional<FavoriteQueryDef> ParseAdHocQuery(std::istream& in) {
 	FavoriteQueryDef def;
 	FillQueryFieldsFromJson(j, def);
 	return def;
-}
-
-std::vector<FavoriteQueryDef> LoadFavoriteQueries() {
-	std::ifstream in(FavoriteQueryFilePath());
-	if (!in.is_open()) {
-		LogDebug() << "No " << FavoriteQueryFilePath() << " found - no favorite queries";
-		return {};
-	}
-	std::vector<FavoriteQueryDef> result = ParseFavoriteQueries(in);
-	LogInfo() << "Loaded " << result.size() << " favorite quer" << (result.size() == 1 ? "y" : "ies");
-	return result;
 }
 
 namespace {
@@ -215,25 +194,6 @@ void WriteFavoriteQueries(const std::vector<FavoriteQueryDef>& defs, std::ostrea
 		arr.push_back(ToJson(def));
 	}
 	out << arr.dump(2);
-}
-
-void SaveFavoriteQueries(const std::vector<FavoriteQueryDef>& defs) {
-	// Serialize fully before opening (= truncating) the file, so a serialization failure leaves
-	// the existing favorites intact instead of an empty file.
-	std::ostringstream buffer;
-	try {
-		WriteFavoriteQueries(defs, buffer);
-	} catch (const nlohmann::json::exception& e) {
-		LogError() << "Failed to serialize favorite queries (" << e.what() << ") - not saved";
-		return;
-	}
-	std::ofstream out(FavoriteQueryFilePath());
-	if (!out.is_open()) {
-		LogError() << "Failed to open " << FavoriteQueryFilePath() << " for writing - favorite queries not saved";
-		return;
-	}
-	out << buffer.str();
-	LogInfo() << "Saved " << defs.size() << " favorite quer" << (defs.size() == 1 ? "y" : "ies");
 }
 
 namespace {

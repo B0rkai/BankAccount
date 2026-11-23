@@ -34,8 +34,8 @@ using ChartDataByCurrency = std::map<CurrencyType, ChartData>;
 
 // Which of a ChartResult's three datasets a chart draws. A chart only ever draws exactly one of
 // them - income and expense are never shown together in one chart (no Income-next-to-Expense bar
-// pair, no Expense stacked on top of Income), the user picks which one to look at instead (a tab
-// in ChartDialog, a dropdown in the daemon frontend, one chart per dataset in an HTML report).
+// pair, no Expense stacked on top of Income), the user picks which one to look at instead (a
+// dropdown in the web app, one chart per dataset in an HTML report).
 // Declaration order is also display order: Net first, and Net is the default selection.
 enum class ChartDataset {
 	NET,

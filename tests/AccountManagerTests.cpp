@@ -139,12 +139,11 @@ TEST(MergeTest, MergeCombinesTwoClientsAndCarriesOverExplicitKeywords) {
 
 // --- Fixture-backed tests: MakeQuery()/ApplyEdit() need at least one real Account+Transaction -
 // AccountManager's public API has no direct "create an Account with a transaction" entry point
-// (Import() needs live IManualResolve/INewAccount callbacks plus a real bank-export file;
-// CreateOrGetAccountId() is private). ApplyRecoveryFile() is the one public method that builds
+// (CreateOrGetAccountId() is private). ApplyRecoveryFile() is the one public method that builds
 // real Account/Transaction objects through the app's own normal mutation methods from a simple
 // tab-separated text format (see its declaration comment in AccountManager.h), so it doubles as
 // the most direct available fixture-builder here. It reads from a real file path via
-// std::ifstream, so this writes one temp file (NOT under db\/log\, and removed unconditionally
+// std::ifstream, so this writes one temp file (removed unconditionally
 // via its destructor) rather than an in-memory stream.
 class TempRecoveryFile {
     String m_path;
@@ -183,59 +182,6 @@ AccountManager::TransactionIdentity BuildOneTransactionFixture(TestAccountManage
     return mgr.Identify(result.transactions.front());
 }
 
-TEST(CategoriesUsedByClientTest, ReturnsDistinctCategoriesWithTheMostUsedOnePreselected) {
-    NullJournal journal;
-    TestAccountManager mgr(journal);
-    const char* content =
-        "ACCOUNT\t0\t1177337704983110\tTest Acc\tOTP\tHUF\n"
-        "CLIENT\t1\tAlice\n"
-        "CATEGORY\t1\tGroceries\n"
-        "CATEGORY\t2\tUtilities\n"
-        "TYPE\t0\tPurchase\n"
-        "TRANSACTION\t0\t45000\t0\t-1000\t1\t1\n"
-        "TRANSACTION\t0\t45001\t0\t-2000\t1\t1\n"
-        "TRANSACTION\t0\t45002\t0\t-3000\t1\t2\n";
-    TempRecoveryFile file("test_categoriesusedbyclient_fixture.tmp", content);
-    AccountManager::RecoveryResult result = mgr.ApplyRecoveryFile(file.Path(), true);
-    ASSERT_TRUE(result.success);
-
-    Id most_frequent(INVALID_ID);
-    IdSet categories = mgr.CategoriesUsedByClient(Id(1), most_frequent);
-
-    EXPECT_EQ(categories, IdSet({Id(1), Id(2)}));
-    EXPECT_EQ(most_frequent, Id(1)); // Groceries used twice, Utilities once
-}
-
-TEST(CategoriesUsedByClientTest, ReturnsEmptyAndInvalidMostFrequentForAClientWithNoHistory) {
-    NullJournal journal;
-    TestAccountManager mgr(journal);
-    BuildOneTransactionFixture(mgr);
-    Id unrelated_client = mgr.CreateId(QueryTopic::CLIENT, "Someone Else");
-
-    Id most_frequent(Id(0));
-    IdSet categories = mgr.CategoriesUsedByClient(unrelated_client, most_frequent);
-
-    EXPECT_TRUE(categories.empty());
-    EXPECT_EQ(most_frequent, Id(INVALID_ID));
-}
-
-TEST(MakeQueryTest, ReadOnlyQueryClientFilterFindsTheMatchingTransaction) {
-    NullJournal journal;
-    TestAccountManager mgr(journal);
-    AccountManager::TransactionIdentity identity = BuildOneTransactionFixture(mgr);
-    Id client_id = mgr.GetTransactionFieldId(identity, QueryTopic::CLIENT);
-
-    Query q;
-    QueryClient* filter = new QueryClient(); // Query owns pushed elements - see Query::Query()'s m_elements(true)
-    filter->AddId(client_id);
-    q.push_back(filter);
-
-    mgr.MakeQuery(q);
-
-    ASSERT_EQ(q.GetResult().size(), 1u);
-    EXPECT_EQ(q.GetResult().front()->GetClientId(), client_id);
-}
-
 TEST(MakeQueryTest, ReadOnlyQueryClientFilterExcludesNonMatchingTransaction) {
     NullJournal journal;
     TestAccountManager mgr(journal);
@@ -250,19 +196,6 @@ TEST(MakeQueryTest, ReadOnlyQueryClientFilterExcludesNonMatchingTransaction) {
     mgr.MakeQuery(q);
 
     EXPECT_EQ(q.GetResult().size(), 0u);
-}
-
-TEST(ApplyEditTest, SetCategoryQueryChangesTheTransactionsCategory) {
-    NullJournal journal;
-    TestAccountManager mgr(journal);
-    AccountManager::TransactionIdentity identity = BuildOneTransactionFixture(mgr);
-    Id new_category = mgr.CreateId(QueryTopic::CATEGORY, "Entertainment");
-
-    SetCategoryQuery edit;
-    edit.SetCategoryId(new_category);
-    mgr.ApplyEdit(identity, edit);
-
-    EXPECT_EQ(mgr.GetTransactionFieldId(identity, QueryTopic::CATEGORY), new_category);
 }
 
 TEST(MakeQueryTest, ReadOnlyQueryAccountFilterByNameFindsTheMatchingTransaction) {
@@ -299,23 +232,6 @@ TEST(MakeQueryTest, ReadOnlyQueryAccountFilterByUnknownNameFindsNothing) {
     mgr.MakeQuery(q);
 
     EXPECT_EQ(q.GetResult().size(), 0u);
-}
-
-TEST(MakeQueryTest, WQueryWithNoFilterCategorizesTheMatchedTransaction) {
-    NullJournal journal;
-    TestAccountManager mgr(journal);
-    AccountManager::TransactionIdentity identity = BuildOneTransactionFixture(mgr);
-    Id new_category = mgr.CreateId(QueryTopic::CATEGORY, "Entertainment");
-
-    SetCategoryQuery set_cat; // stack-allocated - WQuery::AddWElement is non-owning (unlike Query::push_back)
-    set_cat.SetCategoryId(new_category);
-    WQuery wq; // no filter QueryElements added - matches every transaction, same as
-               // AccountTest.MakeQueryWQueryAppliesTheEditAndReportsChanged already establishes
-    wq.AddWElement(&set_cat);
-
-    mgr.MakeQuery(wq);
-
-    EXPECT_EQ(mgr.GetTransactionFieldId(identity, QueryTopic::CATEGORY), new_category);
 }
 
 }

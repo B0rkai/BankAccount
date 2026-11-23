@@ -38,7 +38,7 @@ const PERIODS = [
 // A database whose newest transaction is older than this gets a reminder to import.
 export const STALE_DAYS = 10
 
-// "2026.11.13" (the desktop's date format) -> days since then.
+// "2026.11.13" (the daemon's last_record_date format) -> days since then.
 export function daysSince(dotted: string | undefined): number | undefined {
   if (!dotted) return undefined
   const d = new Date(`${dotted.replace(/\./g, '-')}T00:00:00`)

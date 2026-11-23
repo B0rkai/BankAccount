@@ -34,8 +34,7 @@ struct ImportRow {
 };
 
 // A bank file being imported step by step - docs/persely-sqlite-import-design.md, section 3.
-// Replaces AccountManager::Import()'s one blocking loop: instead of calling out to a dialog it
-// leaves a question on each row that needs a human, and the whole state lives here (and in the
+// Instead of calling out to a dialog it leaves a question on each row that needs a human, and the whole state lives here (and in the
 // database between answers), so it can be continued later, on another device.
 struct ImportSession {
 	enum class State { Categorizing, Review, Committed };
@@ -51,7 +50,7 @@ struct ImportSession {
 	String source_format; // "MBH_CSV", "GRANIT_XML"
 	uint16_t export_from = 0; // first and last date in the file
 	uint16_t export_to = 0;
-	// The overlap with what's stored (decided at upload, like Account::PrepareImport()): the
+	// The overlap with what's stored (decided at upload): the
 	// account's stored transactions dated on/after replace_from - replaced_count of them - are
 	// replaced by this import on commit. stored_last_date is the account's last stored date then
 	// (0: none), skipped the file's rows before the overlap (not kept).
@@ -73,8 +72,7 @@ struct ImportSession {
 	size_t FirstStoppableRow() const;
 };
 
-// What the categorize screen asks about one topic of one row - the web counterpart of
-// IManualResolve::DoManualResolve()'s arguments.
+// What the categorize screen asks about one topic of one row.
 struct ImportQuestion {
 	size_t row = 0;
 	QueryTopic topic = QueryTopic::TYPE;
@@ -99,8 +97,8 @@ struct ImportAnswer {
 };
 
 // The steps of an import, on an AccountManager. GUI-free, unit-testable (daemon/tests/
-// ImportSessionTests.cpp). Uses the same resolve logic as AccountManager::Import()'s
-// ProcessOneTransaction()/ProcessOneTopic(), so the same answers give the same transactions.
+// ImportSessionTests.cpp). Resolves rows the way the desktop app's import did, so the same
+// answers give the same transactions (pinned by ImportSessionTests' DESKTOP_* results).
 //
 // Every row is tried at once: Resolve() goes through the whole file, and only the rows keywords
 // can't settle get a question. It's cheap, so it runs again after every change that could alter

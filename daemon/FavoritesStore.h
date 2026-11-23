@@ -10,7 +10,7 @@
 
 // The favorite queries/reports the web app lists and saves - see docs/linux-query-daemon-design.md,
 // "Web app features (2026-11-20)". Reads `<dir>/favorite_queries.json` and `<dir>/favorite_reports.json`
-// (the same format as the desktop app's db\ files, but the web app's own copies), again whenever
+// (FavoriteQuery.h/FavoriteReport.h's format), again whenever
 // one changes on disk, so a hand edit shows up without restarting the daemon.
 //
 // Writes edit the file's JSON array in place: every other entry is kept as it is in the file -
@@ -20,8 +20,8 @@
 // can't leave half a file behind.
 //
 // It also keeps the web app's settings, `<dir>/web_settings.json`: one JSON object, so the phone and
-// the LAN browser agree on them. Settings refer to categories by id, so a category renamed in the
-// desktop app keeps its place in them.
+// the LAN browser agree on them. Settings refer to categories by id, so a renamed category keeps its
+// place in them.
 class FavoritesStore {
 public:
 	explicit FavoritesStore(std::string dir);

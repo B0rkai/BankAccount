@@ -1,7 +1,7 @@
 # Design: Linux query daemon + interactive web UI (epic)
 
 Status: **✅ implemented (2026-09-11)** — all 8 stories below done. Discussed 2026-09-10. Revisits option 1 of
-[mobile-spending-viewer-design.md](mobile-spending-viewer-design.md) ("live C++ backend linking
+`mobile-spending-viewer-design.md` (retired; in git history) ("live C++ backend linking
 `BankAccountCore` directly"), rejected there for the desktop's read-write shape — see "Why this is
 viable now" below for what changed.
 
@@ -120,7 +120,7 @@ see "Decisions" below) rather than reparsing on every request.
    the plain-text `db\BankAccount.txt` layout, not a compressed/password-protected `BData.baf`,
    since decompressing that needed ZipLib and story 1 didn't vendor it (nothing on the read-only
    path needed it at the time). That gap was closed in
-   [db-encryption-design.md](db-encryption-design.md)'s Story 1 — see
+   `db-encryption-design.md` (retired; in git history)'s Story 1 — see
    [ziplib-vendoring.md](ziplib-vendoring.md) — which vendored a trimmed, portable ZipLib and gave
    `DaemonDb` a `BafArchive::ReadInto()`-based path for `.baf`, alongside the plain-text one;
    `--db` accepts either.

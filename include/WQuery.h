@@ -8,7 +8,6 @@ class IIdResolve;
 class IWClient;
 class IWCategorize;
 class IWAccount;
-class IManualResolve;
 
 class WQuery : public Query {
     WQueryElement* m_wqe = nullptr;
@@ -69,46 +68,6 @@ class TypeMergeQuery : public MergeQuery {
 
 class CategoryMergeQuery : public MergeQuery {
     GETQUERYTOPIC(CATEGORY)
-};
-
-class CategorizingQuery : public WQueryElement {
-    GETQUERYTOPIC(CATEGORY)
-    virtual bool IsOk() const;
-    virtual void Execute(IWAccount* account_if) override;
-    virtual bool CheckTransaction(Transaction* tr) override;
-    virtual String GetResult() const override;
-    // Resolves tr's client the same way this class already resolves category - AUTOMATIC tries
-    // a silent high-confidence keyword match (against Memo/Desc, the only text a transaction
-    // still carries once imported - unlike Import itself, the bank's raw client string is never
-    // kept around), MANUAL falls back to the same manual-resolve dialog Import uses when that
-    // fails, mirroring AccountManager::ProcessOneTransaction's own Type->Client->Category order
-    // so a re-run of Categorize on an outlier behaves like it would have at import time. Runs
-    // before the category logic so a newly-resolved client's name also feeds the category
-    // keyword match below, same as at import. Sets `changed` rather than returning it, since
-    // CheckTransaction's own return also has to account for the category half.
-    void ResolveClient(Transaction* tr, bool& changed);
-    uint8_t m_flags = 0u;
-    size_t m_all = 0;
-    size_t m_did_not_change = 0;
-    size_t m_no_category_found = 0;
-    size_t m_automatic_categorized = 0;
-    size_t m_manual_categorized = 0;
-    size_t m_client_automatic_resolved = 0;
-    size_t m_client_manual_resolved = 0;
-    size_t m_client_still_missing = 0;
-    IWCategorize* if_categorize = nullptr;
-    IWAccount* if_account = nullptr;
-    IManualResolve* if_manual_resolve = nullptr;
-public:
-    enum Settings : uint8_t {
-        CAUTIOUS = 1,
-        MANUAL = 2,
-        AUTOMATIC = 4,
-        OVERRIDE = 8
-    };
-    inline void SetManualResolveIf(IManualResolve* resolver_if) { if_manual_resolve = resolver_if; }
-    inline void SetFlags(uint8_t flags) { m_flags = flags; };
-
 };
 
 // Single-transaction edits applied via AccountManager::ApplyEdit() rather than a full MakeQuery()

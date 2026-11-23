@@ -30,8 +30,7 @@ QueryApiResult RunAdHocQuery(const std::string& request_body, const AccountManag
 // ChartDataset - a chart only ever draws one of them); "native" is one ChartData per currency,
 // "converted" (only when there's more than one currency) one ChartData per target currency with
 // every currency exchanged into it and merged (ChartConversion.h). An empty "accounts" filter means every account
-// currently loaded, mirroring the desktop's "no boxes checked" convention when there's no UI
-// checklist to read from. Shared by RunAdHocQuery() above (an ad-hoc request) and the favorites
+// currently loaded. Shared by RunAdHocQuery() above (an ad-hoc request) and the favorites
 // API's run-by-name endpoint (FavoritesApi.h, story 4) so both funnel through the same
 // execution/serialization path instead of two hand-maintained copies of it.
 QueryApiResult RunQueryDef(const FavoriteQueryDef& def, const AccountManager& mgr);

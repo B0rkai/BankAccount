@@ -52,8 +52,10 @@ String Currency::PrettyPrint(const int32_t val) const {
 	}
 	uint32_t whole = abs(val);
 	uint16_t fract = 0;
+	// The sign as UTF-8 (and the result decoded as UTF-8): a wxString streamed as a narrow string
+	// depends on the C locale on Linux, which drops "€".
 	if (m_sign_prefix) {
-		str << m_sign;
+		str << m_sign.utf8_str();
 	}
 	if (m_cents) {
 		fract = whole % 100;
@@ -69,9 +71,9 @@ String Currency::PrettyPrint(const int32_t val) const {
 		str << m_decimal << std::setfill('0') << std::setw(2) << fract;
 	}
 	if (!m_sign_prefix) {
-		str << ' ' << m_sign;
+		str << ' ' << m_sign.utf8_str();
 	}
-	return str.str();
+	return String::FromUTF8(str.str().c_str());
 }
 
 void Currency::SetExchangeRate(CurrencyType type, double newVal) {
@@ -99,7 +101,7 @@ class Euro : public Currency {
 	static Euro* s_object;
 public:
 	Euro()
-		: Currency("€", "Euro", "EUR", '.', ',', true, false) {}
+		: Currency(L"\u20AC", "Euro", "EUR", '.', ',', true, false) {}
 	static Euro* GetObject();
 	virtual CurrencyType Type() const { return EUR; }
 };

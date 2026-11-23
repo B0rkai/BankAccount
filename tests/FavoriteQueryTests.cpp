@@ -208,10 +208,6 @@ TEST(ParseAdHocQueryTest, ParsesFilterFieldsExcludeFlagsAndRelativePeriod) {
     EXPECT_EQ(def->relative_period, "this_month");
 }
 
-TEST(FavoriteQueryFilePathTest, IsTheDocumentedRelativePath) {
-    EXPECT_STREQ(FavoriteQueryFilePath(), "db/favorite_queries.json");
-}
-
 TEST(WriteFavoriteQueriesTest, RoundTripsAllFieldsThroughParse) {
     FavoriteQueryDef def;
     def.name = "Round trip";

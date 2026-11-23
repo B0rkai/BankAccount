@@ -250,7 +250,7 @@ function Context({ details }: { details: ImportDetails }) {
 
 type Choice = { kind: 'select'; id: number; name: string } | { kind: 'create'; name: string }
 
-// One question: which type, client or category this row is - like the desktop's resolve dialog.
+// One question: which type, client or category this row is.
 // Pick one used before, find any other by name, or create one; a keyword makes the next ones sort
 // themselves (and is tried on the rest of this file straight away).
 function QuestionForm({

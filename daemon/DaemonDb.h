@@ -13,17 +13,12 @@
 #include "SqliteStore.h"
 
 // The daemon's AccountManager, kept in memory and reloaded when its file changes on disk - see
-// docs/linux-query-daemon-design.md, story 2 ("Daemon: HTTP server skeleton"). Deliberately
-// doesn't go through BankAccountFile::Load(): that class also writes/checks a crash-recovery
-// journal via the real, disk-backed Journal (static calls, not the IJournal seam) - machinery
-// this daemon has no use for. Instead this calls the same protected StreamIn() BankAccountFile
-// itself calls, with none of the journal bookkeeping around it.
+// docs/linux-query-daemon-design.md and docs/persely-sqlite-import-design.md.
 //
 // --db can point at any of three layouts: a path ending in ".db"/".sqlite" is the SQLite
 // database bankaccount-migrate writes (SqliteStore - see docs/persely-sqlite-import-design.md);
 // ".baf" is opened via BafArchive::ReadInto (the vendored, portable ZipLib - see
 // docs/ziplib-vendoring.md); anything else is read as the plain-text db\BankAccount.txt export.
-// See docs/db-encryption-design.md for why the .baf password ("pass") isn't real security yet.
 //
 // Only the SQLite layout can be written to (Write()): every mutation reports itself to a
 // SqliteJournal, and Write() turns one change into one SQL transaction.

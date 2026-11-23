@@ -11,7 +11,6 @@
 #include "DaemonDb.h"
 #include "DataImporter.h"
 #include "EditApi.h"
-#include "IManualResolve.h"
 #include "INewAccount.h"
 #include "ImportApi.h"
 #include "ImportSession.h"
@@ -104,8 +103,8 @@ RawImportData RawFile() {
 	return data;
 }
 
-// The same rows as a Gránit Bank XML export (newest first, a header record on top), for the
-// desktop's one-shot Import().
+// The same rows as a Gránit Bank XML export (newest first, a header record on top), read back by
+// the real bank-file reader.
 void WriteGranitXml(const std::filesystem::path& path, const std::string& account = ACCOUNT) {
 	std::ofstream out(path);
 	auto record = [&](const std::vector<std::string>& fields) {
@@ -126,8 +125,8 @@ void WriteGranitXml(const std::filesystem::path& path, const std::string& accoun
 	}
 }
 
-// How a scripted user answers a question - the same rules for the desktop's dialog and for the
-// web's questions, so both imports must end up identical.
+// How a scripted user answers a question - the rules the desktop's dialog was answered with too
+// (see DESKTOP_* below).
 struct Decision {
 	ImportAnswer::Kind kind = ImportAnswer::Kind::Default;
 	Id id = Id(INVALID_ID);
@@ -162,46 +161,120 @@ Decision Decide(QueryTopic topic, Id preselect, const String& create, const Stri
 	return d;
 }
 
-struct Asked {
-	size_t file_row;
-	QueryTopic topic;
-	IdSet choices;
-	Id preselect;
-	String create;
-	bool operator==(const Asked& o) const {
-		return file_row == o.file_row && topic == o.topic && choices == o.choices && preselect == o.preselect && create == o.create;
-	}
-};
+// What the desktop app's one-shot import (retired at the cutover) produced for FILE_ROWS with
+// Decide() answering its dialog - recorded from the equivalence tests that compared the two
+// side by side, so the step-by-step import keeps giving the same questions and the same database.
+// A question: "<file row> <topic> [<choices>] <preselect, - for none> '<create suggestion>'".
+const char* const DESKTOP_EXISTING_DB = R"(3
+1,1,Groceries,1,LIDL
+2,1,Eating out,0
+3,2,Home,Rent,0
+4
+1,1,Tesco,1,TESCO,0
+2,1,Lidl,0,0
+3,1,BISTRO,1,BISTRO,0
+4,1,Employer Kft,1,Employer Kft,1,10100000-33333333-00000000
+3
+0,1,Card payment,1,CARD
+1,1,TRANSFER,1,TRANSFER
+2,1,Kártyafoglalás,1,Kártyafoglalás
+1
+Gránit,11773016-11111111-00000000,Main HUF,HUF,1,8
+-12340,46000,1,0,1,,
+-4590,46001,2,0,1,VASARLAS LIDL,
+-990,46002,1,0,2,,
+-2500,46003,0,1,0,rent,row 3
+-800,46003,3,0,3,,
+-1200,46004,3,0,3,lunch,
+50000,46005,4,1,3,salary,
+-300,46006,0,2,0,,row 7
+0
+0
+0
+0
+0
+)";
+const char* const DESKTOP_EXISTING_ASKED = R"(1 client [2] 2 ''
+3 type [] - 'TRANSFER'
+3 client [] - 'John Smith'
+3 category [] 0 ''
+4 client [] - 'BISTRO'
+4 category [] 0 ''
+5 category [3] 3 ''
+6 client [] - 'Employer Kft'
+6 category [] 0 ''
+7 type [] - 'Kártyafoglalás'
+7 client [] - 'SHOP X'
+7 category [] 0 ''
+)";
+const char* const DESKTOP_NEW_DB = R"(3
+1,1,Groceries,1,LIDL
+2,1,Eating out,0
+3,2,Home,Rent,0
+5
+1,1,Tesco,1,TESCO,0
+2,1,Lidl,0,0
+3,1,OLD SHOP,1,OLD SHOP,0
+4,1,BISTRO,1,BISTRO,0
+5,1,Employer Kft,1,Employer Kft,1,10100000-33333333-00000000
+3
+0,1,Card payment,1,CARD
+1,1,TRANSFER,1,TRANSFER
+2,1,Kártyafoglalás,1,Kártyafoglalás
+2
+Gránit,11773016-11111111-00000000,Main HUF,HUF,1,3
+-12340,46000,1,0,1,,
+-4590,46001,2,0,0,VASARLAS LIDL,
+-990,46002,1,0,2,,
+Gránit Bank,11773016-99999999-00000000,Account #2,HUF,1,8
+-100,45998,3,0,3,,
+-4590,46001,2,0,1,VASARLAS LIDL,
+-990,46002,1,0,2,,
+-2500,46003,0,1,0,rent,row 3
+-800,46003,4,0,3,,
+-1200,46004,4,0,3,lunch,
+50000,46005,5,1,3,salary,
+-300,46006,0,2,0,,row 7
+0
+0
+0
+0
+0
+)";
+const char* const DESKTOP_NEW_ASKED = R"(0 client [] - 'OLD SHOP'
+0 category [] 0 ''
+1 client [2] 2 ''
+2 category [1 2] 2 ''
+3 type [] - 'TRANSFER'
+3 client [] - 'John Smith'
+3 category [] 0 ''
+4 client [] - 'BISTRO'
+4 category [] 0 ''
+5 category [3] 3 ''
+6 client [] - 'Employer Kft'
+6 category [] 0 ''
+7 type [] - 'Kártyafoglalás'
+7 client [] - 'SHOP X'
+7 category [] 0 ''
+)";
 
-// The desktop's dialog, scripted - cMain::DoManualResolve() with Decide() for the user.
-class ScriptedResolver : public IManualResolve, public INewAccount {
-public:
-	AccountManager& manager;
-	std::vector<Asked> asked;
-	explicit ScriptedResolver(AccountManager& m) : manager(m) {}
-	ManualResolveResult ManualResolve(const String&, const QueryTopic, const IdSet&, Id&, String&, String&, bool&, String&, bool, const String&) override {
-		return ManualResolve_ABORT;
+std::string Describe(size_t file_row, QueryTopic topic, const IdSet& choices, Id preselect, const String& create) {
+	std::ostringstream out;
+	out << file_row << " " << (topic == QueryTopic::TYPE ? "type" : topic == QueryTopic::CLIENT ? "client" : "category") << " [";
+	bool first = true;
+	for (const Id& id : choices) {
+		out << (first ? "" : " ") << (Id::Type)id;
+		first = false;
 	}
-	void DoManualResolve(const String&, String create, String& desc, const QueryTopic topic, IdSet ids, Id& id, bool, const String& exact_value) override {
-		const size_t file_row = RawTransactionData::index - 1;
-		asked.push_back({ file_row, topic, ids, id, create });
-		const Decision d = Decide(topic, id, create, exact_value, file_row);
-		if (d.kind == ImportAnswer::Kind::CreateNew) {
-			id = manager.CreateId(topic, d.name);
-		} else if (d.kind == ImportAnswer::Kind::Default) {
-			id = Id(0);
-		} else {
-			id = d.id;
-		}
-		if (!d.keyword.empty()) {
-			manager.AddKeyword(topic, id, d.keyword, d.definitive);
-		}
-		if (!d.description.empty()) {
-			desc = d.description;
-		}
+	out << "] ";
+	if (preselect == Id(INVALID_ID)) {
+		out << "-";
+	} else {
+		out << (Id::Type)preselect;
 	}
-	bool NewAccountDetails(const String&, String&, String&, CurrencyType) override { return true; }
-};
+	out << " '" << create.utf8_str() << "'\n";
+	return out.str();
+}
 
 class ImportSessionTests : public ::testing::Test {
 protected:
@@ -215,13 +288,14 @@ protected:
 		EXPECT_TRUE(ImportEngine::Start(mgr, RawFile(), "export.xml", "GRANIT_XML", session, error)) << error;
 		return session;
 	}
-	// Answers with Decide() until a question about `stop_before` (a session row) or the end.
-	std::vector<Asked> AnswerAll(ImportSession& session, size_t stop_before = SIZE_MAX) {
-		std::vector<Asked> asked;
+	// Answers with Decide() until a question about `stop_before` (a session row) or the end; the
+	// questions asked, as Describe() writes them.
+	std::string AnswerAll(ImportSession& session, size_t stop_before = SIZE_MAX) {
+		std::string asked;
 		std::optional<ImportQuestion> q = ImportEngine::Question(mgr, session);
 		while (q && q->row < stop_before) {
 			const size_t file_row = q->row + session.skipped;
-			asked.push_back({ file_row, q->topic, q->choices, q->preselect, q->create_suggestion });
+			asked += Describe(file_row, q->topic, q->choices, q->preselect, q->create_suggestion);
 			const Decision d = Decide(q->topic, q->preselect, q->create_suggestion, q->exact_value, file_row);
 			ImportAnswer answer;
 			answer.row = q->row;
@@ -246,19 +320,12 @@ protected:
 
 } // namespace
 
-// Imports FILE_ROWS for `account` twice - with the desktop's one-shot Import() and a scripted
-// dialog, and step by step with the same answers - and expects the same questions and the same
-// database.
-void ExpectSameAsOneShotImport(Manager& mgr, const std::string& account, const String& new_account_name,
-		const std::function<std::vector<Asked>(ImportSession&)>& answer_all) {
+// Imports FILE_ROWS for `account` through the bank-file reader, answering with Decide(), and
+// expects what the desktop's import did with the same answers.
+void ExpectDesktopResult(Manager& mgr, const std::string& account, const String& new_account_name, const char* desktop_asked, const char* desktop_db,
+		const std::function<std::string(ImportSession&)>& answer_all) {
 	const std::filesystem::path xml = std::filesystem::temp_directory_path() / ("import-" + std::to_string(::getpid()) + ".xml");
 	WriteGranitXml(xml, account);
-	NullJournal desktop_journal;
-	Manager desktop(desktop_journal);
-	desktop.Load(SAMPLE);
-	ScriptedResolver resolver(desktop);
-	desktop.Import(String::FromUTF8(xml.string().c_str()), &resolver, &resolver);
-
 	RawImportData data;
 	ImportFromFile(String::FromUTF8(xml.string().c_str()), data);
 	std::filesystem::remove(xml);
@@ -267,23 +334,22 @@ void ExpectSameAsOneShotImport(Manager& mgr, const std::string& account, const S
 	std::string error;
 	ASSERT_TRUE(ImportEngine::Start(mgr, data, "export.xml", "GRANIT_XML", session, error)) << error;
 	session.account_name = new_account_name;
-	const std::vector<Asked> asked = answer_all(session);
+	const std::string asked = answer_all(session);
 	ASSERT_EQ(session.state, ImportSession::State::Review);
 	ASSERT_TRUE(ImportEngine::Commit(mgr, session, error)) << error;
 
-	EXPECT_EQ(asked.size(), resolver.asked.size());
-	EXPECT_TRUE(asked == resolver.asked) << "the web asked different questions than the desktop";
-	EXPECT_EQ(mgr.Dump(), desktop.Dump());
+	EXPECT_EQ(asked, desktop_asked) << "different questions than the desktop asked";
+	EXPECT_EQ(mgr.Dump(), desktop_db);
 }
 
-TEST_F(ImportSessionTests, ScriptedAnswersGiveTheSameAccountAsTheOneShotImport) {
-	ExpectSameAsOneShotImport(mgr, ACCOUNT, "", [&](ImportSession& s) { return AnswerAll(s); });
+TEST_F(ImportSessionTests, ScriptedAnswersGiveTheAccountTheDesktopGave) {
+	ExpectDesktopResult(mgr, ACCOUNT, "", DESKTOP_EXISTING_ASKED, DESKTOP_EXISTING_DB, [&](ImportSession& s) { return AnswerAll(s); });
 	EXPECT_EQ(Stored(), 1 + FILE_SIZE - 1); // 46000 kept, the file from 46001 on
 }
 
-TEST_F(ImportSessionTests, ScriptedAnswersGiveTheSameNewAccountAsTheOneShotImport) {
-	// The desktop's dialog keeps its default name, "Account #2".
-	ExpectSameAsOneShotImport(mgr, "11773016-99999999", "Account #2", [&](ImportSession& s) { return AnswerAll(s); });
+TEST_F(ImportSessionTests, ScriptedAnswersGiveTheNewAccountTheDesktopGave) {
+	// The desktop's dialog kept its default name, "Account #2".
+	ExpectDesktopResult(mgr, "11773016-99999999", "Account #2", DESKTOP_NEW_ASKED, DESKTOP_NEW_DB, [&](ImportSession& s) { return AnswerAll(s); });
 	EXPECT_EQ(mgr.CountAccounts(), 2u);
 }
 

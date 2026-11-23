@@ -59,8 +59,7 @@ nlohmann::json ChartDataToJson(const ChartData& data) {
 }
 
 // One entry per non-empty dataset, in CHART_DATASETS_IN_DISPLAY_ORDER (Net first - the frontend's
-// default selection). Everything the frontend needs to stay consistent with the desktop dialog and
-// HTML reports is decided here, server-side, from the same ChartPresentation.h/ChartConversion.h
+// default selection). Everything the frontend needs to stay consistent with HTML reports is decided here, server-side, from the same ChartPresentation.h/ChartConversion.h
 // code: which kinds the dataset may be drawn as ("allowed_kinds", front() the default), its fixed
 // colour palette, and - when the dataset spans more than one currency - every currency's
 // "Convert all to this currency" merge, so the browser never needs exchange rates of its own.

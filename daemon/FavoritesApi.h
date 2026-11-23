@@ -7,13 +7,12 @@
 #include "QueryApi.h"
 
 // The JSON object one favorite_queries.json / favorite_reports.json entry is written as - the
-// same field set FavoriteQuery.cpp/FavoriteReport.cpp write for the desktop app.
+// field set WriteFavoriteQueries()/WriteFavoriteReports() write.
 nlohmann::json FavoriteQueryDefToJson(const FavoriteQueryDef& def);
 nlohmann::json FavoriteReportDefToJson(const FavoriteReportDef& def);
 
 // Favorite query/report listing + run-by-name (story 4, see docs/linux-query-daemon-design.md):
-// lets a browser frontend (story 5) offer the same favorite-query/report pickers the desktop's
-// Query/Reports menus do, without hand-rolling a second favorites reader. FavoritesStore.h reads
+// lets the web app offer favorite-query/report pickers. FavoritesStore.h reads
 // db/favorite_queries.json and db/favorite_reports.json (again whenever they change) and passes
 // the results into these route handlers.
 

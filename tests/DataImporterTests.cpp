@@ -185,10 +185,9 @@ TEST(DataImporterTest, ImportFromFileSkipsALeadingUtf8Bom) {
 }
 
 TEST(DataImporterTest, ImportFromFileHandlesCrlfLineEndings) {
-    // Real bank exports are typically CRLF-terminated. FileLineStreamReader reads through a
-    // non-binary std::ifstream, which text-mode-translates "\r\n" to "\n" on Windows, so no
-    // stray '\r' should leak into any parsed field (in particular the last column of the last
-    // row, Konyvelesidatum, which would otherwise fail date parsing).
+    // Real bank exports are typically CRLF-terminated: FileLineStreamReader drops the '\r', so it
+    // never leaks into a parsed field (in particular the last column of the last row,
+    // Konyvelesidatum, which would otherwise fail date parsing).
     String content = BuildMbhCsvContent(BuildValidMbhRow(), "\r\n");
     TempImportFile file("test_dataimporter_mbh_crlf.csv", std::string(content.utf8_str()));
 

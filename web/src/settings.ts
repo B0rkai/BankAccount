@@ -3,7 +3,7 @@ import { api, cachedNameList, type QueryDef, type WebSettings } from './api'
 
 // The settings page's choices, shared by every page: loaded once, saved to the daemon (so the phone
 // and the LAN browser agree), and pushed to every page using them as soon as they change. They hold
-// category ids, never names, so a category renamed in the desktop app keeps its place in them.
+// category ids, never names, so a renamed category keeps its place in them.
 
 let current: WebSettings | undefined
 let loading: Promise<WebSettings> | undefined

@@ -1,9 +1,8 @@
 #pragma once
 #include "ChartData.h"
 
-// GUI-free cross-currency chart helpers shared by ChartDialog's "Convert all to this currency"
-// checkbox and the Linux daemon's equivalent (QueryApi pre-computes the converted datasets
-// server-side, so the browser never needs exchange rates of its own).
+// Cross-currency chart helpers: QueryApi pre-computes the "everything in one currency" datasets
+// server-side, so the browser never needs exchange rates of its own.
 
 // HUF when present (the app's home currency), otherwise the first (lowest-enum) currency present.
 // `data` must be non-empty.

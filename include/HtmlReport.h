@@ -25,14 +25,10 @@ constexpr int cREPORT_GRID_CELL_PADDING_V_PX = 6;    // .gridjs-td/.gridjs-th ve
 constexpr int cREPORT_GRID_CELL_PADDING_H_PX = 12;   // .gridjs-td/.gridjs-th horizontal padding, overriding
                                                       // gridjs.mermaid.min.css's own 24px default
 
-// GUI-agnostic HTML+Chart.js report generation - see docs/html-reports-design.md. Consumed by
-// cMain's "Favorite Reports" menu (FavoriteReport.h's FavoriteReportDef), but has no wx GUI
-// dependency itself beyond String, so it's exercised directly by GoogleTest (see
-// tests/HtmlReportTests.cpp) the same way the rest of BankAccountCore is.
+// HTML+Chart.js report generation - see docs/html-reports-design.md. A favorite report
+// (FavoriteReport.h's FavoriteReportDef) as one self-contained file, downloaded from the web app.
 
-// One table plus its (optional) chart data - mirrors cMain::GridTabSpec's shape closely enough to
-// share the same source data, but stays wx-GUI-free (no transactions/entity_mode - a report never
-// needs the grid's editable-cell machinery).
+// One table plus its (optional) chart data.
 struct ReportSection {
 	String heading;          // from Query.h's DescribeQueryElement()
 	StringTable table;
@@ -41,13 +37,11 @@ struct ReportSection {
 };
 
 // Runs `q` (already built via BuildQueryFromFavorite, see FavoriteQuery.h) through
-// mgr.MakeQuery(q) and walks its QueryElements exactly like cMain::RunAndRenderQuery's grid-tab
-// loop: one ReportSection per element with a non-empty GetTableResult(), followed by a final
+// mgr.MakeQuery(q) and walks its QueryElements: one ReportSection per element with a non-empty GetTableResult(), followed by a final
 // "Transactions" section (no chart) if the query also returned a transaction list.
 std::vector<ReportSection> BuildReportSections(Query& q, const AccountManager& mgr);
 
-// resources\chart.umd.min.js - relative to CWD, same convention as db\/log\ (see
-// docs/build-setup.md). Reads and returns its full text, or an empty string (logged) if the file
+// resources/chart.umd.min.js - relative to the working directory. Reads and returns its full text, or an empty string (logged) if the file
 // is missing - BuildHtmlReport() still produces a valid HTML document in that case, just with
 // tables and no <script>/charts rather than failing outright.
 String LoadChartJsSource();
@@ -66,7 +60,7 @@ String LoadGridJsCss();
 // chart. Each dataset is drawn in its fixed palette (ChartPresentation.h: Income green, Expense
 // red, Net purple, "Others" grey). Each chart's topics/series are folded via
 // BuildFoldedTopicSlices()/BuildFoldedPeriodicSeries() (ChartFolding.h) exactly like the live
-// wxCharts dialog, so a chart with dozens of categories/clients renders as a handful of
+// web app, so a chart with dozens of categories/clients renders as a handful of
 // slices/bars plus one trailing "Others" rather than an unreadable wall of them.
 //
 // `chart_kinds` is a subset of "pie"/"doughnut"/"polar_area"/"bar"/"stacked_bar"/"line" (see

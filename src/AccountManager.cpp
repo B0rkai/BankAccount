@@ -11,7 +11,6 @@
 #include "Query.h"
 #include "WQuery.h"
 #include "DataImporter.h"
-#include "IManualResolve.h"
 #include "INewAccount.h"
 #include "MnbExchangeRateClient.h"
 #include "Journal.h"
@@ -28,7 +27,6 @@ void AccountManager::AddNewTransaction(const Id acc_id, const uint16_t date, con
 	Account* acc = m_accounts[acc_id];
 	Id category = m_category_system.Categorize({GetTransactionType(type_id), GetClientName(client_id), String(memo)});
 	acc->AddTransaction(date, type_id, amount, client_id, memo, category);
-	m_new_transactions++;
 }
 
 Id AccountManager::CreateTransactionTypeId(const String& type) {
@@ -140,49 +138,6 @@ String AccountManager::GetClientName(const Id id) const {
 	return m_client_man.GetName(id);
 }
 
-StringTable AccountManager::List() const {
-	StringTable table;
-	table.push_back({"ID", "State", "Account name", "Currency", "Bank name", "First entry", "Last entry", "Status", "Entries", "Categorized", "Account number"});
-	table.insert_meta({StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::LEFT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::RIGHT_ALIGNED, StringTable::LEFT_ALIGNED});
-	size_t id = 0;
-	for (const Account* acc : m_accounts) {
-		StringVector& row = table.emplace_back();
-		row.push_back(std::to_string(id++));
-		row.push_back(acc->IsOpen() ? "Open" : "Closed");
-		row.push_back(acc->GetName());
-		row.push_back(acc->GetCurrency()->GetName());
-		row.push_back(acc->GetGroupName());
-		row.push_back(acc->GetFirstRecord() ? DateAsString(acc->GetFirstRecord()->GetDate()) : cStringEmpty);
-		uint16_t last_entry = acc->GetFirstRecord() ? acc->GetLastRecord()->GetDate() : 0;
-		row.push_back(last_entry ? DateAsString(last_entry) : cStringEmpty);
-		String status = "Update needed";
-		if (acc->IsOpen()) {
-			if (last_entry) {
-				uint16_t days_passed_since_last_record = GetToday()->GetInExcelFormat() - last_entry;
-				if (days_passed_since_last_record <= 30) {
-					status = "Up to date";
-				}
-			}
-		} else {
-			status = cStringEmpty;
-		}
-		row.push_back(status);
-		row.push_back(std::to_string(acc->Size()));
-		{ // categorization
-			Query q;
-			QueryCategory* qcat = new QueryCategory;
-			qcat->AddId(Id(0)); // uncat
-			q.push_back(qcat);
-			QueryCount* qcount = new QueryCount;
-			q.push_back(qcount);
-			acc->MakeQuery(q);
-			row.push_back(String::FromDouble((1. - (double)qcount->GetCount() / (double)acc->Size()) * 100., 2).append("%"));
-		}
-		row.push_back(acc->GetAccNumber());
-	}
-	return table;
-}
-
 void AccountManager::ListOfAccNames(StringVector& vec) const {
 	for (const Account* acc : m_accounts) {
 		vec.push_back(acc->GetFullName());
@@ -260,8 +215,8 @@ AccountManager::~AccountManager() {
 	// Currency's static history pointer keeps pointing at this object's (now-destroyed)
 	// m_exchange_rates member, and the next Money::GetValue(type, date) call anywhere for a
 	// non-HUF-to-HUF (or HUF-to-non-HUF) conversion dereferences freed memory. Uses the
-	// "only if current" form rather than an unconditional SetHistory(nullptr): a single
-	// long-lived desktop instance or sequential test fixtures never overlap, so both forms
+	// "only if current" form rather than an unconditional SetHistory(nullptr): sequential test
+	// fixtures never overlap, so both forms
 	// behave identically there, but the Linux daemon builds a replacement AccountManager
 	// (which points the global at itself) before destroying the old one for a hot reload -
 	// an unconditional null here would wipe out the replacement's already-correct pointer.
@@ -298,22 +253,6 @@ String AccountManager::GetLastRecordDate() const {
 		}
 	}
 	return DateAsString(max);
-}
-
-StringTable AccountManager::GetSummary(const QueryTopic topic) {
-	switch (topic) {
-	case QueryTopic::CLIENT:
-		return m_client_man.GetInfos();
-	case QueryTopic::CATEGORY:
-		return m_category_system.GetInfos();
-	case QueryTopic::ACCOUNT:
-		return List();
-	case QueryTopic::TYPE:
-		return m_ttype_man.GetInfos();
-	default:
-		m_logger.LogError() << "AddKeyword() wrong topic";
-		return {};
-	}
 }
 
 void AccountManager::AddKeyword(const QueryTopic topic, Id id, const String& keyword, bool definitive) {
@@ -415,12 +354,8 @@ namespace {
     }
 }
 
-AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& path, bool suppress_journal) {
+AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& path, bool in_order) {
     RecoveryResult result;
-    std::unique_ptr<JournalSuppressGuard> guard;
-    if (suppress_journal) {
-        guard = std::make_unique<JournalSuppressGuard>();
-    }
     std::ifstream in(std::string(path.utf8_str()));
     if (!in) {
         m_logger.LogError() << "ApplyRecoveryFile: could not open " << path.utf8_str();
@@ -597,16 +532,10 @@ AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& p
             return result;
         }
     }
-    // Journal-replay entries are already in correct chronological order per account (every
-    // TRANSACTION line was itself written by a live Account::AddTransaction() call, which
-    // only ever appends - same reason AccountManager::Import() never needs to re-sort
-    // either), so skipping Sort() here is what keeps touched_positions resolvable below.
-    // A hand-authored recovery file has no such guarantee, so the pre-existing Sort() stays
-    // for that path - at the cost of not being able to safely resolve exact positions
-    // afterward (Sort() reorders m_transactions, so an index captured before it no longer
-    // names the same transaction after), so that path reports counts only, no grid.
-    bool positions_still_valid = suppress_journal;
-    if (!suppress_journal) {
+    // Rows already in date order per account (in_order) need no Sort(), so the transactions they
+    // touched can still be found by position afterwards; otherwise only counts are reported.
+    bool positions_still_valid = in_order;
+    if (!in_order) {
         for (Account* acc : m_accounts) {
             acc->Sort();
         }
@@ -630,9 +559,8 @@ AccountManager::RecoveryResult AccountManager::ApplyRecoveryFile(const String& p
     for (const String& line : summary_lines) {
         summary.append(line).append(ENDL);
     }
-    // PtrVector's assignment operator is deleted (const m_owner member - see ImportResult's
-    // own comment above), so the result has to be constructed fresh here rather than
-    // assigned into piecemeal, same as Import() already does for the same reason.
+    // PtrVector's assignment operator is deleted (const m_owner member), so the result is
+    // constructed fresh here rather than assigned into piecemeal.
     return RecoveryResult{ true, FormatResultTable(touched), touched, summary };
 }
 
@@ -651,24 +579,6 @@ void AccountManager::Merge(const QueryTopic topic, const IdSet& from, const Id t
 		Modified();
 		m_journal.AppendMerge(topic, from, to);
 	}
-}
-
-String AccountManager::GetClientInfoOfName(const String& name) {
-	auto results = GetIds(QueryTopic::CLIENT, name);
-	if (results.empty()) {
-		return "No client found";
-	}
-	std::stringstream ss;
-	ss << results.size() << " client";
-	if (results.size() > 1) {
-		ss << "s";
-	}
-	ss << " found\n";
-	for (auto& id : results) {
-		ss << m_client_man.GetInfo(id);
-		ss << "\n";
-	}
-	return ss.str();
 }
 
 Id AccountManager::CreateId(const QueryTopic topic, const String& name) {
@@ -736,40 +646,6 @@ IdSet AccountManager::SearchIdsSuggested(const QueryTopic topic, const String& n
 	}
 }
 
-Id AccountManager::SearchUniqueId(const QueryTopic topic, const String& name) {
-	IdSet ids = SearchIds(topic, name, false);
-	return (ids.size() == 1) ? *ids.begin() : Id(0);
-}
-
-static String PrepareTransactionDetails(const RawTransactionData& data, const String& resolved_client = cStringEmpty) {
-	String details;
-	details.append(std::to_string(RawTransactionData::index)).append("/").append(std::to_string(RawTransactionData::size)).append(cDIVIDER);
-	details.append(DateAsString(data.date)).append(cDIVIDER);
-	details.append(data.type).append(cDIVIDER);
-	details.append(data.amount.PrettyPrint()).append(cDIVIDER);
-	details.append(data.client);
-	if (!resolved_client.empty() && !data.client.IsSameAs(resolved_client)) {
-		details.append(" -> [").append(resolved_client).append("]");
-	}
-	details.append(cDIVIDER);
-	details.append(data.memo);
-	if (!data.cat.IsEmpty()) {
-		details.append(cDIVIDER).append(data.cat);
-	}
-	if (!data.desc.empty()) {
-		details.append(cDIVIDER).append(data.desc);
-	}
-	return details;
-}
-
-IdSet AccountManager::CategoriesUsedByClient(const Id client_id, Id& most_frequent) const {
-	std::vector<Id> categories;
-	for (Account* acc : m_accounts) {
-		acc->AppendCategoriesForClient(client_id, categories);
-	}
-	return DistinctCategories(categories, most_frequent);
-}
-
 IdSet AccountManager::DistinctCategories(const std::vector<Id>& categories, Id& most_frequent) {
 	std::unordered_map<Id::Type, unsigned> counts;
 	for (const Id& cat : categories) {
@@ -786,141 +662,6 @@ IdSet AccountManager::DistinctCategories(const std::vector<Id>& categories, Id& 
 		}
 	}
 	return result;
-}
-
-Id AccountManager::ProcessOneTopic(const RawTransactionData& data, const QueryTopic topic, const String& name, IManualResolve* resolve_if, bool optional) {
-	IdSet ids = SearchIds(topic, name, false);
-	Id id(INVALID_ID);
-	if (ids.size() == 1) {
-		return *ids.begin(); // perfect (definitive) match
-	} else if (ids.size() > 1) {
-		resolve_if->DoManualResolve(PrepareTransactionDetails(data), cStringEmpty, data.desc, topic, ids, id, optional, name);
-		return id;
-	}
-	// No definitive match. A suggestion-tier keyword match is a stronger signal than the generic
-	// low-confidence fallback below, so it takes priority - but, unlike a definitive match, it
-	// never auto-resolves on its own even when unique: it only ever pre-selects a candidate for
-	// the user to confirm.
-	String create;
-	ids = SearchIdsSuggested(topic, name);
-	if (ids.empty()) {
-		ids = SearchIds(topic, name, true);
-		if (ids.empty()) {
-			create = name;
-		}
-	}
-	if (ids.size() == 1) {
-		id = *ids.begin();
-	}
-	resolve_if->DoManualResolve(PrepareTransactionDetails(data), create, data.desc, topic, ids, id, optional, name);
-	return id;
-}
-
-void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionData& data, IManualResolve* resolve_if) {
-	// Type
-	StringVector tr_data;
-	tr_data.push_back(DateAsString(data.date));
-	tr_data.push_back(data.type);
-	tr_data.push_back(data.amount.PrettyPrint());
-	Id ttype = ProcessOneTopic(data, QueryTopic::TYPE, data.type, resolve_if);
-
-	// Client
-	Id client = ProcessOneTopic(data, QueryTopic::CLIENT, data.client, resolve_if, true);
-	if (m_client_man.AddAccountNumber(client, data.client_account_number)) {
-		m_journal.AppendClientAccountNumber(client, data.client_account_number);
-	}
-	String client_name = m_client_man.GetName(client);
-
-	// Category
-	Id cat = Id(0);
-	if (data.cat.empty()) {
-		// A transaction popped by PrepareImport()'s re-import overlap or by PruneLastTransactions()
-		// and now reappearing with the same date+amount+client is, by definition, the same
-		// transaction being re-categorized the same way - reapply it directly rather than asking
-		// again (or risking the keyword-based Categorize() below guessing differently).
-		bool recalled = acc->RecallCategorization(data.date, data.amount, client, cat);
-		if (!recalled) {
-			cat = m_category_system.Categorize({data.type, data.client, data.memo});
-		}
-		if (!recalled && (Id::Type)cat == 0) {
-			cat = m_category_system.Categorize(StringVector{m_ttype_man.GetName(ttype), client_name});
-		}
-		if (!recalled && (Id::Type)cat == 0) {
-			// popup manual categorization dialog, pre-populated with this client's own past
-			// categories (if any) as fast one-click choices, the most-used one pre-selected
-			IdSet client_categories;
-			if ((Id::Type)client != 0) {
-				Id most_frequent(INVALID_ID);
-				client_categories = CategoriesUsedByClient(client, most_frequent);
-				if (!client_categories.empty()) {
-					cat = most_frequent;
-				}
-			}
-			resolve_if->DoManualResolve(PrepareTransactionDetails(data, client_name), cStringEmpty, data.desc, QueryTopic::CATEGORY, client_categories, cat, true);
-		}
-	} else {
-		cat = (Id::Type)m_category_system.GetId(data.cat);
-	}
-	acc->AddTransaction(data.date, ttype, data.amount, client, data.memo.c_str(), cat, data.desc.c_str());
-	Modified();
-}
-
-AccountManager::ImportResult AccountManager::Import(const String& filename, IManualResolve* resolve_if, INewAccount* newaccount_if) {
-	m_new_transactions = 0;
-	m_logger.LogInfo() << "Import: starting import of '" << filename.utf8_str() << "'";
-	RawImportData import_data;
-	ImportFromFile(filename, import_data);
-	if (import_data.data.empty()) {
-		m_logger.LogWarn() << "Import: aborting, nothing extracted from '" << filename.utf8_str() << "'";
-		return {};
-	}
-	Id account_id = CreateOrGetAccountId(import_data.account_number.c_str(), import_data.bank_name, import_data.currency, newaccount_if);
-	Account* acc = m_accounts[account_id];
-	if (acc->Size()) {
-		if (acc->GetLastRecord()->GetDate() < import_data.data.front().date) {
-			m_logger.LogError() << "Cannot Import data if it is not overlapping at least one day with stored data (" << DateAsString(acc->GetLastRecord()->GetDate()) << ")";
-			return {};
-		}
-	}
-	RawTransactionData::size = import_data.data.size();
-	RawTransactionData::index = 1;
-	try {
-		bool start = false;
-		for (auto& raw : import_data.data) {
-			if (!start) {
-				start = acc->PrepareImport(raw.date);
-				if (!start) {
-					++RawTransactionData::index;
-					continue;
-				}
-			}
-			ProcessOneTransaction(acc, raw, resolve_if);
-			++RawTransactionData::index;
-			++m_new_transactions;
-		}
-	} catch (...) {
-		m_logger.LogError() << "Import aborted";
-	}
-	// Deliberately NOT calling UpdateExchangeRates() here: it can take 10-30+ seconds (a network
-	// fetch), and unlike everything else in Import() it never needs to show a manual-resolve
-	// dialog, so the caller (cMain) runs it afterwards on a background thread with a progress
-	// dialog instead of blocking the UI thread synchronously as part of this call.
-	auto last_transactions = acc->GetLastRecords(m_new_transactions);
-	StringTable table = FormatResultTable(last_transactions);
-	if (m_new_transactions == 0) {
-		m_logger.LogWarn() << "Import of '" << filename.utf8_str() << "' finished with 0 new records for '" << acc->GetName().utf8_str()
-			<< "' - see the preceding IMPT/PrepareImport log lines for why";
-	} else {
-		m_logger.LogInfo() << "Import of " << m_new_transactions << " new records finished for " << acc->GetName().utf8_str();
-	}
-	m_new_transactions = 0;
-	return ImportResult{ table, last_transactions }; // list-init copy-constructs both members; PtrVector's const m_owner blocks assignment
-}
-
-StringTable AccountManager::PreviewLastTransactions(Id account_id, size_t count) const {
-	const Account* acc = m_accounts.at(account_id);
-	count = std::min(count, acc->Size());
-	return FormatResultTable(acc->GetLastRecords((unsigned int)count));
 }
 
 size_t AccountManager::PruneLastTransactions(Id account_id, size_t count) {
@@ -1004,22 +745,9 @@ StringTable AccountManager::MakeQuery(WQuery& query) {
 	return FormatResultTable(query.GetResult());
 }
 
-StringTable AccountManager::GetTestData() const {
-	return FormatResultTable(m_accounts.back()->GetLastRecords(1u));
-}
-
 AccountManager::TransactionIdentity AccountManager::Identify(const Transaction* tr) const {
 	Id account_id = tr->GetAccountId();
 	return { account_id, m_accounts.at(account_id)->IndexOf(tr) };
-}
-
-std::vector<AccountManager::TransactionIdentity> AccountManager::IdentifyAll(const std::vector<const Transaction*>& list) const {
-	std::vector<TransactionIdentity> result;
-	result.reserve(list.size());
-	for (const Transaction* tr : list) {
-		result.push_back(Identify(tr));
-	}
-	return result;
 }
 
 void AccountManager::ApplyEdit(const TransactionIdentity& identity, WQueryElement& element) {
@@ -1032,10 +760,6 @@ void AccountManager::ApplyEdit(const TransactionIdentity& identity, WQueryElemen
 	if (changed) {
 		m_journal.AppendTransactionEdit(identity.account_id, identity.position, element.GetTopic(), tr);
 	}
-}
-
-Id AccountManager::GetTransactionFieldId(const TransactionIdentity& identity, QueryTopic topic) {
-	return m_accounts.at(identity.account_id)->GetTransactionAt(identity.position).GetId(topic);
 }
 
 bool AccountManager::HasMissingExchangeRates() const {

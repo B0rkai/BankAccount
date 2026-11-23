@@ -103,22 +103,6 @@ TEST(ExcelDateTest, IsWeekendMatchesKnownCalendarDates) {
     EXPECT_FALSE(IsWeekend((uint16_t)DMYToExcelSerialDate(8, 1, 2024)));
 }
 
-TEST(JoinPathTest, AddsABackslashWhenTheFolderHasNone) {
-    EXPECT_EQ(JoinPath("\\\\server\\share\\db", "BData.baf"), "\\\\server\\share\\db\\BData.baf");
-}
-
-TEST(JoinPathTest, DoesNotDoubleUpAnExistingTrailingBackslash) {
-    EXPECT_EQ(JoinPath("\\\\server\\share\\db\\", "BData.baf"), "\\\\server\\share\\db\\BData.baf");
-}
-
-TEST(JoinPathTest, AcceptsATrailingForwardSlashToo) {
-    EXPECT_EQ(JoinPath("C:/some/dir/", "file.txt"), "C:/some/dir/file.txt");
-}
-
-TEST(JoinPathTest, EmptyFolderYieldsJustTheFilename) {
-    EXPECT_EQ(JoinPath("", "file.txt"), "file.txt");
-}
-
 TEST(ParseMultiValueStringTest, SingleValueWithNoSeparator) {
     StringVector result = ParseMultiValueString("solo");
 

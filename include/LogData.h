@@ -4,8 +4,7 @@
 #include <vector>
 
 // Zero-dependency logging data model, deliberately kept free of any app-specific headers
-// (Logger.h, CommonTypes.h, wx, ...) so it - and anything built only on top of it, like
-// LogViewerPanel - can be lifted into a separate log-viewer project unchanged.
+// (Logger.h, CommonTypes.h, wx, ...).
 
 struct LogEntry {
     std::string date; // "YYYY.MM.DD"

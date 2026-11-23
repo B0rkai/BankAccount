@@ -4,8 +4,8 @@
 #include "AccountManager.h"
 #include "QueryApi.h"
 
-// Persely's edits - docs/persely-sqlite-import-design.md, story 3: what the desktop app's grid
-// edits, keyword dialog, rename and merge did, as JSON routes. Each mutating function here runs
+// Persely's edits - docs/persely-sqlite-import-design.md, story 3: transaction edits,
+// keywords, rename and merge, as JSON routes. Each mutating function here runs
 // inside DaemonDb::Write() (daemon/main.cpp's HandleEdit), so it is one SQL transaction; it
 // validates everything before changing anything and answers 400/404/409 without touching the
 // manager. Topics are "client", "category", "type" and (rename only) "account". GUI- and

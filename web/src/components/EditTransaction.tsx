@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, cachedNameList, type NameList, type TransactionRow } from '../api'
 import { formatDate, formatMoney } from '../format'
 
-// Change a transaction's category, client or note - what the desktop grid's cell edits did. A
+// Change a transaction's category, client or note. A
 // client typed that doesn't exist yet is created on save. Saved straight away (one change on the
 // server), then every page showing it reloads.
 export function EditTransaction({ transaction: t, onClose }: { transaction: TransactionRow; onClose: () => void }) {

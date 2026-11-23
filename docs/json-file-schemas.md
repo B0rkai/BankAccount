@@ -1,130 +1,53 @@
 # JSON file schemas
 
-Reference for every JSON file the app itself reads or writes. All are parsed with the vendored
-`nlohmann/json` (`include/nlohmann/json.hpp` — see CLAUDE.md's "External dependencies").
-Every parser here follows the same fail-safe contract: a missing file, malformed JSON, a
-wrong-shaped root, or an unrecognized/missing value never throws or blocks startup — it logs a
-warning (`LogWarn`/`LogDebug`) and falls back to an empty/default result. Unrecognized object keys
-(e.g. a hand-written `"comment"`) are always read and silently ignored, never an error — this is
-what lets a hand-edited file carry an explanatory comment while staying strictly valid JSON (no
-`//`/`#` syntax).
+Reference for every JSON file Persely reads or writes. All are parsed with the vendored
+`nlohmann/json` (`include/nlohmann/json.hpp`). Every parser here follows the same fail-safe
+contract: a missing file, malformed JSON, a wrong-shaped root, or an unrecognized/missing value
+never throws or blocks startup — it logs a warning and falls back to an empty/default result.
+Unrecognized object keys (e.g. a hand-written `"comment"`) are read and silently ignored, so a
+hand-edited file can carry a comment while staying strictly valid JSON.
 
-This doc describes the *current, implemented* shape of each file. For the reasoning behind
-choosing JSON and the migration off the old `key=value` `.cfg` format, see
-[json-config-migration-design.md](json-config-migration-design.md). For the reasoning behind the
-favorite-queries feature as a whole, see [favorite-queries-design.md](favorite-queries-design.md).
-
-## `db\location.json`
-
-Small, per-machine, hand-edited file (no in-app editor). Decides whether this session's database
-lives in the local `db\` folder (default) or on a shared network location. Parsed by
-`DbLocationSettings::Parse()` ([include/DbLocationSettings.h](../include/DbLocationSettings.h)/
-[src/DbLocationSettings.cpp](../src/DbLocationSettings.cpp)).
-
-```json
-{
-  "mode": "network",
-  "path": "\\\\server\\bankaccount",
-  "comment": "optional free-text note, ignored by the parser"
-}
-```
-
-`path` is the shared network **root** — `db` and `release` are fixed subfolder names appended
-under it, so the layout on the share is always:
-
-```
-\\server\bankaccount\
-  db\
-    BData.baf
-    BData.baf.backup
-    write.lock
-  release\
-    BankAccount.exe
-    release.json
-```
-
-| Key | Type | Required | Notes |
-|---|---|---|---|
-| `mode` | string | no | `"standalone"` \| `"network"`, case-insensitive. Missing, unrecognized, or absent → `Standalone`. |
-| `path` | string | only when `mode` is `"network"` | The network root folder. `path + "\db"` holds `BData.baf`, its `.backup` sibling, and the network write-lock file; `path + "\release"` holds `release.json` and the published `BankAccount.exe` (see below), unless overridden by `release_path`. Ignored in standalone mode. `mode=network` with an empty/missing `path` logs a warning and falls back to `Standalone`. |
-| `release_path` | string | no | Overrides the default `path + "\release"` location for `release.json`/the published `BankAccount.exe` (see below), for the rare case it doesn't live as a sibling of `path`'s `db` subfolder. Only meaningful when `mode` is `"network"`. |
-
-Root must be a JSON object; anything else (including a missing file) resolves to `Standalone`
-with `network_folder`/`release_folder` left empty.
-
-## `release.json`
-
-Machine-generated manifest published into a network release folder alongside `BankAccount.exe`,
-written by [scripts/PackageRelease.ps1](../scripts/PackageRelease.ps1) (`ConvertTo-Json`) and read
-by the update checker. Never hand-edited. Parsed by `ReleaseManifest::Parse()`
-([include/ReleaseManifest.h](../include/ReleaseManifest.h)/
-[src/ReleaseManifest.cpp](../src/ReleaseManifest.cpp)).
-
-```json
-{
-  "version": "1.1.0",
-  "crc32": "A1B2C3D4",
-  "files": [
-    { "path": "resources\\chart.umd.min.js", "crc32": "0BADF00D" }
-  ]
-}
-```
-
-| Key | Type | Required | Notes |
-|---|---|---|---|
-| `version` | string | yes | e.g. `"1.1.0"` — compared via `ParseVersion()` (`Version.h`). |
-| `crc32` | string | yes | Hex string (e.g. `"A1B2C3D4"`), case-insensitive — **not** a JSON number, matching the CRC's usual hex display. CRC32 of the published `BankAccount.exe`; a corruption/truncation check only, not a security signature. |
-| `files` | array | no | Misc resource files published alongside the exe (e.g. under `resources\`), each `{"path": "...", "crc32": "HEX"}` with `path` relative to the release folder. Absent/empty on a manifest with no resources to sync, or one published before this key existed. `SelfUpdater::ApplyUpdate()` copies over any entry that's missing locally or whose local CRC32 doesn't match, synchronously alongside the exe swap. |
-
-Root must be a JSON object with `version`/`crc32` present as non-empty strings, or the manifest is
-`valid = false` — same effective outcome as a missing file (the update checker stays silent,
-never surfaces this as an error). A missing/non-array `files`, or a malformed entry within it, is
-skipped (logged, not fatal) and never affects `valid`.
+The favorites and settings files live in the daemon's `db/` folder (on borkai-server:
+`~/.local/share/bankaccount/`, mounted at `/app/db`). For the reasoning behind favorite queries,
+see [favorite-queries-design.md](favorite-queries-design.md).
 
 ## `changelog.json`
 
-Release notes, in two places sharing one shape: the git-tracked master copy at
-`docs\changelog.json` in the repo (hand-maintained — see CLAUDE.md's "Changelog" section for the
-per-commit/per-release workflow), and the published copy
-[scripts/PackageRelease.ps1](../scripts/PackageRelease.ps1) copies verbatim into the network
-release folder alongside `BankAccount.exe`/`release.json` when cutting a release. The client
-reads the published copy back via `ChangelogManifest::Parse()`
-([include/ChangelogManifest.h](../include/ChangelogManifest.h)/
-[src/ChangelogManifest.cpp](../src/ChangelogManifest.cpp)).
+Release notes: `docs/changelog.json` in the repo (hand-maintained — see CLAUDE.md's "Changelog"),
+copied into the image as `/app/changelog.json` and served as-is by `GET /api/v1/changelog` for
+Settings' "What's new" (`web/src/components/WhatsNew.tsx`).
 
 ```json
 {
   "unreleased": [
-    "Fix rename crash during categorize"
+    "Fix a thing"
   ],
   "released": [
-    { "version": "1.0.6", "date": "2026-09-04", "changes": [
-        "Preserve filter, sort and scroll position when renaming an entity",
-        "Resolve missing clients during categorize; fix rename crash"
+    { "version": "2.0.0", "date": "2026-11-23", "changes": [
+        "Persely becomes the only app"
     ] }
   ]
 }
 ```
 
-| Key | Type | Required | Notes |
-|---|---|---|---|
-| `unreleased` | string array | no | Compact, not-yet-versioned change notes — appended to on every commit (see CLAUDE.md), consumed and cleared by `PackageRelease.ps1` when cutting a release. `ChangelogManifest` never reads this key at all; it exists only in the repo's master copy (and, transiently, in the published copy right after a release, until the next commit adds to it again). |
-| `released` | array of objects | no | One entry per shipped version, each `{version, date, changes}`. This is the only key `ChangelogManifest` parses. |
-| `released[].version` | string | yes (per entry) | e.g. `"1.0.6"` — compared via `ParseVersion()` (`Version.h`), same as `release.json`'s `version`. An entry with a missing/empty/non-string `version` is skipped individually. |
-| `released[].date` | string | no | Display-only — never parsed or validated. `PackageRelease.ps1` writes today's date as `"YYYY-MM-DD"`. |
-| `released[].changes` | string array | no | Bullet lines shown to the user. Missing/wrong-typed → an entry with no bullets, not a dropped entry. |
+| Key | Type | Notes |
+|---|---|---|
+| `unreleased` | string array | One compact line per commit since the last version (live as soon as deployed), shown as "Since <last version>". Moved into a new `released` entry when a version is cut. |
+| `released` | array of objects | One entry per version, **oldest first**, each `{version, date, changes}` — shown newest first. |
+| `released[].version` | string | e.g. `"2.0.0"` - the same as `APP_VERSION` (`include/Version.h`) when it was cut. |
+| `released[].date` | string | `"YYYY-MM-DD"`, display only. |
+| `released[].changes` | string array | The bullet lines. |
 
-Root must be a JSON object, or the manifest is `valid = false` — same effective outcome as a
-missing file. Within a valid root, a missing/non-array `released` just means no entries (not
-invalid) — `ChangelogManifest::EntriesBetween()`/`AllEntries()` operate only on whatever parsed.
+A file that isn't a JSON object makes `/api/v1/changelog` answer 404 and Settings leaves the card
+out.
 
-## `web_settings.json` (Linux web app only)
+## `db/web_settings.json`
 
 Persely's settings, next to its favorites (on borkai-server: `~/.local/share/bankaccount/`), read
 and replaced whole by `GET`/`PUT /api/v1/settings` (`daemon/FavoritesStore.h`). One JSON object;
 missing or malformed means defaults. Unknown keys are refused on save. Categories are ids (the
-`ids` of `GET /api/v1/names?topic=categories`), never names, so renaming a category in the
-desktop app doesn't drop it.
+`ids` of `GET /api/v1/names?topic=categories`), never names, so renaming a category doesn't
+drop it.
 
 ```json
 {
@@ -138,15 +61,11 @@ desktop app doesn't drop it.
 | `excluded_categories` | `number[]` \| `null` | Categories left out of the overview's and year in review's totals. Missing: none (a browser that still has the old per-browser list moves it here on first load). |
 | `other_income_categories` | `number[]` \| `null` | Money in under these isn't counted as income; it shows as "other money in". Missing or empty: all money in is income. |
 
-## `db\favorite_queries.json`
+## `db/favorite_queries.json`
 
-> The Linux web app (Persely) keeps its own files in this format, separate from the desktop
-> app's (on borkai-server: `~/.local/share/bankaccount/`), and adds, replaces and deletes entries in
-> them — see `daemon/FavoritesStore.h`. It keeps every other entry exactly as written and never
-> touches a file that isn't a JSON array.
-
-Small, local, hand-edited file listing saved/favorite queries, surfaced as a
-`Query → Favorite Queries` submenu. Parsed by `ParseFavoriteQueries()`
+Saved queries, listed in Explore and runnable by name. Persely adds, replaces and deletes entries
+(`daemon/FavoritesStore.h`), keeping every other entry exactly as written and never touching a
+file that isn't a JSON array; it can also be hand-edited. Parsed by `ParseFavoriteQueries()`
 ([include/FavoriteQuery.h](../include/FavoriteQuery.h)/
 [src/FavoriteQuery.cpp](../src/FavoriteQuery.cpp)). Root must be a JSON **array** of objects — a
 non-array root discards the whole file; a non-object array entry, or an entry missing a non-empty
@@ -193,13 +112,13 @@ non-array root discards the whole file; a non-object array entry, or an entry mi
 | `chart.side` | string | no | `"net"` \| `"income"` \| `"expense"` - which dataset the chart starts on. Unrecognized/unavailable falls back to the default (Net). |
 | `chart.kind` | string | no | `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartPresentation.h](../include/ChartPresentation.h)). Unrecognized, or a kind that doesn't apply to the resolved chart shape/dataset (Net is never a pie/doughnut/polar area/stacked bar), falls back to the default. |
 
-## `db\favorite_reports.json`
+## `db/favorite_reports.json`
 
-Small, local, hand-edited file listing saved/favorite HTML reports, surfaced as a
-`Reports → Favorite Reports` submenu. Parsed by `ParseFavoriteReports()`
+Saved HTML reports, listed on the Reports page and downloaded as one self-contained `.html` file.
+Parsed by `ParseFavoriteReports()`
 ([include/FavoriteReport.h](../include/FavoriteReport.h)/
 [src/FavoriteReport.cpp](../src/FavoriteReport.cpp)) - same fail-safe contract as
-`db\favorite_queries.json`: root must be a JSON **array** of objects, a non-array root discards
+`db/favorite_queries.json`: root must be a JSON **array** of objects, a non-array root discards
 the whole file, and a non-object entry (or one missing a required field) is skipped individually.
 See [html-reports-design.md](html-reports-design.md) for the feature as a whole.
 
@@ -217,14 +136,11 @@ See [html-reports-design.md](html-reports-design.md) for the feature as a whole.
 | Key | Type | Required | Notes |
 |---|---|---|---|
 | `name` | string | **yes** | Menu label, and the generated report's page heading/file name. Missing/empty/non-string skips the entire entry. |
-| `favorite_query` | string | **yes** | Must match a `name` in `db\favorite_queries.json` - resolved by exact string match at report-generation time (not at load time), so the two files can be edited independently; a report referencing a since-renamed/deleted favorite query fails gracefully with an on-screen message rather than crashing. Missing/empty skips the entire entry. |
+| `favorite_query` | string | **yes** | Must match a `name` in `db/favorite_queries.json` - resolved by exact string match at report-generation time (not at load time), so the two files can be edited independently; a report referencing a since-renamed/deleted favorite query fails gracefully with an on-screen message rather than crashing. Missing/empty skips the entire entry. |
 | `chart_kinds` | string array | no | Subset of `"pie"` \| `"doughnut"` \| `"polar_area"` \| `"bar"` \| `"stacked_bar"` \| `"line"` (see `ChartWidgetKind` in [include/ChartPresentation.h](../include/ChartPresentation.h)). Empty/omitted = tables only, no charts. A kind not valid for a given section's data shape/dataset (e.g. `"line"` for a plain by-topic sum, or `"pie"` for Net) falls back to that dataset's default kind; a list with no recognized kind at all renders no charts. |
 | `chart_sides` | string array | no | Subset of `"net"` \| `"income"` \| `"expense"` - restricts which dataset(s) get rendered as charts, e.g. `["expense"]` for a spending-only report. Empty/omitted/all-unrecognized = no restriction (all datasets rendered, Net first) - never an empty report. |
 
 ## Files intentionally out of scope
 
-`db\BankAccount.txt`/`db\BData.baf` (the actual transaction database — a custom
-comma/pipe-delimited stream format, not JSON) and `db\journal.txt` (an append-only crash-recovery
-log) are not JSON and are documented separately in CLAUDE.md's "Data storage" section. IDE/tooling
-JSON files (`.vscode/*.json`, `.vs/*.json`, `CppProperties.json`, `.claude/settings*.json`) are
-editor/tooling configuration, not app data, and out of scope for this doc.
+The database itself is SQLite (`include/SqliteStore.h`, schema in
+[persely-sqlite-import-design.md](persely-sqlite-import-design.md)), not JSON.

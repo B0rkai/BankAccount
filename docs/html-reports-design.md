@@ -22,7 +22,7 @@ static and fixed-resolution. Chart.js (MIT-licensed) was chosen instead for the 
 because: it's small enough to vendor and inline for a fully offline, single-file report (unlike
 Highcharts, which needs a commercial license, or heavier libraries like ECharts/Plotly.js), and it
 gives working hover tooltips for free, matching the in-app pie/doughnut/polar-area tooltip
-enhancement the wxCharts fork already carries (see [wxcharts-patches.md](wxcharts-patches.md)).
+enhancement the wxCharts fork already carries (see `wxcharts-patches.md` (retired; in git history)).
 
 ## Scope of this first version
 
@@ -42,7 +42,7 @@ enhancement the wxCharts fork already carries (see [wxcharts-patches.md](wxchart
   dialog, for the fastest "pick it, see it" path.
 - A favorite query that aggregates by multiple topics at once (e.g. by category **and** by
   client) produces multiple result tables in-app (`RunAndRenderQuery`'s multi-tab loop, see
-  [result-grid-architecture.md](result-grid-architecture.md)) - the report includes **all** of
+  `result-grid-architecture.md` (retired; in git history)) - the report includes **all** of
   them as separate sections, not just the first.
 
 ## `FavoriteReportDef`
@@ -211,7 +211,7 @@ Chart.js chart configs.
 
 `resources\gridjs.umd.js` (UMD bundle) and `resources\gridjs.mermaid.min.css` (its default theme)
 are the official builds, checked in with a pinned version and their MIT license
-(`resources\LICENSE-gridjs.MIT`) - see [build-setup.md](build-setup.md). Same fallback contract as
+(`resources\LICENSE-gridjs.MIT`) - see `build-setup.md` (retired; in git history). Same fallback contract as
 Chart.js: a missing file logs a warning and `LoadGridJsSource()`/`LoadGridJsCss()` return an empty
 string, which `BuildHtmlReport()` treats as "render plain tables" rather than failing the report.
 
@@ -301,7 +301,7 @@ Net, Income or Expense** (`ChartDataset` in [include/ChartData.h](../include/Cha
   plus the chart's `palette`/`others_colour`), so a chart looks the same on every surface.
 - **Zero baseline**: categorical (bar/line) charts always include 0 on the value axis
   (`beginAtZero`), so negative Net bars visibly hang below a zero line. The in-app window gets the
-  same from a wxCharts fork patch (see [wxcharts-patches.md](wxcharts-patches.md)), which also
+  same from a wxCharts fork patch (see `wxcharts-patches.md` (retired; in git history)), which also
   shades an in-app line chart only between the line and zero (the Chart.js lines have no fill).
 
 ## Folding many topics into "Others"
@@ -335,7 +335,7 @@ only the final left-to-right/legend order is.
 
 `resources\chart.umd.min.js` (a new top-level folder, sibling of `db\`/`docs\`/`log\`) is the
 official minified UMD build, checked in with a pinned version and its MIT license
-(`resources\LICENSE.MIT`) - see [build-setup.md](build-setup.md). `LoadChartJsSource()` reads it
+(`resources\LICENSE.MIT`) - see `build-setup.md` (retired; in git history). `LoadChartJsSource()` reads it
 as plain text at report-generation time (relative to CWD, same convention as
 `db\location.json`/`log\BankAccount.log`) and `BuildHtmlReport()` inlines it verbatim into one
 `<script>` block, so the generated report has zero external references and works fully offline.

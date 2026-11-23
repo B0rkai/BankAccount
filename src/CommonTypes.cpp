@@ -1,5 +1,4 @@
 #include "CommonTypes.h"
-#include "IManualResolve.h"
 #include <ctime>
 #include <iomanip>
 #include <sstream>
@@ -9,11 +8,6 @@
 const char* cCharArrEmpty = "";
 const char* cDIVIDER("  |  ");
 const String cStringEmpty;
-// Declared in IManualResolve.h (part of that interface's protocol - it's a sentinel
-// IManualResolve::DoManualResolve()'s callers/implementers compare 'create' against), but
-// defined here rather than in any one concrete IManualResolve implementer (ManualResolverDialog
-// is only the real app's implementer, and WQuery.cpp - domain code - depends on this symbol too).
-const String cINACTIVE("INACTIVE");
 
 bool IsEndl(const char& c) {
     return ((c == ENDL) || (c == CRET));
@@ -48,15 +42,6 @@ bool caseInsensitiveStringContains(const String& string, const String& sub) {
         return string.IsSameAs(sub, false);
     }
     return (string.Lower().find(sub.Lower()) != String::npos);
-}
-
-String JoinPath(const String& folder, const String& filename) {
-    String path = folder;
-    if (!path.empty() && (path[path.length() - 1] != '\\') && (path[path.length() - 1] != '/')) {
-        path += "\\";
-    }
-    path += filename;
-    return path;
 }
 
 // From: https://stackoverflow.com/questions/56717088/algorithm-for-converting-serial-date-excel-to-year-month-day-in-c
@@ -275,24 +260,5 @@ String StripTrailingChar(const String& val, char c) {
         --end;
     }
     return val.substr(0, end);
-}
-
-String SanitizeFileNameComponent(const String& name) {
-    static const wxString invalid = "\\/:*?\"<>|";
-    String result;
-    for (size_t i = 0; i < name.size(); ++i) {
-        wxChar c = name[i];
-        result += (invalid.Find(c) != wxNOT_FOUND) ? wxChar('_') : c;
-    }
-    return result;
-}
-
-String TimestampForFilename() {
-    time_t t = time(nullptr);
-    struct tm dt = *localtime(&t);
-    std::ostringstream ss;
-    ss << (dt.tm_year + 1900) << std::setfill('0') << std::setw(2) << (dt.tm_mon + 1) << std::setw(2) << dt.tm_mday
-        << "_" << std::setw(2) << dt.tm_hour << std::setw(2) << dt.tm_min << std::setw(2) << dt.tm_sec;
-    return String(ss.str());
 }
 

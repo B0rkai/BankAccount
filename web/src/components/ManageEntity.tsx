@@ -10,7 +10,7 @@ const NOUN: Record<EntityTopic, string> = { client: 'client', category: 'categor
 
 // A client's or category's keywords - the words in a bank's text that sort a new transaction
 // here - and, when this sign-in may edit, renaming, adding/removing keywords and merging into
-// another one: what the desktop's keyword dialog, rename and merge did.
+// another one.
 export function ManageEntity({ topic, id, name }: { topic: 'client' | 'category'; id: number; name?: string }) {
   const editable = canEdit()
   const details = useAsync(() => api.entity(topic, id), `${topic}:${id}`)

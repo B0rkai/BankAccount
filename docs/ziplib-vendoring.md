@@ -3,8 +3,8 @@
 `third_party/ziplib` is a trimmed, locally-patched copy of [ZipLib](https://bitbucket.org/wbenny/ziplib)
 (zlib License, Copyright 2013 Petr Beneš - see `third_party/ziplib/LICENSE.txt`), vendored
 directly into this repo rather than built from a sibling checkout + prebuilt `.lib` files (the
-old setup - see git history of [build-setup.md](build-setup.md) for what that looked like). Same
-"clone/patch, don't hand-roll" precedent as [wxcharts-patches.md](wxcharts-patches.md), adapted to
+old setup - see git history of `build-setup.md` (retired; in git history) for what that looked like). Same
+"clone/patch, don't hand-roll" precedent as `wxcharts-patches.md` (retired; in git history), adapted to
 a plain vendored copy (rather than a separate GitHub fork) since the goal here was portability,
 not tracking further upstream changes.
 
@@ -13,7 +13,7 @@ not tracking further upstream changes.
 The old setup only worked on Windows: MSVC-built `.lib`s, headers from an out-of-repo checkout at
 `C:\Users\<user>\source\ziplib`. The Linux daemon ([linux-query-daemon-design.md](linux-query-daemon-design.md))
 needs to open `db\BData.baf` directly instead of requiring a plain-text `BankAccount.txt` export -
-see [db-encryption-design.md](db-encryption-design.md) for the fuller investigation that led here.
+see `db-encryption-design.md` (retired; in git history) for the fuller investigation that led here.
 Vendoring trimmed source directly into the repo, compiled by both `BankAccountCore.vcxproj` and
 the `Makefile`, is portable and also fixes the old setup's Debug-config pain point (it depended on
 a locally-built `..\..\ziplib\Bin\x64\Debug\*.lib` sibling that had to be built separately from the
@@ -87,6 +87,6 @@ and still talks to ZipLib directly - the daemon never writes.
 
 ## Status
 
-Implemented (2026-09-11) - see [db-encryption-design.md](db-encryption-design.md)'s Story 1,
+Implemented (2026-09-11) - see `db-encryption-design.md` (retired; in git history)'s Story 1,
 now done. The password is still the hardcoded `"pass"` (obfuscation, not security) on both
 platforms - that's Story 2 in the same doc, not addressed here.

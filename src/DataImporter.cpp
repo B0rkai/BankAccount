@@ -73,9 +73,8 @@ size_t RawTransactionData::index = 0;
 
 class FileLineStreamReader {
 	std::ifstream _in;
-	char _buffer[1000];
 public:
-	FileLineStreamReader(const char* filename) : _in(filename), _buffer{0} {
+	FileLineStreamReader(const char* filename) : _in(filename) {
 		char bom[3] = { 0 };
 		_in.read(bom, 3);
 		if (static_cast<unsigned char>(bom[0]) != 0xEF || static_cast<unsigned char>(bom[1]) != 0xBB || static_cast<unsigned char>(bom[2]) != 0xBF) {
@@ -83,10 +82,18 @@ public:
 			_in.seekg(0);
 		}
 	}
+	// The next line, without its line ending ("\r\n" too - bank exports are written on Windows).
+	// True once there's nothing left to read.
 	bool ReadLine(String& line) {
-		_in.getline(_buffer, 1000);
-		line = String::FromUTF8(_buffer);
-		return _in.eof();
+		std::string read;
+		if (!std::getline(_in, read)) {
+			return true;
+		}
+		if (!read.empty() && read.back() == '\r') {
+			read.pop_back();
+		}
+		line = String::FromUTF8(read.c_str());
+		return false;
 	}
 };
 
@@ -117,18 +124,15 @@ static void XMLParser(const String& filename, StringTable& data) {
 }
 
 static void CSVParser(const String& filename, StringTable& data) {
-	std::ifstream in(static_cast<const char*>(filename));
 	String line;
 	FileLineStreamReader reader(static_cast<const char*>(filename));
-	bool eof = false;
-	while (!eof) {
-		eof = reader.ReadLine(line);
+	while (!reader.ReadLine(line)) {
 		if (line.empty()) {
 			break;
 		}
-		while (!eof && CountChars(line, '"') % 2) {
-			String nextline;
-			eof = reader.ReadLine(nextline);
+		// A quoted field can span lines.
+		String nextline;
+		while (CountChars(line, '"') % 2 && !reader.ReadLine(nextline)) {
 			line.Append(" ").Append(nextline);
 		}
 		line.Replace("&amp;", "&");

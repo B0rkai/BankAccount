@@ -2,7 +2,7 @@
 
 Status: story 1 (SQLite store + converter) **implemented 2026-11-23**, and the live Persely reads
 the converted database (section 7); stories 2–7 proposed. Supersedes
-[paused-import-design.md](paused-import-design.md) (desktop pause/resume), which is kept only for
+`paused-import-design.md` (retired; in git history) (desktop pause/resume), which is kept only for
 its reasoning.
 
 ## Goal
@@ -47,7 +47,7 @@ Decisions already made:
 - `PRAGMA journal_mode=WAL; synchronous=FULL; foreign_keys=ON;`. One connection, owned by the
   daemon, used under the same mutex that already guards the in-memory snapshot.
 - **No encryption at rest** inside the file. The old `.baf` password was obfuscation only
-  ([db-encryption-design.md](db-encryption-design.md)); the server disk is the boundary now.
+  (`db-encryption-design.md` (retired; in git history)); the server disk is the boundary now.
   If that's not enough later, SQLCipher is a drop-in replacement for the amalgamation, or encrypt
   the volume. Snapshots copied off the machine are the place where encryption matters most (§6).
 
@@ -377,7 +377,7 @@ stories 2-5.
    on bank files are imported in Persely only.
 6. **Cleanup** — delete the Windows projects and desktop-only code, rewrite `CLAUDE.md`, the
    Linux daemon docs, and decide what `docs/changelog.json` becomes (e.g. a "What's new" in
-   Persely's Settings).
+   Persely's Settings). **Done** — see "Story 6 as built" below.
 7. **Enable Banking** (§5).
 
 Cutover needs 1–5 (5 for importing, 3 for fixing mistakes and exchange rates — without them
@@ -590,6 +590,32 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
   a category, Stop here on the card hold's type question - then review, a row edit, *Keep it*
   (the card hold open again), Stop here again, Save (transactions in, snapshot taken, session
   committed); a second upload for the same account refused; a new account asking for a name.
+
+## Story 6 as built (2026-11-23)
+
+- **Gone**: the Visual Studio solution and projects, the wx GUI (`cApp`, `cMain`, every dialog,
+  log viewer), the CLI, and the Windows-only modules (`.baf` save/backup and the file journal,
+  network db location and lock, self-update and release manifest, Excel export, the WinHTTP MNB
+  download, the release packaging script), plus the desktop's import loop in the core
+  (`AccountManager::Import()`, `ProcessOneTopic/Transaction`, `IManualResolve`,
+  `Account::PrepareImport()`'s stash/recall, `CategorizingQuery`) and a few helpers only menus
+  used (favorites load/save to `db\`, report file naming). `Journal.h` is now just `IJournal` +
+  `NullJournal`. Kept: the `.baf` reader and `bankaccount-migrate` (a fresh setup still converts
+  from it), `ApplyRecoveryFile()` (the tests' fixture builder), the stream format (fixtures).
+- **The desktop as the reference**: the two tests that ran the desktop's `Import()` next to the
+  step-by-step import now compare against its recorded result (the questions it asked and the
+  database it produced, captured from the last run of the old tests), so the import keeps
+  matching it.
+- **Tests on Linux**: the core's GoogleTest suite (`tests/`, until now Windows-only) is built with
+  the daemon's into one `build/linux/bin/tests` (`make test`, in every image build) - 423 tests.
+  It found two Linux bugs, fixed: an MBH CSV with Windows line endings imported nothing (the line
+  reader now drops the `\r`, and reads lines of any length), and amounts in euro (or pound) lost
+  their currency sign (narrow-string conversion).
+- **Changelog**: version **2.0.0** cut (2026-11-23) with every unreleased entry; the file ships in
+  the image and `GET /api/v1/changelog` serves it to Settings' new "What's new" card. Each commit
+  still adds an `"unreleased"` line; a version is cut by hand (CLAUDE.md, "Changelog").
+- **Docs**: `CLAUDE.md` and the README rewritten for Persely; desktop-only docs removed (git
+  history has them); `json-file-schemas.md` and the deployment doc updated.
 
 ## Tests
 

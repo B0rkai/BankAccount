@@ -27,22 +27,9 @@ struct FavoriteReportDef {
 	std::vector<String> chart_sides;
 };
 
-// db\favorite_reports.json - not under any per-user profile, same portability reasoning as
-// db\location.json/db\favorite_queries.json.
-const char* FavoriteReportFilePath();
-
-// Reads FilePath() if present. Wraps ParseFavoriteReports() below - kept separate so tests can
-// exercise the parsing logic through an istringstream without touching real files.
-std::vector<FavoriteReportDef> LoadFavoriteReports();
-
 // Writes `defs` as a pretty-printed JSON array, in the same shape ParseFavoriteReports() reads
-// back. Kept separate from SaveFavoriteReports() below so tests can check the produced JSON (or
-// round-trip it back through ParseFavoriteReports()) without touching real files.
+// back.
 void WriteFavoriteReports(const std::vector<FavoriteReportDef>& defs, std::ostream& out);
-
-// Overwrites FavoriteReportFilePath() with WriteFavoriteReports()'s output - the save-side
-// counterpart of LoadFavoriteReports(), used by cMain's "Store Report..." menu item.
-void SaveFavoriteReports(const std::vector<FavoriteReportDef>& defs);
 
 // A JSON array of objects; recognized keys are "name"/"favorite_query"/"chart_kinds"/
 // "chart_sides". Malformed JSON, a non-array root, or a non-object array entry logs a warning and

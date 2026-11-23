@@ -15,7 +15,7 @@
 // only income, "out": only expenses). Responds {"total", "offset", "transactions": [{"account",
 // "date" (YYYY-MM-DD), "type", "client", "client_id", "memo", "description", "category",
 // "category_id", "amount" (a number in the currency's own unit, negative for an expense),
-// "currency" (short code), "display" (the desktop's own formatting of the amount), "account_id"
+// "currency" (short code), "display" (Currency::PrettyPrint()'s formatting of the amount), "account_id"
 // and "seq" (where it is - what an edit addresses, EditApi.h)}, ...]}. A name
 // filter of "#<id>" matches that one client/category exactly (Query.cpp's QueryByName), unlike a
 // plain name, which matches fuzzily - the web app's drill-downs and client pages use the ids.
