@@ -371,8 +371,10 @@ stories 2-5.
    (same result as an uninterrupted import; stop-here; overlap replacement; recall; merge during
    an open session). **Done**, behind `BANKACCOUNT_EDITS=on` — see "Story 4 as built" below.
 5. **Import UI** — Imports page, upload, categorize screen, review, Overview banner.
-   **Done**, behind `BANKACCOUNT_EDITS=on` — see "Story 5 as built" below.
-   → **Cutover** (§7).
+   **Done** — see "Story 5 as built" below.
+   → **Cutover** (§7): **done 2026-11-23** — a final `deploy/migrate-db.sh` from the `.baf`
+   (14 203 transactions, verified), then `BANKACCOUNT_EDITS=on` on the live service. From here
+   on bank files are imported in Persely only.
 6. **Cleanup** — delete the Windows projects and desktop-only code, rewrite `CLAUDE.md`, the
    Linux daemon docs, and decide what `docs/changelog.json` becomes (e.g. a "What's new" in
    Persely's Settings).

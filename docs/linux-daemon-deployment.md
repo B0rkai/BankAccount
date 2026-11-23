@@ -65,15 +65,15 @@ The running service notices the new file within a few seconds; no redeploy neede
 replace a database that Persely has changed itself, so it can never throw away work done in
 Persely. The `.baf` itself is never written to.
 
-### Editing in Persely (off until the cutover)
+### Editing in Persely (on since the cutover, 2026-11-23)
 
 Persely can edit (transaction category/client/note, keywords, rename, merge, categorize by
 keywords, exchange rates - design doc story 3) and import bank files step by step (the Import
 page - stories 4 and 5), but only with `BANKACCOUNT_EDITS=on`. It is off by default because
 **the first change made in Persely ends the refresh above for good**: from then on a desktop
 import can't be brought over, and new transactions come in through Persely's Import page only.
-To switch it on - the cutover - after the last desktop import and a final
-`deploy/migrate-db.sh`:
+The live service has it on since 2026-11-23 (the cutover, after a final `deploy/migrate-db.sh`); the
+desktop app no longer imports. To switch it on elsewhere:
 
 ```bash
 echo BANKACCOUNT_EDITS=on >> ~/.config/bankaccount/web.env

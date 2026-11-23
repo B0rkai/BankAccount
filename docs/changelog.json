@@ -22,7 +22,8 @@
                        "Exchange rates: a weekend or bank holiday is converted with the last rate published before it (Friday's for a Saturday) - only rates on transaction dates used to be kept, so such a day could get a rate up to 6 days old",
                        "Persely: import engine - a bank file becomes a step-by-step session (categorize one answer at a time, stop here, review, save), stored in the database and continued from any device; off until the cutover",
                        "Persely import: every row is tried with the keywords at once and only the ones that need an answer are asked; after any change (an answer, a keyword, a merge) the rest are worked out again, and nothing reaches the transactions before Save",
-                       "Persely import screens: upload a bank file (see what's in it first), answer only the rows the keywords can't sort - on a phone, in any number of sittings - review and fix rows, then Save; open imports show on the Overview; off until the cutover"
+                       "Persely import screens: upload a bank file (see what's in it first), answer only the rows the keywords can't sort - on a phone, in any number of sittings - review and fix rows, then Save; open imports show on the Overview; off until the cutover",
+                       "Cutover: Persely is now where bank files are imported and transactions edited; the desktop app's database is no longer read"
                       ],
     "released":  [
                      {
