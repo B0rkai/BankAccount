@@ -8,6 +8,7 @@
 struct sqlite3;
 class AccountManager;
 class Logger;
+struct ImportSession;
 
 // Records what changed in an AccountManager since it was loaded from (or last written to) the
 // SQLite file, so SqliteStore::WriteChanges() can bring the file up to date - the "write-through"
@@ -128,7 +129,18 @@ public:
 	// or write. `to_path` must not exist yet.
 	bool Snapshot(const std::string& to_path);
 
+	// Import sessions (include/ImportSession.h), kept beside the model rather than in it: the
+	// open ones (categorizing or in review), and the largest session id ever used - committed
+	// sessions keep their header row as a record of the import. A database without the tables
+	// yet has none; WriteImportSession() creates them.
+	bool LoadImportSessions(std::vector<ImportSession>& open, int64_t& max_id);
+	// Inserts or replaces the session and its rows (a committed one keeps only its header). Call
+	// between Begin() and Commit().
+	bool WriteImportSession(const ImportSession& session);
+	bool DeleteImportSession(int64_t id);
+
 private:
+	bool HasImportTables();
 	bool Exec(const char* sql);
 	bool Fail(const std::string& what);
 

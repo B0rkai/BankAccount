@@ -1,0 +1,60 @@
+#pragma once
+#include <ctime>
+#include <optional>
+#include <string>
+#include <nlohmann/json.hpp>
+#include "AccountManager.h"
+#include "DaemonDb.h"
+#include "QueryApi.h"
+
+struct RawImportData;
+
+// Persely's import - docs/persely-sqlite-import-design.md, story 4: a bank file becomes an
+// ImportSession (include/ImportSession.h) that is categorized one answer at a time, reviewed and
+// saved. Every mutating function here runs inside DaemonDb::WriteImports() (daemon/main.cpp), so
+// each answer is one SQL transaction covering the session and any client/category/keyword it
+// created; it refuses with 4xx before changing anything. httplib-free so daemon/tests/
+// ImportApiTests.cpp can call it directly. `actor` is the tailnet login, `now` the request time.
+//
+// Two people on one session: whoever changed it last "is on it" for EDITOR_MINUTES; anyone else's
+// change is refused with 409 {"error", "busy": {"by", "at"}} unless the body says
+// "take_over": true. A soft lock, never a blocker.
+
+constexpr int IMPORT_EDITOR_MINUTES = 10;
+
+struct ImportUpload {
+	std::string file_name;   // as uploaded
+	bool preview = false;    // only report what was detected
+	String account_name;     // for an account that doesn't exist yet
+};
+
+// "MBH_CSV" / "GRANIT_XML" from the file name, "" for one Persely can't read.
+std::string ImportFormatOf(const std::string& file_name);
+
+// POST /api/v1/imports (multipart: file, preview, account_name), after the caller extracted
+// `data` from the file. Responds {"detected": {...}} for a preview, otherwise the new session as
+// ImportDetails() does. 409 {"error", "session_id"} if the account already has an open import;
+// 400 if a new account has no account_name; 422 if the file can't be imported.
+QueryApiResult StartImport(const RawImportData& data, const ImportUpload& upload, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+
+// GET /api/v1/imports: {"imports": [session summary]}.
+QueryApiResult ListImports(const AccountManager& mgr, const DaemonDb::Imports& imports);
+// GET /api/v1/imports/{id}: the summary plus "question" (or null), "current" (the row being
+// asked about), "previous" (up to 5 rows before it; at the very start the account's last stored
+// transactions, "history": true) and "next" (the row after, raw).
+QueryApiResult ImportDetails(int64_t id, const AccountManager& mgr, const DaemonDb::Imports& imports);
+// POST /api/v1/imports/{id}/answer: {row, topic: type|client|category, kind: select|create|default,
+// id?, name?, keyword?, definitive?, description?, take_over?} -> ImportDetails() of what's next.
+// 409 if that question was already answered (another device moved on).
+QueryApiResult AnswerImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+// POST /api/v1/imports/{id}/stop: {take_over?} - "Stop here", then review.
+QueryApiResult StopImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+// GET /api/v1/imports/{id}/rows: {"rows": [row], "summary": {"count", "total", "currency", "replaced"}}
+// - the rows a Save would add.
+QueryApiResult ImportRows(int64_t id, const AccountManager& mgr, const DaemonDb::Imports& imports);
+// PATCH /api/v1/imports/{id}/rows/{idx}: {category_id?, client_id?, description?, take_over?}.
+QueryApiResult EditImportRow(int64_t id, size_t idx, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+// POST /api/v1/imports/{id}/commit: {take_over?} - Save. {"ok", "account_id", "saved"}.
+QueryApiResult CommitImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+// DELETE /api/v1/imports/{id}: {take_over?} - Discard (clients/categories/keywords made stay).
+QueryApiResult DiscardImport(int64_t id, const nlohmann::json& body, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);

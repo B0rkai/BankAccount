@@ -70,6 +70,19 @@ void Account::AddTransaction(const uint16_t date, const Id type_id, const int32_
 	m_journal.AppendTransaction(GetId(), date, type_id, amount, client_id, category_id, memo, desc);
 }
 
+void Account::AddImportedTransaction(const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo, const Id category_id, const String& desc) {
+	String* memo_ptr = memo.empty() ? nullptr : &m_memos.emplace_back(memo);
+	String* desc_ptr = desc.empty() ? nullptr : &m_descriptions.emplace_back(desc);
+	Transaction& new_tra = m_transactions.emplace_back((IAccount*)this, Money(m_curr->Type(), amount), date, client_id, type_id, memo_ptr);
+	if (category_id) {
+		new_tra.GetCategoryId() = category_id;
+	}
+	if (desc_ptr) {
+		new_tra.SetDiscription(desc_ptr);
+	}
+	m_journal.AppendTransaction(GetId(), date, type_id, amount, client_id, category_id, memo, desc);
+}
+
 bool Account::RunQuery(Query& query, const Transaction* tr) const {
 	bool match = true;
 	for(auto& qe : query) {

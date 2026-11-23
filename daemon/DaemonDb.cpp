@@ -1,4 +1,5 @@
 #include "DaemonDb.h"
+#include <algorithm>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -34,38 +35,41 @@ bool DaemonDb::Stat(const std::string& path, FileStamp& stamp) {
 	return true;
 }
 
-std::unique_ptr<DaemonDb::Manager> DaemonDb::Load(std::string& error) {
+bool DaemonDb::Load(Loaded& loaded, std::string& error) {
 	auto candidate = std::make_unique<Manager>(m_sqlite ? static_cast<IJournal&>(m_sqlite_journal) : m_null_journal);
 	if (m_sqlite) {
 		SqliteStore store(m_path, SqliteStore::Mode::ReadOnly);
-		if (!store.LoadAll(*candidate)) {
+		if (!store.LoadAll(*candidate) || !store.LoadImportSessions(loaded.imports.m_sessions, loaded.imports.m_max_id)) {
 			error = "Could not load SQLite database '" + m_path + "': " + store.LastError();
-			return nullptr;
+			return false;
 		}
 	} else if (HasBafExtension(m_path)) {
-		bool loaded = BafArchive::ReadInto(m_path, [&candidate](std::istream& in) {
+		bool ok = BafArchive::ReadInto(m_path, [&candidate](std::istream& in) {
 			candidate->LoadFrom(in);
 		});
-		if (!loaded) {
+		if (!ok) {
 			error = "Could not open '" + m_path + "' as a BAF archive (missing/wrong password, or no '" + BafArchive::ENTRY_NAME + "' entry)";
-			return nullptr;
+			return false;
 		}
 	} else {
 		std::ifstream in(m_path, std::ios::binary);
 		if (!in.is_open()) {
 			error = "Could not open '" + m_path + "' for reading";
-			return nullptr;
+			return false;
 		}
 		candidate->LoadFrom(in);
 	}
-	return candidate;
+	loaded.manager = std::move(candidate);
+	return true;
 }
 
-void DaemonDb::Install(std::unique_ptr<Manager> manager, const FileStamp& stamp) {
-	m_manager = std::move(manager);
+void DaemonDb::Install(Loaded loaded, const FileStamp& stamp) {
+	m_manager = std::move(loaded.manager);
+	m_imports = std::move(loaded.imports);
 	m_stamp = stamp;
 	m_last_loaded = std::chrono::system_clock::now();
 	m_sqlite_journal.Reset(*m_manager);
+	m_sqlite_journal.merges.clear();
 }
 
 bool DaemonDb::ReloadIfChanged() {
@@ -81,8 +85,8 @@ bool DaemonDb::ReloadIfChanged() {
 		}
 	}
 	std::string error;
-	std::unique_ptr<Manager> candidate = Load(error);
-	if (!candidate) {
+	Loaded candidate;
+	if (!Load(candidate, error)) {
 		LogWarn("DAEMONDB") << error;
 		return false;
 	}
@@ -116,11 +120,12 @@ std::string DaemonDb::LastLoadedIso() const {
 void DaemonDb::ReloadAfterFailedWrite() {
 	FileStamp stamp;
 	std::string error;
-	std::unique_ptr<Manager> fresh = Stat(m_path, stamp) ? Load(error) : nullptr;
-	if (!fresh) {
+	Loaded fresh;
+	if (!Stat(m_path, stamp) || !Load(fresh, error)) {
 		// Memory may now hold a change the file doesn't: stop serving it rather than pretend.
 		LogError("DAEMONDB") << "Reloading after a failed write failed too (" << error << ") - the database is unloaded until it can be read again";
 		m_manager.reset();
+		m_imports = Imports();
 		m_stamp = FileStamp();
 		return;
 	}
@@ -129,6 +134,10 @@ void DaemonDb::ReloadAfterFailedWrite() {
 }
 
 bool DaemonDb::Write(const std::string& actor, const std::function<bool(AccountManager&)>& fn, std::string& error) {
+	return WriteImports(actor, [&fn](AccountManager& manager, Imports&) { return fn(manager); }, error);
+}
+
+bool DaemonDb::WriteImports(const std::string& actor, const std::function<bool(AccountManager&, Imports&)>& fn, std::string& error) {
 	if (!m_sqlite) {
 		error = "This database can't be changed (only a SQLite database can)";
 		return false;
@@ -143,7 +152,6 @@ bool DaemonDb::Write(const std::string& actor, const std::function<bool(AccountM
 		error = "Cannot write to the database: " + store.LastError();
 		return false;
 	}
-	// Checked while holding the write lock: from here on nobody else can change the file.
 	FileStamp stamp;
 	if (!Stat(m_path, stamp) || stamp != m_stamp) {
 		store.Rollback();
@@ -154,39 +162,110 @@ bool DaemonDb::Write(const std::string& actor, const std::function<bool(AccountM
 	}
 
 	m_sqlite_journal.Reset(*m_manager);
+	m_sqlite_journal.merges.clear();
+	const Imports imports_before = m_imports;
+	m_imports.m_changed.clear();
+	m_imports.m_removed.clear();
+	auto give_up = [&]() {
+		store.Rollback();
+		if (!m_sqlite_journal.Empty()) {
+			ReloadAfterFailedWrite();
+		} else {
+			m_imports = imports_before;
+		}
+	};
 	bool done = false;
 	try {
-		done = fn(*m_manager);
+		done = fn(*m_manager, m_imports);
 	} catch (const std::exception& e) {
 		error = std::string("The change failed: ") + e.what();
+	} catch (const char* e) {
+		error = std::string("The change failed: ") + e;
 	} catch (...) {
 		error = "The change failed";
 	}
 	if (!done) {
-		store.Rollback();
-		if (!m_sqlite_journal.Empty()) {
-			ReloadAfterFailedWrite();
-		}
+		give_up();
 		if (error.empty()) {
 			error = "Nothing was changed";
 		}
 		return false;
 	}
-	if (m_sqlite_journal.Empty()) {
+	// Merges renumber clients/categories/types: open sessions follow.
+	for (const Journal::Merge& merge : m_sqlite_journal.merges) {
+		for (ImportSession& session : m_imports.m_sessions) {
+			ImportEngine::RemapAfterMerge(session, merge.topic, merge.from, merge.to);
+			m_imports.m_changed.insert(session.id);
+		}
+	}
+	if (m_sqlite_journal.Empty() && m_imports.m_changed.empty() && m_imports.m_removed.empty()) {
 		store.Rollback();
 		return true; // nothing to write
 	}
-	if (!store.WriteChanges(*m_manager, m_sqlite_journal, actor) || !store.Commit()) {
+	bool saved = m_sqlite_journal.Empty() || store.WriteChanges(*m_manager, m_sqlite_journal, actor);
+	for (int64_t id : m_imports.m_removed) {
+		saved = saved && store.DeleteImportSession(id);
+	}
+	for (int64_t id : m_imports.m_changed) {
+		if (const ImportSession* session = m_imports.Find(id)) {
+			saved = saved && store.WriteImportSession(*session);
+		}
+	}
+	if (!saved || !store.Commit()) {
 		error = "Saving the change failed: " + store.LastError();
 		store.Rollback();
 		ReloadAfterFailedWrite();
 		return false;
 	}
+	// Committed sessions are saved as transactions now; only open ones stay listed.
+	auto& sessions = m_imports.m_sessions;
+	sessions.erase(std::remove_if(sessions.begin(), sessions.end(), [](const ImportSession& s) {
+		return s.state == ImportSession::State::Committed;
+	}), sessions.end());
 	m_sqlite_journal.Reset(*m_manager);
+	m_sqlite_journal.merges.clear();
 	if (!Stat(m_path, m_stamp)) {
 		LogWarn("DAEMONDB") << "Cannot stat '" << m_path << "' after a write";
 	}
 	return true;
+}
+
+ImportSession* DaemonDb::Imports::Find(int64_t id) {
+	for (ImportSession& session : m_sessions) {
+		if (session.id == id) {
+			return &session;
+		}
+	}
+	return nullptr;
+}
+
+const ImportSession* DaemonDb::Imports::Find(int64_t id) const {
+	return const_cast<Imports*>(this)->Find(id);
+}
+
+const ImportSession* DaemonDb::Imports::FindByAccountNumber(const String& account_number) const {
+	for (const ImportSession& session : m_sessions) {
+		if (session.account_number == account_number && session.state != ImportSession::State::Committed) {
+			return &session;
+		}
+	}
+	return nullptr;
+}
+
+ImportSession& DaemonDb::Imports::Add(ImportSession session) {
+	session.id = ++m_max_id;
+	m_changed.insert(session.id);
+	return m_sessions.emplace_back(std::move(session));
+}
+
+void DaemonDb::Imports::Changed(int64_t id) {
+	m_changed.insert(id);
+}
+
+void DaemonDb::Imports::Remove(int64_t id) {
+	m_sessions.erase(std::remove_if(m_sessions.begin(), m_sessions.end(), [id](const ImportSession& s) { return s.id == id; }), m_sessions.end());
+	m_changed.erase(id);
+	m_removed.insert(id);
 }
 
 bool DaemonDb::Snapshot(const std::string& to_path, std::string& error) {

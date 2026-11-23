@@ -72,6 +72,8 @@ SRCS := \
 	src/Logger.cpp \
 	src/LogData.cpp \
 	src/AccountManager.cpp \
+	src/DataImporter.cpp \
+	src/ImportSession.cpp \
 	src/BafArchive.cpp \
 	src/SqliteStore.cpp
 
@@ -109,7 +111,7 @@ OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS)) \
 # (include/httplib.h, same low-friction single-header precedent as nlohmann/json) - header-only
 # but still needs -pthread for its worker thread pool at link time.
 # WebAuth.cpp needs OpenSSL's libcrypto (PBKDF2 password hashing, CSPRNG session tokens).
-DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/Backups.cpp daemon/EditApi.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
+DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/Backups.cpp daemon/EditApi.cpp daemon/ImportApi.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
 DAEMON_SRCS := daemon/main.cpp $(DAEMON_LIB_SRCS)
 DAEMON_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_SRCS))
 DAEMON_LIB_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_LIB_SRCS))
@@ -127,7 +129,8 @@ MIGRATE_LIBS := $(shell wx-config --libs base) -pthread -lstdc++fs
 # daemon/tests/: GoogleTest suite for the daemon-only code (WebAuth etc.). Kept apart from tests/,
 # which the Windows BankAccountTests.vcxproj builds and which has no OpenSSL to link against.
 DAEMON_TEST_SRCS := daemon/tests/WebAuthTests.cpp daemon/tests/FavoritesStoreTests.cpp daemon/tests/SqliteStoreTests.cpp \
-	daemon/tests/DaemonDbTests.cpp daemon/tests/BackupsTests.cpp daemon/tests/EditApiTests.cpp
+	daemon/tests/DaemonDbTests.cpp daemon/tests/BackupsTests.cpp daemon/tests/EditApiTests.cpp \
+	daemon/tests/ImportSessionTests.cpp
 DAEMON_TEST_OBJS := $(patsubst daemon/tests/%.cpp,$(BUILD)/daemon/tests/%.o,$(DAEMON_TEST_SRCS))
 DAEMON_TEST_BIN  := $(BUILD)/bin/daemon_tests
 

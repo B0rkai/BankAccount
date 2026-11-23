@@ -39,6 +39,9 @@ public:
 	// Reads and rebuilds the private collections below directly - see include/SqliteStore.h.
 	friend class SqliteStore;
 	friend class SqliteJournal;
+	// The step-by-step import (include/ImportSession.h) uses the same private resolve helpers as
+	// Import() below.
+	friend class ImportEngine;
 
 	// Single additions, outside an Import() - Persely's writes (and their tests) use them.
 	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
@@ -161,6 +164,9 @@ public:
 	// most_frequent receives whichever of those was used most often (INVALID_ID if client_id has
 	// no prior transactions), pre-selected in the dialog.
 	IdSet CategoriesUsedByClient(const Id client_id, Id& most_frequent) const;
+	// The distinct ids in `categories` and the most frequent one - CategoriesUsedByClient()'s
+	// counting, for a caller that collects the list itself (ImportEngine).
+	static IdSet DistinctCategories(const std::vector<Id>& categories, Id& most_frequent);
 
 	struct ImportResult {
 		StringTable table;

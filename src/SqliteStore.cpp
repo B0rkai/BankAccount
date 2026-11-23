@@ -10,6 +10,7 @@
 #include "AccountManager.h"
 #include "Account.h"
 #include "Logger.h"
+#include "ImportSession.h"
 
 namespace {
 
@@ -51,6 +52,35 @@ CREATE INDEX transactions_category ON transactions(category_id);
 CREATE TABLE exchange_rates(currency TEXT NOT NULL, date INTEGER NOT NULL, rate REAL NOT NULL,
                             PRIMARY KEY(currency, date));
 )SQL";
+
+// Import sessions - section 3 of the design. Created on first use (IF NOT EXISTS) rather than
+// with a schema version bump, so a database converted before they existed needs no migration.
+const char* const IMPORT_SCHEMA_SQL = R"SQL(
+CREATE TABLE IF NOT EXISTS import_sessions(
+  id INTEGER PRIMARY KEY,
+  account_id INTEGER,
+  account_number TEXT NOT NULL, account_name TEXT, bank TEXT, currency TEXT NOT NULL,
+  source_name TEXT, source_format TEXT,
+  export_from INTEGER, export_to INTEGER,
+  replace_from INTEGER NOT NULL, replaced_count INTEGER NOT NULL, stored_last_date INTEGER NOT NULL,
+  skipped INTEGER NOT NULL,
+  state TEXT NOT NULL,
+  cursor INTEGER NOT NULL,
+  stop_at INTEGER,
+  created_at TEXT, created_by TEXT, updated_at TEXT, updated_by TEXT);
+CREATE TABLE IF NOT EXISTS import_rows(
+  session_id INTEGER NOT NULL REFERENCES import_sessions(id) ON DELETE CASCADE,
+  idx INTEGER NOT NULL,
+  date INTEGER NOT NULL, amount INTEGER NOT NULL, raw_type TEXT, raw_client TEXT, raw_client_account TEXT,
+  memo TEXT, raw_cat TEXT,
+  type_id INTEGER, client_id INTEGER, category_id INTEGER, description TEXT,
+  how TEXT NOT NULL,
+  PRIMARY KEY(session_id, idx));
+)SQL";
+
+const char* const STATE_CATEGORIZING = "categorizing";
+const char* const STATE_REVIEW = "review";
+const char* const STATE_COMMITTED = "committed";
 
 const char* const TOPIC_TYPE = "TYPE";
 const char* const TOPIC_CLIENT = "CLIENT";
@@ -116,6 +146,8 @@ public:
 		m_rc = sqlite3_step(m_stmt);
 		return m_rc == SQLITE_ROW;
 	}
+	Stmt& BindNull(int i) { sqlite3_bind_null(m_stmt, i); return *this; }
+	bool IsNull(int c) const { return sqlite3_column_type(m_stmt, c) == SQLITE_NULL; }
 	int64_t Int(int c) const { return sqlite3_column_int64(m_stmt, c); }
 	double Real(int c) const { return sqlite3_column_double(m_stmt, c); }
 	String Text(int c) const {
@@ -349,7 +381,7 @@ bool SqliteStore::SaveAll(const AccountManager& manager, const std::string& sour
 	}
 	std::string error;
 	auto save = [&]() -> bool {
-		if (!Exec(SCHEMA_SQL)) {
+		if (!Exec(SCHEMA_SQL) || !Exec(IMPORT_SCHEMA_SQL)) {
 			return false;
 		}
 		const std::string now = NowIso();
@@ -411,6 +443,14 @@ bool SqliteStore::HoldsOnlyMigratedData(bool& only_migrated) {
 		return Fail("cannot check '" + m_path + "': " + check.Error());
 	}
 	only_migrated = (check.Int(0) == 0);
+	if (only_migrated && HasImportTables()) {
+		// An import begun in Persely is a change of its own, even before it's saved.
+		Stmt imports(m_db, "SELECT COUNT(*) FROM import_sessions");
+		if (!imports.Next()) {
+			return Fail("cannot check '" + m_path + "': " + imports.Error());
+		}
+		only_migrated = (imports.Int(0) == 0);
+	}
 	return true;
 }
 
@@ -664,6 +704,171 @@ bool SqliteStore::Snapshot(const std::string& to_path) {
 		return Fail("snapshot to '" + to_path + "' failed: " + vacuum.Error());
 	}
 	m_logger.LogInfo() << "Snapshot of '" << m_path << "' written to '" << to_path << "'";
+	return true;
+}
+
+bool SqliteStore::HasImportTables() {
+	Stmt table(m_db, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'import_sessions'");
+	return table.Next();
+}
+
+bool SqliteStore::LoadImportSessions(std::vector<ImportSession>& open, int64_t& max_id) {
+	open.clear();
+	max_id = 0;
+	if (!m_db) {
+		return false;
+	}
+	if (!HasImportTables()) {
+		return true; // none yet
+	}
+	{
+		Stmt max(m_db, "SELECT COALESCE(MAX(id), 0) FROM import_sessions");
+		if (!max.Next()) {
+			return Fail("import_sessions: " + max.Error());
+		}
+		max_id = max.Int(0);
+	}
+	Stmt select(m_db, "SELECT id, account_id, account_number, account_name, bank, currency, source_name, source_format,"
+		" export_from, export_to, replace_from, replaced_count, stored_last_date, skipped, state, cursor, stop_at,"
+		" created_at, created_by, updated_at, updated_by FROM import_sessions WHERE state <> ? ORDER BY id");
+	select.BindText(1, std::string(STATE_COMMITTED));
+	while (select.Next()) {
+		ImportSession& session = open.emplace_back();
+		session.id = select.Int(0);
+		session.account_id = select.IsNull(1) ? Id(INVALID_ID) : Id((Id::Type)select.Int(1));
+		session.account_number = select.Text(2);
+		session.account_name = select.Text(3);
+		session.bank = select.Text(4);
+		if (!ParseCurrency(select.Text(5), session.currency)) {
+			return Fail("import session " + std::to_string(session.id) + ": unknown currency");
+		}
+		session.source_name = select.Text(6);
+		session.source_format = select.Text(7);
+		session.export_from = (uint16_t)select.Int(8);
+		session.export_to = (uint16_t)select.Int(9);
+		session.replace_from = (uint16_t)select.Int(10);
+		session.replaced_count = (size_t)select.Int(11);
+		session.stored_last_date = (uint16_t)select.Int(12);
+		session.skipped = (size_t)select.Int(13);
+		session.state = select.Text(14) == STATE_REVIEW ? ImportSession::State::Review : ImportSession::State::Categorizing;
+		session.cursor = (size_t)select.Int(15);
+		if (!select.IsNull(16)) {
+			session.stop_at = (size_t)select.Int(16);
+		}
+		session.created_at = select.Text(17).utf8_str();
+		session.created_by = select.Text(18).utf8_str();
+		session.updated_at = select.Text(19).utf8_str();
+		session.updated_by = select.Text(20).utf8_str();
+	}
+	if (!select.Ok()) {
+		return Fail("import_sessions: " + select.Error());
+	}
+	Stmt rows(m_db, "SELECT date, amount, raw_type, raw_client, raw_client_account, memo, raw_cat, type_id, client_id,"
+		" category_id, description, how FROM import_rows WHERE session_id = ? ORDER BY idx");
+	auto id_or_invalid = [&](int c) { return rows.IsNull(c) ? Id(INVALID_ID) : Id((Id::Type)rows.Int(c)); };
+	for (ImportSession& session : open) {
+		rows.Reset();
+		rows.BindInt(1, session.id);
+		while (rows.Next()) {
+			ImportRow& row = session.rows.emplace_back();
+			row.date = (uint16_t)rows.Int(0);
+			row.amount = (int32_t)rows.Int(1);
+			row.type = rows.Text(2);
+			row.client = rows.Text(3);
+			row.client_account = rows.Text(4);
+			row.memo = rows.Text(5);
+			row.cat = rows.Text(6);
+			row.type_id = id_or_invalid(7);
+			row.client_id = id_or_invalid(8);
+			row.category_id = id_or_invalid(9);
+			row.description = rows.Text(10);
+			row.how = rows.Text(11).utf8_str();
+			if (row.how.size() != 3) {
+				row.how = "---";
+			}
+		}
+		if (!rows.Ok()) {
+			return Fail("import_rows: " + rows.Error());
+		}
+	}
+	return true;
+}
+
+bool SqliteStore::WriteImportSession(const ImportSession& session) {
+	if (!m_db) {
+		return false;
+	}
+	if (!Exec(IMPORT_SCHEMA_SQL)) {
+		return false;
+	}
+	const char* state = session.state == ImportSession::State::Committed ? STATE_COMMITTED
+		: session.state == ImportSession::State::Review ? STATE_REVIEW : STATE_CATEGORIZING;
+	Stmt header(m_db, "INSERT OR REPLACE INTO import_sessions(id, account_id, account_number, account_name, bank, currency,"
+		" source_name, source_format, export_from, export_to, replace_from, replaced_count, stored_last_date, skipped,"
+		" state, cursor, stop_at, created_at, created_by, updated_at, updated_by)"
+		" VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+	header.BindInt(1, session.id);
+	if (session.account_id == Id(INVALID_ID)) {
+		header.BindNull(2);
+	} else {
+		header.BindInt(2, (Id::Type)session.account_id);
+	}
+	header.BindText(3, session.account_number).BindTextOrNull(4, session.account_name).BindTextOrNull(5, session.bank)
+		.BindText(6, std::string(MakeCurrency(session.currency)->GetShortName()))
+		.BindTextOrNull(7, session.source_name).BindTextOrNull(8, session.source_format)
+		.BindInt(9, session.export_from).BindInt(10, session.export_to).BindInt(11, session.replace_from)
+		.BindInt(12, (int64_t)session.replaced_count).BindInt(13, session.stored_last_date).BindInt(14, (int64_t)session.skipped)
+		.BindText(15, std::string(state)).BindInt(16, (int64_t)session.cursor);
+	if (session.stop_at) {
+		header.BindInt(17, (int64_t)*session.stop_at);
+	} else {
+		header.BindNull(17);
+	}
+	header.BindText(18, session.created_at).BindText(19, session.created_by).BindText(20, session.updated_at).BindText(21, session.updated_by);
+	if (!header.Run()) {
+		return Fail("import_sessions: " + header.Error());
+	}
+	Stmt clear(m_db, "DELETE FROM import_rows WHERE session_id = ?");
+	if (!clear.BindInt(1, session.id).Run()) {
+		return Fail("import_rows: " + clear.Error());
+	}
+	if (session.state == ImportSession::State::Committed) {
+		return true; // saved as transactions now; the header stays as a record of the import
+	}
+	Stmt row(m_db, "INSERT INTO import_rows(session_id, idx, date, amount, raw_type, raw_client, raw_client_account, memo,"
+		" raw_cat, type_id, client_id, category_id, description, how) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+	for (size_t i = 0; i < session.rows.size(); ++i) {
+		const ImportRow& r = session.rows[i];
+		row.BindInt(1, session.id).BindInt(2, (int64_t)i).BindInt(3, r.date).BindInt(4, r.amount)
+			.BindTextOrNull(5, r.type).BindTextOrNull(6, r.client).BindTextOrNull(7, r.client_account)
+			.BindTextOrNull(8, r.memo).BindTextOrNull(9, r.cat).BindTextOrNull(13, r.description).BindText(14, r.how);
+		const Id* ids[] = { &r.type_id, &r.client_id, &r.category_id };
+		for (int k = 0; k < 3; ++k) {
+			if (*ids[k] == Id(INVALID_ID)) {
+				row.BindNull(10 + k);
+			} else {
+				row.BindInt(10 + k, (Id::Type)*ids[k]);
+			}
+		}
+		if (!row.Run()) {
+			return Fail("import_rows: " + row.Error());
+		}
+	}
+	return true;
+}
+
+bool SqliteStore::DeleteImportSession(int64_t id) {
+	if (!m_db) {
+		return false;
+	}
+	if (!HasImportTables()) {
+		return true;
+	}
+	Stmt rows(m_db, "DELETE FROM import_rows WHERE session_id = ?");
+	Stmt header(m_db, "DELETE FROM import_sessions WHERE id = ?");
+	if (!rows.BindInt(1, id).Run() || !header.BindInt(1, id).Run()) {
+		return Fail("deleting import session " + std::to_string(id) + ": " + (rows.Ok() ? header.Error() : rows.Error()));
+	}
 	return true;
 }
 

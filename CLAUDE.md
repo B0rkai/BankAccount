@@ -84,8 +84,8 @@ SQLite, verified byte for byte) exist, and the live service reads that SQLite co
 `deploy/migrate-db.sh` until Persely can import. The daemon can write it (`DaemonDb::Write`, one
 SQL transaction per change via the `SqliteJournal` change tracker, tailnet logins only) and takes
 daily snapshots (`daemon/Backups.h`). Persely's edits (`daemon/EditApi.h`: transaction edits,
-keywords, rename, merge, categorize by keywords, MNB exchange rates) are built but stay off until
-`BANKACCOUNT_EDITS=on` - the first edit ends the `.baf` refresh, so it's switched on at the cutover. Design and story-by-story history:
+keywords, rename, merge, categorize by keywords, MNB exchange rates) and its step-by-step import (`include/ImportSession.h`, `daemon/ImportApi.h`; no UI yet) are
+built but stay off until `BANKACCOUNT_EDITS=on` - the first edit ends the `.baf` refresh, so it's switched on at the cutover. Design and story-by-story history:
 [docs/linux-query-daemon-design.md](docs/linux-query-daemon-design.md); deployment/secrets:
 [docs/linux-daemon-deployment.md](docs/linux-daemon-deployment.md).
 

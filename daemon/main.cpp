@@ -28,6 +28,8 @@
 #include "FavoritesApi.h"
 #include "FavoritesStore.h"
 #include "HtmlReport.h"
+#include "ImportApi.h"
+#include "DataImporter.h"
 #include "Logger.h"
 #include "Query.h"
 #include "QueryApi.h"
@@ -216,12 +218,13 @@ std::string WriterLogin(const httplib::Request& req, Listener listener) {
 	return (listener == Listener::TAILNET) ? req.get_header_value(TAILSCALE_LOGIN_HEADER) : std::string();
 }
 
-// One edit route: `edit(body, AccountManager&)` (EditApi.h) runs as one write (DaemonDb::Write)
-// on behalf of the request's tailnet login, recorded as created_by/updated_by. 403 when editing
-// is off or the request may only read; the edit's own 4xx when it refuses; 409 when the database
-// can't take the change (changed elsewhere, or the write failed).
-template <class Edit>
-void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Edit&& edit) {
+// One change route: `change(body, AccountManager&, DaemonDb::Imports&, login, now)` runs as one
+// write (DaemonDb::WriteImports) on behalf of the request's tailnet login, recorded as
+// created_by/updated_by. 403 when editing is off or the request may only read; the change's own
+// 4xx when it refuses; 409 when the database can't take the change (changed elsewhere, or the
+// write failed).
+template <class Change>
+void HandleChange(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, const nlohmann::json& body, Change&& change) {
 	if (!ctx.edits_enabled) {
 		SendError(res, 403, "Editing is turned off on this server");
 		return;
@@ -231,19 +234,14 @@ void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& re
 		SendError(res, 403, "Changes can only be made over Tailscale");
 		return;
 	}
-	nlohmann::json body = nlohmann::json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
-	if (body.is_discarded()) {
-		SendError(res, 400, "Malformed JSON");
-		return;
-	}
 	QueryApiResult result{0, ""};
 	std::string error;
-	const bool written = ctx.db.Write(login, [&](AccountManager& mgr) {
-		result = edit(body, mgr);
+	const bool written = ctx.db.WriteImports(login, [&](AccountManager& mgr, DaemonDb::Imports& imports) {
+		result = change(body, mgr, imports, login, std::time(nullptr));
 		return result.http_status == 200;
 	}, error);
 	if (result.http_status != 0 && result.http_status != 200) {
-		SendResult(res, result); // the edit refused before changing anything
+		SendResult(res, result); // the change refused before changing anything
 	} else if (!written) {
 		LogWarn("WRITE") << req.method << " " << req.path << " by " << login << " failed: " << error;
 		SendError(res, 409, error);
@@ -251,6 +249,59 @@ void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& re
 		LogInfo("WRITE") << req.method << " " << req.path << " by " << login;
 		SendResult(res, result);
 	}
+}
+
+nlohmann::json ParseBody(const httplib::Request& req) {
+	return nlohmann::json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
+}
+
+// One edit route (EditApi.h): `edit(body, AccountManager&)`.
+template <class Edit>
+void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Edit&& edit) {
+	const nlohmann::json body = ParseBody(req);
+	if (body.is_discarded()) {
+		SendError(res, 400, "Malformed JSON");
+		return;
+	}
+	HandleChange(ctx, req, res, listener, body, [&](const nlohmann::json& b, AccountManager& mgr, DaemonDb::Imports&, const std::string&, std::time_t) {
+		return edit(b, mgr);
+	});
+}
+
+// One route on an import session (ImportApi.h), the session id taken from the path.
+template <class Change>
+void HandleImport(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Change&& change) {
+	const nlohmann::json body = ParseBody(req);
+	if (body.is_discarded()) {
+		SendError(res, 400, "Malformed JSON");
+		return;
+	}
+	const int64_t id = std::stoll(req.matches[1]);
+	HandleChange(ctx, req, res, listener, body, [&](const nlohmann::json& b, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& login, std::time_t now) {
+		return change(id, b, mgr, imports, login, now);
+	});
+}
+
+// Reads an uploaded bank file with the desktop's own DataImporter, which wants a file whose
+// extension says what it is: written to a temporary one first.
+bool ExtractUpload(const std::string& file_name, const std::string& content, RawImportData& data) {
+	const std::string format = ImportFormatOf(file_name);
+	if (format.empty()) {
+		return false;
+	}
+	const std::string ext = format == "MBH_CSV" ? ".csv" : ".xml";
+	std::string path = (std::filesystem::temp_directory_path() / ("persely-import-XXXXXX" + ext)).string();
+	const int fd = mkstemps(path.data(), (int)ext.size());
+	if (fd < 0) {
+		return false;
+	}
+	const bool written = ::write(fd, content.data(), content.size()) == (ssize_t)content.size();
+	::close(fd);
+	if (written) {
+		ImportFromFile(String::FromUTF8(path.c_str()), data);
+	}
+	std::filesystem::remove(path);
+	return written;
 }
 
 // Downloads MNB's rates without holding the database lock (it takes 10-30 s), then takes the
@@ -442,6 +493,91 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			SendResult(res, PreviewRecategorize(mgr));
 		});
 	});
+	// Imports (ImportApi.h) - like edits, only with BANKACCOUNT_EDITS=on, over Tailscale.
+	server.Post("/api/v1/imports", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		if (!req.form.has_file("file")) {
+			SendError(res, 400, "Expected a multipart upload with a \"file\"");
+			return;
+		}
+		const httplib::FormData file = req.form.get_file("file");
+		ImportUpload upload;
+		upload.file_name = file.filename;
+		upload.preview = req.form.get_field("preview") == "1" || req.form.get_field("preview") == "true";
+		upload.account_name = String::FromUTF8(req.form.get_field("account_name").c_str());
+		RawImportData data;
+		if (!ExtractUpload(file.filename, file.content, data)) {
+			SendError(res, 422, "Persely reads MBH Bank .csv and Gránit Bank .xml exports");
+			return;
+		}
+		HandleChange(ctx, req, res, listener, nlohmann::json::object(), [&](const nlohmann::json&, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& login, std::time_t now) {
+			return StartImport(data, upload, mgr, imports, login, now);
+		});
+	});
+	server.Get("/api/v1/imports", [&ctx](const httplib::Request&, httplib::Response& res) {
+		if (!ctx.db.IsLoaded()) {
+			SendError(res, 503, "Database not loaded");
+			return;
+		}
+		ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
+			SendResult(res, ListImports(mgr, imports));
+		});
+	});
+	server.Get(R"(/api/v1/imports/(\d+))", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		if (!ctx.db.IsLoaded()) {
+			SendError(res, 503, "Database not loaded");
+			return;
+		}
+		ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
+			SendResult(res, ImportDetails(std::stoll(req.matches[1]), mgr, imports));
+		});
+	});
+	server.Get(R"(/api/v1/imports/(\d+)/rows)", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		if (!ctx.db.IsLoaded()) {
+			SendError(res, 503, "Database not loaded");
+			return;
+		}
+		ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
+			SendResult(res, ImportRows(std::stoll(req.matches[1]), mgr, imports));
+		});
+	});
+	server.Post(R"(/api/v1/imports/(\d+)/answer)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleImport(ctx, req, res, listener, AnswerImport);
+	});
+	server.Post(R"(/api/v1/imports/(\d+)/stop)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleImport(ctx, req, res, listener, StopImport);
+	});
+	server.Patch(R"(/api/v1/imports/(\d+)/rows/(\d+))", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const size_t idx = std::stoul(req.matches[2]);
+		HandleImport(ctx, req, res, listener, [idx](int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& login, std::time_t now) {
+			return EditImportRow(id, idx, body, mgr, imports, login, now);
+		});
+	});
+	server.Post(R"(/api/v1/imports/(\d+)/commit)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = WriterLogin(req, listener);
+		// Saving replaces the overlapping transactions: snapshot first, as before a merge.
+		if (ctx.edits_enabled && ctx.backups && !login.empty()) {
+			std::string error;
+			if (!ctx.backups->TakeNow("import", error)) {
+				SendError(res, 500, "Could not take a snapshot before saving: " + error);
+				return;
+			}
+		}
+		HandleImport(ctx, req, res, listener, CommitImport);
+		if (res.status == 200) {
+			// New days need their exchange rates; downloading takes a while, so not in this request.
+			std::thread([&ctx, login]() {
+				std::string message;
+				UpdateExchangeRates(ctx.db, ctx.rates_running, login, message);
+				LogInfo("RATES") << "After an import: " << message;
+			}).detach();
+		}
+	});
+	server.Delete(R"(/api/v1/imports/(\d+))", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleImport(ctx, req, res, listener, [](int64_t id, const nlohmann::json& body, AccountManager&, DaemonDb::Imports& imports, const std::string& login, std::time_t now) {
+			return DiscardImport(id, body, imports, login, now);
+		});
+	});
+
 	server.Get("/api/v1/entity", [&ctx](const httplib::Request& req, httplib::Response& res) {
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
 			SendResult(res, EntityDetails(req.get_param_value("topic"), req.get_param_value("id"), mgr));

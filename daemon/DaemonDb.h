@@ -4,8 +4,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
+#include <vector>
 #include "AccountManager.h"
+#include "ImportSession.h"
 #include "Journal.h"
 #include "SqliteStore.h"
 
@@ -62,6 +65,41 @@ public:
 	// data. On failure `error` says why. Returns true only if fn returned true and it committed.
 	bool Write(const std::string& actor, const std::function<bool(AccountManager&)>& fn, std::string& error);
 
+	// The open import sessions (include/ImportSession.h), kept with the model and changed in
+	// the same SQL transaction as it.
+	class Imports {
+	public:
+		const std::vector<ImportSession>& All() const { return m_sessions; }
+		ImportSession* Find(int64_t id);
+		const ImportSession* Find(int64_t id) const;
+		// The open session for an account number, if any (one per account).
+		const ImportSession* FindByAccountNumber(const String& account_number) const;
+		// Takes a new session, gives it the next id; returns it.
+		ImportSession& Add(ImportSession session);
+		// Marks a session as changed, so the write saves it. A committed one leaves the open list.
+		void Changed(int64_t id);
+		void Remove(int64_t id);
+
+	private:
+		friend class DaemonDb;
+		std::vector<ImportSession> m_sessions;
+		int64_t m_max_id = 0;
+		std::set<int64_t> m_changed;
+		std::set<int64_t> m_removed;
+	};
+
+	// Runs fn(const AccountManager&, const Imports&) under the lock, like WithManager().
+	template <class Fn>
+	void WithImports(Fn&& fn) const {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		fn(static_cast<const AccountManager&>(*m_manager), m_imports);
+	}
+
+	// Write() that may also change import sessions: what fn marks Changed()/Remove()d is saved
+	// in the same SQL transaction, and a merge fn makes renumbers every open session's rows.
+	// On failure the sessions are restored along with the model.
+	bool WriteImports(const std::string& actor, const std::function<bool(AccountManager&, Imports&)>& fn, std::string& error);
+
 	// A consistent copy of the database at `to_path` (SqliteStore::Snapshot), taken under the
 	// lock so no write is half done. SQLite databases only.
 	bool Snapshot(const std::string& to_path, std::string& error);
@@ -87,10 +125,29 @@ private:
 	};
 	static bool Stat(const std::string& path, FileStamp& stamp);
 
+	// Also hears of merges, so open import sessions can follow the renumbering.
+	class Journal : public SqliteJournal {
+	public:
+		struct Merge {
+			QueryTopic topic;
+			IdSet from;
+			Id to;
+		};
+		std::vector<Merge> merges;
+		void AppendMerge(QueryTopic topic, const IdSet& from, Id to) override {
+			SqliteJournal::AppendMerge(topic, from, to);
+			merges.push_back({ topic, from, to });
+		}
+	};
+
+	struct Loaded {
+		std::unique_ptr<Manager> manager;
+		Imports imports;
+	};
 	// Reads the file into a new Manager (no lock needed, nothing shared is touched).
-	std::unique_ptr<Manager> Load(std::string& error);
+	bool Load(Loaded& loaded, std::string& error);
 	// Swaps in a freshly loaded manager. Call with m_mutex held.
-	void Install(std::unique_ptr<Manager> manager, const FileStamp& stamp);
+	void Install(Loaded loaded, const FileStamp& stamp);
 	// Reloads from the file after a failed write. Call with m_mutex held.
 	void ReloadAfterFailedWrite();
 
@@ -103,9 +160,10 @@ private:
 	// order), which is exactly the trap the AccountManagerTests.cpp TestAccountManager pattern
 	// avoids by taking an externally-owned IJournal&.
 	NullJournal m_null_journal;
-	SqliteJournal m_sqlite_journal;
+	Journal m_sqlite_journal;
 	mutable std::mutex m_mutex;
 	std::unique_ptr<Manager> m_manager;
+	Imports m_imports;
 	FileStamp m_stamp;
 	std::chrono::system_clock::time_point m_last_loaded{};
 };

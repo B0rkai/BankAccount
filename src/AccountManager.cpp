@@ -767,6 +767,10 @@ IdSet AccountManager::CategoriesUsedByClient(const Id client_id, Id& most_freque
 	for (Account* acc : m_accounts) {
 		acc->AppendCategoriesForClient(client_id, categories);
 	}
+	return DistinctCategories(categories, most_frequent);
+}
+
+IdSet AccountManager::DistinctCategories(const std::vector<Id>& categories, Id& most_frequent) {
 	std::unordered_map<Id::Type, unsigned> counts;
 	for (const Id& cat : categories) {
 		++counts[(Id::Type)cat];

@@ -368,7 +368,7 @@ stories 2-5.
    "Story 3 as built" below.
 4. **Import engine** — `ImportSession` + tables + API, unit tests with scripted answers
    (same result as an uninterrupted import; stop-here; overlap replacement; recall; merge during
-   an open session).
+   an open session). **Done**, behind `BANKACCOUNT_EDITS=on` — see "Story 4 as built" below.
 5. **Import UI** — Imports page, upload, categorize screen, review, Overview banner.
    → **Cutover** (§7).
 6. **Cleanup** — delete the Windows projects and desktop-only code, rewrite `CLAUDE.md`, the
@@ -494,6 +494,47 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
   - edits, stale-edit 409, a non-allowlisted login 403, create, keyword, merge (+ snapshot),
   restart (all persisted, `updated_by` recorded), MNB download, and the UI in a headless browser.
   The live database's keywords would file 53 uncategorized transactions today.
+
+## Story 4 as built (2026-11-23)
+
+- **Engine** ([include/ImportSession.h](../include/ImportSession.h), `src/ImportSession.cpp`):
+  `ImportSession` (the file's rows, raw and resolved, a cursor, `stop_at`) and `ImportEngine`
+  (`Start`, `Advance`, `CurrentQuestion`, `Answer`, `StopHere`, `EditRow`, `Commit`,
+  `RemapAfterMerge`), a friend of `AccountManager` using the same private resolve helpers as
+  `Import()`. `DataImporter.cpp` is now in the Linux build (uploads are written to a temporary
+  file with the right extension and read by it unchanged).
+- **Same answers, same database**: a test imports one Gránit XML file both ways - the desktop's
+  `Import()` with a scripted dialog, and step by step with the same answers - and requires the
+  same questions in the same order and a byte-identical `StreamOut()`, for an existing and for a
+  new account. It caught one difference, now fixed: the desktop offers a client's past categories
+  including rows already imported from the same file (and without the rows being replaced), so the
+  session counts its own earlier rows too.
+- **Overlap** as `Account::PrepareImport()`: rows dated before the day before the last stored
+  day are skipped; the stored transactions from the first kept row's day on (`replace_from`,
+  `replaced_count`) are replaced only on Save. A file starting after the last stored day is
+  refused at upload. **Recall** reads those stored transactions (categorized ones, newest first,
+  each used once) instead of a stash. **Stop here** can't drop rows dated up to the last stored
+  day - that would lose the transactions they replace (`FirstStoppableRow()`); Discard instead.
+  **Save** refuses if the account's last day or the number of rows to replace changed since the
+  upload, takes a snapshot first (`-import`), and starts an exchange-rate update in the background.
+- **Tables** as in section 3, created on first use (`CREATE TABLE IF NOT EXISTS`, so no schema
+  version bump), with `account_name`, `replace_from`, `replaced_count`, `stored_last_date` and
+  `skipped` added and without `editing_by`/`editing_seen_at`: the soft lock is `updated_by`/
+  `updated_at` (someone else's change within 10 minutes is refused with 409 `busy` unless
+  `take_over`). `how` is one letter per topic (`a`uto, `m`anual, `r`ecalled). A saved session
+  keeps its header (state `committed`) as a record and drops its rows. An open session counts as
+  a change in `HoldsOnlyMigratedData()`.
+- **Daemon** ([daemon/ImportApi.h](../daemon/ImportApi.h)): `DaemonDb::WriteImports()` writes the
+  model and the changed sessions in one SQL transaction; its journal also records merges, and
+  every open session's rows follow the renumbering in that same write. Routes as in section 3
+  (`POST /imports` takes `file`, `preview`, `account_name`), all behind `BANKACCOUNT_EDITS=on` and
+  tailnet logins like the edits.
+- Tested: `ImportSessionTests` (16: both equivalence tests, overlap, recall, stop here, new account,
+  refused files and commits, stale answers, merge renumbering, persistence across a restart,
+  second upload, commit, discard, soft lock), and over HTTP on a copy of the live database in a
+  scratch container - preview, upload (three rows resolved by keywords, one recalled, stopped at a
+  card hold's type question), stop, review, row edit, a password session's 403, save (snapshot,
+  `created_by`, the session closed), the background rate update.
 
 ## Tests
 

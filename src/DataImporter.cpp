@@ -235,7 +235,7 @@ static void ImportFromXML(const String& filename, RawImportData& import_data) {
 			<< ", record 1 has " << (data.size() > 1 ? data[1].size() : 0) << " field(s), need >= " << (int)Granit_Column_SIZE << ")";
 		return;
 	}
-	import_data.bank_name = "Gránit Bank";
+	import_data.bank_name = String::FromUTF8("Gránit Bank"); // not the narrow-string conversion: locale-dependent on Linux
 	import_data.account_number = data[1][Granit_Column_ACCOUNT_NUMBER]; 
 	import_data.currency = MakeCurrency(data[1][Granit_Column_CURRENCY])->Type();
 	LogInfo("IMPT") << "ImportFromXML: recognized as Granit Bank export for account '" << import_data.account_number.utf8_str() << "'";
