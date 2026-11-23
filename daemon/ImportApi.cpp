@@ -146,7 +146,8 @@ json SessionSummary(const ImportSession& session, const AccountManager& mgr) {
 		{"from", session.export_from ? json(IsoDate(session.export_from)) : json(nullptr)},
 		{"to", session.export_to ? json(IsoDate(session.export_to)) : json(nullptr)},
 		{"rows", session.rows.size()},
-		{"done", session.state == ImportSession::State::Categorizing ? session.cursor : session.End()},
+		{"open", ImportEngine::OpenRows(session).size()},
+		{"dropped", session.rows.size() - session.End()},
 		{"stop_at", session.stop_at ? json(*session.stop_at) : json(nullptr)},
 		{"first_stoppable", session.FirstStoppableRow()},
 		{"skipped", session.skipped},
@@ -174,33 +175,40 @@ json QuestionToJson(const ImportQuestion& q, const AccountManager& mgr) {
 	};
 }
 
-json Details(const ImportSession& session, const AccountManager& mgr) {
+json Details(const ImportSession& session, const AccountManager& mgr, std::optional<size_t> row = std::nullopt) {
 	json j = SessionSummary(session, mgr);
-	const std::optional<ImportQuestion> q = ImportEngine::CurrentQuestion(mgr, session);
+	json open = json::array();
+	for (size_t idx : ImportEngine::OpenRows(session)) {
+		open.push_back(idx);
+	}
+	j["open_rows"] = open;
+	const std::optional<ImportQuestion> q = ImportEngine::Question(mgr, session, row);
 	j["question"] = q ? QuestionToJson(*q, mgr) : json(nullptr);
-	const size_t cursor = std::min(session.cursor, session.rows.size());
-	j["current"] = (q && cursor < session.rows.size()) ? RowToJson(session, cursor, mgr) : json(nullptr);
-	j["next"] = (q && cursor + 1 < session.rows.size()) ? RowToJson(session, cursor + 1, mgr) : json(nullptr);
+	if (!q) {
+		j["current"] = j["next"] = nullptr;
+		j["previous"] = json::array();
+		return j;
+	}
+	const size_t current = q->row;
+	j["current"] = RowToJson(session, current, mgr);
+	j["next"] = current + 1 < session.rows.size() ? RowToJson(session, current + 1, mgr) : json(nullptr);
 	json previous = json::array();
-	const size_t first = cursor > CONTEXT_ROWS ? cursor - CONTEXT_ROWS : 0;
-	if (cursor - first < CONTEXT_ROWS && session.account_id != Id(INVALID_ID)) {
-		// At the very start: the account's last transactions that stay, for orientation.
+	const size_t first = current > CONTEXT_ROWS ? current - CONTEXT_ROWS : 0;
+	if (current - first < CONTEXT_ROWS && session.account_id != Id(INVALID_ID)) {
+		// Near the start: the account's last transactions that stay, for orientation.
 		size_t stays = 0;
-		for (size_t pos = 0;; ++pos) {
-			if (!mgr.FindTransaction({ session.account_id, pos })) {
-				stays = pos;
-				break;
-			}
+		while (mgr.FindTransaction({ session.account_id, stays })) {
+			++stays;
 		}
 		stays = stays >= session.replaced_count ? stays - session.replaced_count : 0;
-		const size_t wanted = CONTEXT_ROWS - (cursor - first);
+		const size_t wanted = CONTEXT_ROWS - (current - first);
 		for (size_t pos = stays > wanted ? stays - wanted : 0; pos < stays; ++pos) {
 			json h = TransactionToJson(*mgr.FindTransaction({ session.account_id, pos }), mgr);
 			h["history"] = true;
 			previous.push_back(h);
 		}
 	}
-	for (size_t i = first; i < cursor; ++i) {
+	for (size_t i = first; i < current; ++i) {
 		previous.push_back(RowToJson(session, i, mgr));
 	}
 	j["previous"] = previous;
@@ -257,6 +265,7 @@ QueryApiResult StartImport(const RawImportData& data, const ImportUpload& upload
 	detected.erase("state");
 	detected["file_rows"] = data.data.size();
 	detected["new_rows"] = new_rows;
+	detected["open"] = ImportEngine::OpenRows(session).size(); // how many will need an answer
 	if (const ImportSession* open = imports.FindByAccountNumber(session.account_number)) {
 		return { 409, json{{"error", "This account already has an import in progress - continue or discard it first"}, {"session_id", open->id}, {"detected", detected}}.dump() };
 	}
@@ -274,7 +283,6 @@ QueryApiResult StartImport(const RawImportData& data, const ImportUpload& upload
 	session.created_by = session.updated_by = actor;
 	session.created_at = session.updated_at = IsoUtc(now);
 	ImportSession& added = imports.Add(std::move(session));
-	ImportEngine::Advance(mgr, added);
 	return Ok(Details(added, mgr));
 }
 
@@ -286,9 +294,15 @@ QueryApiResult ListImports(const AccountManager& mgr, const DaemonDb::Imports& i
 	return Ok(json{{"imports", list}});
 }
 
-QueryApiResult ImportDetails(int64_t id, const AccountManager& mgr, const DaemonDb::Imports& imports) {
+QueryApiResult ImportDetails(int64_t id, std::optional<size_t> row, const AccountManager& mgr, const DaemonDb::Imports& imports) {
 	const ImportSession* session = imports.Find(id);
-	return session ? Ok(Details(*session, mgr)) : NoSuchImport();
+	if (!session) {
+		return NoSuchImport();
+	}
+	if (row && !ImportEngine::Question(mgr, *session, row)) {
+		return MakeErrorResult(404, "That row doesn't need an answer");
+	}
+	return Ok(Details(*session, mgr, row));
 }
 
 QueryApiResult AnswerImport(int64_t id, const json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now) {
@@ -321,8 +335,8 @@ QueryApiResult AnswerImport(int64_t id, const json& body, AccountManager& mgr, D
 		answer.description = Text(body["description"]);
 	}
 	// Checked before the soft lock, so a stale double tap doesn't claim the session either.
-	const std::optional<ImportQuestion> q = ImportEngine::CurrentQuestion(mgr, *session);
-	if (!q || q->row != answer.row || q->topic != answer.topic) {
+	const std::optional<ImportQuestion> q = ImportEngine::Question(mgr, *session, answer.row);
+	if (!q || q->topic != answer.topic) {
 		return { 409, json{{"error", "This question was already answered"}, {"stale", true}}.dump() };
 	}
 	QueryApiResult refusal;
@@ -333,7 +347,6 @@ QueryApiResult AnswerImport(int64_t id, const json& body, AccountManager& mgr, D
 	if (!ImportEngine::Answer(mgr, *session, answer, error)) {
 		return MakeErrorResult(400, error);
 	}
-	ImportEngine::Advance(mgr, *session);
 	imports.Changed(id);
 	return Ok(Details(*session, mgr));
 }
@@ -348,8 +361,20 @@ QueryApiResult StopImport(int64_t id, const json& body, AccountManager& mgr, Dae
 	if (!MayChange(changed, body, actor, now, refusal)) {
 		return refusal;
 	}
+	// "row": where to cut (null: keep every row); without it, at the first open row - "Stop here"
+	// on the question being shown.
+	std::optional<size_t> row = changed.cursor;
+	if (body.is_object() && body.contains("row")) {
+		if (body["row"].is_null()) {
+			row.reset();
+		} else if (IsIndex(body["row"])) {
+			row = body["row"].get<size_t>();
+		} else {
+			return MakeErrorResult(400, "\"row\" must be a row index or null");
+		}
+	}
 	std::string error;
-	if (!ImportEngine::StopHere(changed, error)) {
+	if (!ImportEngine::StopAt(changed, row, error)) {
 		return MakeErrorResult(409, error);
 	}
 	*session = std::move(changed);
@@ -362,7 +387,7 @@ QueryApiResult ImportRows(int64_t id, const AccountManager& mgr, const DaemonDb:
 	if (!session) {
 		return NoSuchImport();
 	}
-	const size_t end = session->state == ImportSession::State::Categorizing ? session->cursor : session->End();
+	const size_t end = session->End();
 	json rows = json::array();
 	int64_t total = 0;
 	for (size_t i = 0; i < end; ++i) {
@@ -374,6 +399,8 @@ QueryApiResult ImportRows(int64_t id, const AccountManager& mgr, const DaemonDb:
 		{"total", Units((int32_t)total, session->currency)},
 		{"currency", MakeCurrency(session->currency)->GetShortName()},
 		{"replaced", session->replaced_count},
+		{"open", ImportEngine::OpenRows(*session).size()},
+		{"dropped", session->rows.size() - end},
 	};
 	return Ok(json{{"rows", rows}, {"summary", summary}, {"session", SessionSummary(*session, mgr)}});
 }

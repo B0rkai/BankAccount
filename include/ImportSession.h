@@ -35,8 +35,8 @@ struct ImportRow {
 
 // A bank file being imported step by step - docs/persely-sqlite-import-design.md, section 3.
 // Replaces AccountManager::Import()'s one blocking loop: instead of calling out to a dialog it
-// stops at each row that needs a human, and the whole state lives here (and in the database
-// between answers), so it can be continued later, on another device.
+// leaves a question on each row that needs a human, and the whole state lives here (and in the
+// database between answers), so it can be continued later, on another device.
 struct ImportSession {
 	enum class State { Categorizing, Review, Committed };
 
@@ -61,7 +61,7 @@ struct ImportSession {
 	size_t skipped = 0;
 
 	State state = State::Categorizing;
-	size_t cursor = 0;                // the row being resolved
+	size_t cursor = 0;                // the first row that needs an answer (End() when none)
 	std::optional<size_t> stop_at;    // "Stop here": rows from here on are dropped
 	std::string created_at, created_by, updated_at, updated_by;
 	std::vector<ImportRow> rows;
@@ -102,28 +102,40 @@ struct ImportAnswer {
 // ImportSessionTests.cpp). Uses the same resolve logic as AccountManager::Import()'s
 // ProcessOneTransaction()/ProcessOneTopic(), so the same answers give the same transactions.
 //
-// New clients/categories/types, keywords and clients' bank account numbers are added to the
-// AccountManager as soon as an answer (or an automatic match) needs them - later rows resolve
-// against them. Transactions only change on Commit().
+// Every row is tried at once: Resolve() goes through the whole file, and only the rows keywords
+// can't settle get a question. It's cheap, so it runs again after every change that could alter
+// the result - an answer here, or a keyword, client or merge anywhere (DaemonDb::WriteImports()).
+// Answers and review edits are pinned ('m'); everything else is worked out again each time, so a
+// keyword added while answering row 20 settles rows 21-380 (and can reopen one it makes
+// ambiguous).
+//
+// New clients/categories/types and keywords made by answers go into the AccountManager straight
+// away - later rows resolve against them. Transactions, and clients' bank account numbers, only
+// change on Commit().
 class ImportEngine {
 public:
-	// Builds a session from an extracted file without changing anything. Fails (with `error`)
-	// for an empty file, or one that doesn't reach back to the account's last stored day.
+	// Builds a session from an extracted file, already Resolve()d, without changing anything.
+	// Fails (with `error`) for an empty file, an unreadable account number, or a file that doesn't
+	// reach back to the account's last stored day.
 	static bool Start(const AccountManager& manager, const RawImportData& data, const String& source_name, const String& source_format, ImportSession& session, std::string& error);
 
-	// Resolves rows from the cursor on until one needs a human (returns that question) or all
-	// are done (state becomes Review).
-	static std::optional<ImportQuestion> Advance(AccountManager& manager, ImportSession& session);
-	// The question Advance() stopped at, again - changes nothing.
-	static std::optional<ImportQuestion> CurrentQuestion(const AccountManager& manager, const ImportSession& session);
-	// Applies an answer to the current question; call Advance() next.
+	// Resolves every row not answered by hand, in file order; updates the cursor (the first open
+	// row) and the state (Review once no row before End() is open). True if anything changed.
+	static bool Resolve(const AccountManager& manager, ImportSession& session);
+	// Rows before End() that still need an answer, in file order.
+	static std::vector<size_t> OpenRows(const ImportSession& session);
+	// The question for an open row (default: the first one) - its first unresolved topic.
+	static std::optional<ImportQuestion> Question(const AccountManager& manager, const ImportSession& session, std::optional<size_t> row = std::nullopt);
+	// Applies an answer to an open row's question, then Resolve()s.
 	static bool Answer(AccountManager& manager, ImportSession& session, const ImportAnswer& answer, std::string& error);
-	// "Stop here": drops the current row and everything after it, state becomes Review.
-	static bool StopHere(ImportSession& session, std::string& error);
-	// Fixes a resolved row before saving (any of the three may be left out).
+	// "Stop here": rows from `row` on are dropped on Save (none: keep them all). Can't cut into
+	// the rows that replace stored transactions (FirstStoppableRow()).
+	static bool StopAt(ImportSession& session, std::optional<size_t> row, std::string& error);
+	// Fixes a row by hand (any of the three may be left out) - pinned like an answer.
 	static bool EditRow(const AccountManager& manager, ImportSession& session, size_t row, std::optional<Id> category_id, std::optional<Id> client_id, std::optional<String> description, std::string& error);
-	// Saves: creates a new account, replaces the overlapping stored transactions with rows
-	// [0, End()), state becomes Committed. Refuses if the account changed since the upload.
+	// Saves: Resolve()s once more, creates a new account, replaces the overlapping stored
+	// transactions with rows [0, End()), state becomes Committed. Refuses while a row is open or
+	// if the account changed since the upload.
 	static bool Commit(AccountManager& manager, ImportSession& session, std::string& error);
 
 	// Follows AccountManager::Merge()'s renumbering: merged ids become the target, later ids shift
@@ -132,8 +144,15 @@ public:
 	static Id MergedId(Id id, const IdSet& from, Id to);
 
 private:
-	static bool TryAuto(AccountManager& manager, ImportSession& session, size_t row, QueryTopic topic);
+	// A stored transaction this import replaces, whose category a matching row reuses.
+	struct Recallable {
+		uint16_t date;
+		int32_t amount;
+		Id client;
+		Id category;
+	};
+	static std::vector<Recallable> Replaced(const AccountManager& manager, const ImportSession& session);
+	static bool TryAuto(const AccountManager& manager, ImportRow& row, QueryTopic topic, std::vector<Recallable>& recallable);
 	static ImportQuestion Ask(const AccountManager& manager, const ImportSession& session, size_t row, QueryTopic topic);
-	static bool Recall(const AccountManager& manager, const ImportSession& session, size_t row, Id client_id, Id& category_id);
-	static void SetClient(AccountManager& manager, ImportRow& row, Id client_id, char how);
+	static void UpdateProgress(ImportSession& session);
 };

@@ -4,6 +4,7 @@
 #include "AccountManager.h"
 #include "Account.h"
 #include "AccountNumber.h"
+#include "CategorySystem.h"
 #include "DataImporter.h"
 #include "INewAccount.h"
 #include "Transaction.h"
@@ -124,50 +125,106 @@ bool ImportEngine::Start(const AccountManager& manager, const RawImportData& dat
 		row.cat = raw.cat;
 		row.description = raw.desc;
 	}
+	Resolve(manager, session);
 	return true;
 }
 
-std::optional<ImportQuestion> ImportEngine::Advance(AccountManager& manager, ImportSession& session) {
-	if (session.state != ImportSession::State::Categorizing) {
-		return std::nullopt;
+std::vector<ImportEngine::Recallable> ImportEngine::Replaced(const AccountManager& manager, const ImportSession& session) {
+	// The stored transactions this import replaces, categorized ones only, newest first - the
+	// order Account::PrepareImport() stashed them in, so duplicates are recalled the same way.
+	std::vector<Recallable> stored;
+	if ((Id::Type)session.account_id >= manager.m_accounts.size() || !session.replaced_count) {
+		return stored;
 	}
-	while (session.cursor < session.rows.size()) {
-		while (std::optional<QueryTopic> topic = NextTopic(session.rows[session.cursor])) {
-			if (!TryAuto(manager, session, session.cursor, *topic)) {
-				return Ask(manager, session, session.cursor, *topic);
+	const Account& account = *manager.m_accounts[session.account_id];
+	if (account.Size() < session.replaced_count) {
+		return stored;
+	}
+	for (size_t i = account.Size(); i-- > account.Size() - session.replaced_count;) {
+		const Transaction& tr = account.GetTransactionAt(i);
+		if (tr.GetCategoryId() != Id(UNCATEGORIZED)) {
+			stored.push_back({ tr.GetDate(), tr.GetAmount(), tr.GetClientId(), tr.GetCategoryId() });
+		}
+	}
+	return stored;
+}
+
+bool ImportEngine::Resolve(const AccountManager& manager, ImportSession& session) {
+	if (session.state == ImportSession::State::Committed) {
+		return false;
+	}
+	const ImportSession before = session;
+	std::vector<Recallable> recallable = Replaced(manager, session);
+	// In file order, as the desktop went: a row's category reuses a replaced transaction only
+	// once, and topics are tried type, client, category - each needs the one before.
+	for (ImportRow& row : session.rows) {
+		for (QueryTopic topic : TOPICS) {
+			const size_t h = ImportRow::HowIndex(topic);
+			if (row.how[h] != 'm') { // answers stay; everything else is worked out again
+				TopicId(row, topic) = Id(INVALID_ID);
+				row.how[h] = '-';
 			}
 		}
-		++session.cursor;
+		for (QueryTopic topic : TOPICS) {
+			if (row.how[ImportRow::HowIndex(topic)] != 'm' && !TryAuto(manager, row, topic, recallable)) {
+				break;
+			}
+		}
 	}
-	session.state = ImportSession::State::Review;
-	return std::nullopt;
+	UpdateProgress(session);
+	if (session.state != before.state || session.cursor != before.cursor) {
+		return true;
+	}
+	for (size_t i = 0; i < session.rows.size(); ++i) {
+		const ImportRow& a = session.rows[i];
+		const ImportRow& b = before.rows[i];
+		if (a.how != b.how || a.type_id != b.type_id || a.client_id != b.client_id || a.category_id != b.category_id) {
+			return true;
+		}
+	}
+	return false;
 }
 
-std::optional<ImportQuestion> ImportEngine::CurrentQuestion(const AccountManager& manager, const ImportSession& session) {
-	if (session.state != ImportSession::State::Categorizing || session.cursor >= session.rows.size()) {
+void ImportEngine::UpdateProgress(ImportSession& session) {
+	if (session.state == ImportSession::State::Committed) {
+		return;
+	}
+	const std::vector<size_t> open = OpenRows(session);
+	session.cursor = open.empty() ? session.End() : open.front();
+	session.state = open.empty() ? ImportSession::State::Review : ImportSession::State::Categorizing;
+}
+
+std::vector<size_t> ImportEngine::OpenRows(const ImportSession& session) {
+	std::vector<size_t> open;
+	for (size_t i = 0; i < session.End(); ++i) {
+		if (NextTopic(session.rows[i])) {
+			open.push_back(i);
+		}
+	}
+	return open;
+}
+
+std::optional<ImportQuestion> ImportEngine::Question(const AccountManager& manager, const ImportSession& session, std::optional<size_t> row) {
+	const size_t index = row.value_or(session.cursor);
+	if (session.state == ImportSession::State::Committed || index >= session.End()) {
 		return std::nullopt;
 	}
-	std::optional<QueryTopic> topic = NextTopic(session.rows[session.cursor]);
+	std::optional<QueryTopic> topic = NextTopic(session.rows[index]);
 	if (!topic) {
-		return std::nullopt; // resolved, Advance() moves on
+		return std::nullopt;
 	}
-	return Ask(manager, session, session.cursor, *topic);
+	return Ask(manager, session, index, *topic);
 }
 
-bool ImportEngine::TryAuto(AccountManager& manager, ImportSession& session, size_t index, QueryTopic topic) {
-	ImportRow& row = session.rows[index];
+bool ImportEngine::TryAuto(const AccountManager& manager, ImportRow& row, QueryTopic topic, std::vector<Recallable>& recallable) {
 	if (topic == QueryTopic::TYPE || topic == QueryTopic::CLIENT) {
 		// ProcessOneTopic(): only a single definitive keyword match resolves by itself.
 		IdSet ids = manager.SearchIds(topic, topic == QueryTopic::TYPE ? row.type : row.client, false);
 		if (ids.size() != 1) {
 			return false;
 		}
-		if (topic == QueryTopic::TYPE) {
-			row.type_id = *ids.begin();
-			row.how[0] = 'a';
-		} else {
-			SetClient(manager, row, *ids.begin(), 'a');
-		}
+		TopicId(row, topic) = *ids.begin();
+		row.how[ImportRow::HowIndex(topic)] = 'a';
 		return true;
 	}
 	// CATEGORY - ProcessOneTransaction()'s order: the file's own category, the category of the
@@ -177,15 +234,20 @@ bool ImportEngine::TryAuto(AccountManager& manager, ImportSession& session, size
 		row.how[2] = 'a';
 		return true;
 	}
-	Id category(UNCATEGORIZED);
-	if (Recall(manager, session, index, row.client_id, category)) {
-		row.category_id = category;
+	auto recalled = std::find_if(recallable.begin(), recallable.end(), [&](const Recallable& r) {
+		return r.date == row.date && r.amount == row.amount && r.client == row.client_id;
+	});
+	if (recalled != recallable.end()) {
+		row.category_id = recalled->category;
 		row.how[2] = 'r';
+		recallable.erase(recalled);
 		return true;
 	}
-	category = manager.m_category_system.Categorize({ row.type, row.client, row.memo });
+	// Categorize() only reads (and logs); it just isn't declared const in its interface.
+	CategorySystem& categories = const_cast<CategorySystem&>(manager.m_category_system);
+	Id category = categories.Categorize({ row.type, row.client, row.memo });
 	if ((Id::Type)category == 0) {
-		category = manager.m_category_system.Categorize(StringVector{ manager.GetTransactionType(row.type_id), manager.GetClientName(row.client_id) });
+		category = categories.Categorize(StringVector{ manager.GetTransactionType(row.type_id), manager.GetClientName(row.client_id) });
 	}
 	if ((Id::Type)category == 0) {
 		return false;
@@ -208,6 +270,14 @@ ImportQuestion ImportEngine::Ask(const AccountManager& manager, const ImportSess
 			// CategoriesUsedByClient() as the desktop's import saw it: the rows this import
 			// replaces were already gone, the ones before this row already added.
 			std::vector<Id> used;
+			auto add_earlier_rows = [&]() {
+				for (size_t i = 0; i < index; ++i) {
+					const ImportRow& earlier = session.rows[i];
+					if (earlier.client_id == row.client_id && earlier.category_id != Id(INVALID_ID)) {
+						used.push_back(earlier.category_id);
+					}
+				}
+			};
 			for (size_t a = 0; a < manager.m_accounts.size(); ++a) {
 				const Account& account = *manager.m_accounts[a];
 				const bool importing = Id((Id::Type)a) == session.account_id;
@@ -219,19 +289,11 @@ ImportQuestion ImportEngine::Ask(const AccountManager& manager, const ImportSess
 					}
 				}
 				if (importing) {
-					for (size_t i = 0; i < index; ++i) {
-						if (session.rows[i].client_id == row.client_id) {
-							used.push_back(session.rows[i].category_id);
-						}
-					}
+					add_earlier_rows();
 				}
 			}
 			if (session.account_id == Id(INVALID_ID)) { // a new account, after all the others
-				for (size_t i = 0; i < index; ++i) {
-					if (session.rows[i].client_id == row.client_id) {
-						used.push_back(session.rows[i].category_id);
-					}
-				}
+				add_earlier_rows();
 			}
 			Id most_frequent(INVALID_ID);
 			q.choices = AccountManager::DistinctCategories(used, most_frequent);
@@ -263,62 +325,9 @@ ImportQuestion ImportEngine::Ask(const AccountManager& manager, const ImportSess
 	return q;
 }
 
-bool ImportEngine::Recall(const AccountManager& manager, const ImportSession& session, size_t index, Id client_id, Id& category_id) {
-	if ((Id::Type)session.account_id >= manager.m_accounts.size() || !session.replaced_count) {
-		return false;
-	}
-	// The stored transactions this import replaces, categorized ones only, newest first - the
-	// order Account::PrepareImport() stashed them in, so duplicates are recalled the same way.
-	const Account& account = *manager.m_accounts[session.account_id];
-	if (account.Size() < session.replaced_count) {
-		return false;
-	}
-	struct Stored { uint16_t date; int32_t amount; Id client; Id category; };
-	std::vector<Stored> stored;
-	for (size_t i = account.Size(); i-- > account.Size() - session.replaced_count;) {
-		const Transaction& tr = account.GetTransactionAt(i);
-		if (tr.GetCategoryId() != Id(UNCATEGORIZED)) {
-			stored.push_back({ tr.GetDate(), tr.GetAmount(), tr.GetClientId(), tr.GetCategoryId() });
-		}
-	}
-	auto take = [&](uint16_t date, int32_t amount, Id client) -> std::optional<Id> {
-		auto it = std::find_if(stored.begin(), stored.end(), [&](const Stored& s) {
-			return s.date == date && s.amount == amount && s.client == client;
-		});
-		if (it == stored.end()) {
-			return std::nullopt;
-		}
-		const Id category = it->category;
-		stored.erase(it);
-		return category;
-	};
-	// Each one is recalled once: earlier rows that recalled one have used it up.
-	for (size_t i = 0; i < index; ++i) {
-		const ImportRow& earlier = session.rows[i];
-		if (earlier.how[2] == 'r') {
-			take(earlier.date, earlier.amount, earlier.client_id);
-		}
-	}
-	if (std::optional<Id> found = take(session.rows[index].date, session.rows[index].amount, client_id)) {
-		category_id = *found;
-		return true;
-	}
-	return false;
-}
-
-void ImportEngine::SetClient(AccountManager& manager, ImportRow& row, Id client_id, char how) {
-	row.client_id = client_id;
-	row.how[1] = how;
-	// Remembered for the client, as ProcessOneTransaction() does (not for "no client").
-	if ((Id::Type)client_id != 0 && manager.m_client_man.AddAccountNumber(client_id, row.client_account)) {
-		manager.Modified();
-		manager.m_journal.AppendClientAccountNumber(client_id, row.client_account);
-	}
-}
-
 bool ImportEngine::Answer(AccountManager& manager, ImportSession& session, const ImportAnswer& answer, std::string& error) {
-	const std::optional<ImportQuestion> q = CurrentQuestion(manager, session);
-	if (!q || q->row != answer.row || q->topic != answer.topic) {
+	const std::optional<ImportQuestion> q = Question(manager, session, answer.row);
+	if (!q || q->topic != answer.topic) {
 		error = "This question was already answered";
 		return false;
 	}
@@ -366,35 +375,33 @@ bool ImportEngine::Answer(AccountManager& manager, ImportSession& session, const
 	if (answer.description) {
 		row.description = answer.description->Strip(wxString::both);
 	}
-	if (answer.topic == QueryTopic::CLIENT) {
-		SetClient(manager, row, id, 'm');
-	} else {
-		TopicId(row, answer.topic) = id;
-		row.how[ImportRow::HowIndex(answer.topic)] = 'm';
-	}
+	TopicId(row, answer.topic) = id;
+	row.how[ImportRow::HowIndex(answer.topic)] = 'm';
+	Resolve(manager, session); // a new keyword or client may settle other rows too
 	return true;
 }
 
-bool ImportEngine::StopHere(ImportSession& session, std::string& error) {
-	if (session.state != ImportSession::State::Categorizing) {
-		error = "Categorizing is already over";
+bool ImportEngine::StopAt(ImportSession& session, std::optional<size_t> row, std::string& error) {
+	if (session.state == ImportSession::State::Committed) {
+		error = "Already saved";
 		return false;
 	}
-	const size_t first = session.FirstStoppableRow();
-	if (session.cursor < first) {
+	if (row && *row >= session.rows.size()) {
+		row.reset(); // after the last row: keep them all
+	}
+	if (row && *row < session.FirstStoppableRow()) {
 		error = "Rows up to " + std::string(DateAsString(session.stored_last_date).utf8_str())
 			+ " replace transactions already saved, so they can't be dropped - discard the import instead";
 		return false;
 	}
-	session.stop_at = session.cursor;
-	session.state = ImportSession::State::Review;
+	session.stop_at = row;
+	UpdateProgress(session);
 	return true;
 }
 
 bool ImportEngine::EditRow(const AccountManager& manager, ImportSession& session, size_t index, std::optional<Id> category_id, std::optional<Id> client_id, std::optional<String> description, std::string& error) {
-	const size_t resolved_end = session.state == ImportSession::State::Review ? session.End() : session.cursor;
-	if (session.state == ImportSession::State::Committed || index >= resolved_end) {
-		error = "No such resolved row";
+	if (session.state == ImportSession::State::Committed || index >= session.rows.size()) {
+		error = "No such row";
 		return false;
 	}
 	if ((category_id && !manager.IsValidId(QueryTopic::CATEGORY, *category_id)) || (client_id && !manager.IsValidId(QueryTopic::CLIENT, *client_id))) {
@@ -413,12 +420,18 @@ bool ImportEngine::EditRow(const AccountManager& manager, ImportSession& session
 	if (description) {
 		row.description = description->Strip(wxString::both);
 	}
+	Resolve(manager, session);
 	return true;
 }
 
 bool ImportEngine::Commit(AccountManager& manager, ImportSession& session, std::string& error) {
+	if (session.state == ImportSession::State::Committed) {
+		error = "Already saved";
+		return false;
+	}
+	Resolve(manager, session);
 	if (session.state != ImportSession::State::Review) {
-		error = session.state == ImportSession::State::Committed ? "Already saved" : "Categorizing isn't finished yet";
+		error = std::to_string(OpenRows(session).size()) + " row(s) still need an answer";
 		return false;
 	}
 	const size_t end = session.End();
@@ -459,6 +472,11 @@ bool ImportEngine::Commit(AccountManager& manager, ImportSession& session, std::
 	}
 	for (size_t i = 0; i < end; ++i) {
 		const ImportRow& row = session.rows[i];
+		// The client's bank account number, as ProcessOneTransaction() remembered it (not for
+		// "no client") - only now, since until Save a row's client can still change.
+		if ((Id::Type)row.client_id != 0 && manager.m_client_man.AddAccountNumber(row.client_id, row.client_account)) {
+			manager.m_journal.AppendClientAccountNumber(row.client_id, row.client_account);
+		}
 		account->AddImportedTransaction(row.date, row.type_id, row.amount, row.client_id, row.memo, row.category_id, row.description);
 	}
 	manager.Modified();

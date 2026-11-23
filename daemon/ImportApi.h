@@ -39,22 +39,29 @@ QueryApiResult StartImport(const RawImportData& data, const ImportUpload& upload
 
 // GET /api/v1/imports: {"imports": [session summary]}.
 QueryApiResult ListImports(const AccountManager& mgr, const DaemonDb::Imports& imports);
-// GET /api/v1/imports/{id}: the summary plus "question" (or null), "current" (the row being
-// asked about), "previous" (up to 5 rows before it; at the very start the account's last stored
-// transactions, "history": true) and "next" (the row after, raw).
-QueryApiResult ImportDetails(int64_t id, const AccountManager& mgr, const DaemonDb::Imports& imports);
+// GET /api/v1/imports/{id}[?row=N]: the summary ("rows", "open" - how many still need an
+// answer, "dropped" - cut off by Stop here) plus "open_rows" (their indexes), "question" for the
+// first open row (or row N; null when none is open), "current" (that row), "previous" (up to 5
+// rows before it; near the start the account's last stored transactions, "history": true) and
+// "next" (the row after). Every row was already tried with the keywords; only open rows ask.
+QueryApiResult ImportDetails(int64_t id, std::optional<size_t> row, const AccountManager& mgr, const DaemonDb::Imports& imports);
 // POST /api/v1/imports/{id}/answer: {row, topic: type|client|category, kind: select|create|default,
-// id?, name?, keyword?, definitive?, description?, take_over?} -> ImportDetails() of what's next.
-// 409 if that question was already answered (another device moved on).
+// id?, name?, keyword?, definitive?, description?, take_over?} - any open row's question. Every
+// row not answered by hand is then worked out again (a new keyword may settle - or reopen -
+// others). Responds ImportDetails() for the first open row. 409 if that question was already
+// answered (another device got there first).
 QueryApiResult AnswerImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
-// POST /api/v1/imports/{id}/stop: {take_over?} - "Stop here", then review.
+// POST /api/v1/imports/{id}/stop: {row?, take_over?} - "Stop here": rows from `row` on are dropped
+// on Save (null: keep all again; left out: the first open row). 409 if it would cut into the
+// rows replacing stored transactions.
 QueryApiResult StopImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
-// GET /api/v1/imports/{id}/rows: {"rows": [row], "summary": {"count", "total", "currency", "replaced"}}
-// - the rows a Save would add.
+// GET /api/v1/imports/{id}/rows: {"rows": [row], "summary": {"count", "total", "currency", "replaced",
+// "open", "dropped"}, "session"} - the rows a Save would add (open ones with nulls).
 QueryApiResult ImportRows(int64_t id, const AccountManager& mgr, const DaemonDb::Imports& imports);
 // PATCH /api/v1/imports/{id}/rows/{idx}: {category_id?, client_id?, description?, take_over?}.
 QueryApiResult EditImportRow(int64_t id, size_t idx, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
-// POST /api/v1/imports/{id}/commit: {take_over?} - Save. {"ok", "account_id", "saved"}.
+// POST /api/v1/imports/{id}/commit: {take_over?} - Save, once no row is open. {"ok",
+// "account_id", "saved"}. Only now do the transactions (and clients' bank account numbers) change.
 QueryApiResult CommitImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
 // DELETE /api/v1/imports/{id}: {take_over?} - Discard (clients/categories/keywords made stay).
 QueryApiResult DiscardImport(int64_t id, const nlohmann::json& body, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);

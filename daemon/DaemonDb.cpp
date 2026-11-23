@@ -198,6 +198,15 @@ bool DaemonDb::WriteImports(const std::string& actor, const std::function<bool(A
 			m_imports.m_changed.insert(session.id);
 		}
 	}
+	// Any change - a keyword, a new client, a merge, an answer - may settle (or reopen) rows of
+	// an open import: work them all out again. Cheap enough to do on every write.
+	if (!m_sqlite_journal.Empty()) {
+		for (ImportSession& session : m_imports.m_sessions) {
+			if (ImportEngine::Resolve(*m_manager, session)) {
+				m_imports.m_changed.insert(session.id);
+			}
+		}
+	}
 	if (m_sqlite_journal.Empty() && m_imports.m_changed.empty() && m_imports.m_removed.empty()) {
 		store.Rollback();
 		return true; // nothing to write

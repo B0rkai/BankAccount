@@ -295,7 +295,8 @@ the db") before starting; an unknown account number shows the new-account form f
 ```
 
 - Same three question kinds as today's dialog (Type → Client → Category per row); the current
-  row shows which one is being asked.
+  row shows which one is being asked. Every row is tried with the keywords first, so only the
+  ones that need a human are asked, in file order, and the progress shows how many are left.
 - Closing the tab is "pause"; reopening, from any device, lands on the same question.
 - **Stop here** confirms "Keep 142, drop this row and the 237 after it?" → review.
 - When the last row is resolved → review.
@@ -509,6 +510,18 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
   new account. It caught one difference, now fixed: the desktop offers a client's past categories
   including rows already imported from the same file (and without the rows being replaced), so the
   session counts its own earlier rows too.
+- **Every row at once (revised the same day)**: `ImportEngine::Resolve()` tries the whole file
+  in file order and only rows keywords can't settle get a question ("127 need you" rather than
+  "143 / 380"); any open row can be answered, the first one is offered. Answers and review edits
+  are pinned (`m`); everything else is worked out again after every change that could alter it -
+  an answer, and any write while an import is open (`DaemonDb::WriteImports()` re-runs every open
+  session: a keyword added on a client page counts). So a keyword added while answering row 20
+  settles rows 21-380, and one that makes a row ambiguous reopens it (an exact name match still
+  wins outright). Measured on a 400-row file against the live keywords: 65-75 ms per answer,
+  including the re-run, saving the session and the HTTP round trip. Clients' bank account numbers
+  are now added on Save, since a row's client can change until then. Stop here is a cut point on
+  any row (`POST /stop {row}`, `null` undoes it). The desktop-equivalence tests still hold:
+  answering in file order, no answer changes an earlier row's result.
 - **Overlap** as `Account::PrepareImport()`: rows dated before the day before the last stored
   day are skipped; the stored transactions from the first kept row's day on (`replace_from`,
   `replaced_count`) are replaced only on Save. A file starting after the last stored day is
@@ -529,7 +542,9 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
   every open session's rows follow the renumbering in that same write. Routes as in section 3
   (`POST /imports` takes `file`, `preview`, `account_name`), all behind `BANKACCOUNT_EDITS=on` and
   tailnet logins like the edits.
-- Tested: `ImportSessionTests` (16: both equivalence tests, overlap, recall, stop here, new account,
+- Tested: `ImportSessionTests` (21 after the revision, adding: rows tried up front, a keyword
+  settling other rows while answers stay, a keyword reopening a row, bank account numbers only on
+  Save, a keyword added elsewhere settling an open import; first 16: both equivalence tests, overlap, recall, stop here, new account,
   refused files and commits, stale answers, merge renumbering, persistence across a restart,
   second upload, commit, discard, soft lock), and over HTTP on a copy of the live database in a
   scratch container - preview, upload (three rows resolved by keywords, one recalled, stopped at a

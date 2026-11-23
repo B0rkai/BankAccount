@@ -528,7 +528,11 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			return;
 		}
 		ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
-			SendResult(res, ImportDetails(std::stoll(req.matches[1]), mgr, imports));
+			std::optional<size_t> row;
+			if (req.has_param("row")) {
+				row = std::strtoul(req.get_param_value("row").c_str(), nullptr, 10);
+			}
+			SendResult(res, ImportDetails(std::stoll(req.matches[1]), row, mgr, imports));
 		});
 	});
 	server.Get(R"(/api/v1/imports/(\d+)/rows)", [&ctx](const httplib::Request& req, httplib::Response& res) {

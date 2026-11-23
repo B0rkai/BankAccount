@@ -218,7 +218,7 @@ protected:
 	// Answers with Decide() until a question about `stop_before` (a session row) or the end.
 	std::vector<Asked> AnswerAll(ImportSession& session, size_t stop_before = SIZE_MAX) {
 		std::vector<Asked> asked;
-		std::optional<ImportQuestion> q = ImportEngine::Advance(mgr, session);
+		std::optional<ImportQuestion> q = ImportEngine::Question(mgr, session);
 		while (q && q->row < stop_before) {
 			const size_t file_row = q->row + session.skipped;
 			asked.push_back({ file_row, q->topic, q->choices, q->preselect, q->create_suggestion });
@@ -236,7 +236,7 @@ protected:
 			}
 			std::string error;
 			EXPECT_TRUE(ImportEngine::Answer(mgr, session, answer, error)) << error;
-			q = ImportEngine::Advance(mgr, session);
+			q = ImportEngine::Question(mgr, session);
 		}
 		return asked;
 	}
@@ -315,22 +315,104 @@ TEST_F(ImportSessionTests, ACategoryPickedByHandIsRecalledForTheSameTransaction)
 	EXPECT_EQ(tesco.how, "aar");
 }
 
-TEST_F(ImportSessionTests, StopHereDropsTheCurrentRowAndTheRestButNeverTheOverlap) {
+TEST_F(ImportSessionTests, StopHereDropsTheRowAndTheRestButNeverTheOverlap) {
 	ImportSession session = Start();
 	std::string error;
-	ImportEngine::Advance(mgr, session);
-	ASSERT_LT(session.cursor, session.FirstStoppableRow());
-	EXPECT_FALSE(ImportEngine::StopHere(session, error)); // would lose the stored 46001/46002
+	EXPECT_FALSE(ImportEngine::StopAt(session, 1, error)); // would lose the stored 46002
 
 	const size_t hold = FILE_SIZE - 1 - session.skipped;  // the card hold's session row
-	AnswerAll(session, hold);
-	ASSERT_EQ(session.cursor, hold);
-	ASSERT_TRUE(ImportEngine::StopHere(session, error)) << error;
-	EXPECT_EQ(session.state, ImportSession::State::Review);
+	ASSERT_TRUE(ImportEngine::StopAt(session, hold, error)) << error;
 	EXPECT_EQ(session.End(), hold);
+	for (size_t row : ImportEngine::OpenRows(session)) {
+		EXPECT_LT(row, hold); // the hold's own type question is gone
+	}
+	ASSERT_TRUE(ImportEngine::StopAt(session, std::nullopt, error)); // changed my mind
+	EXPECT_EQ(ImportEngine::OpenRows(session).back(), hold);
+	ASSERT_TRUE(ImportEngine::StopAt(session, hold, error));
+
+	AnswerAll(session);
+	EXPECT_EQ(session.state, ImportSession::State::Review);
 	ASSERT_TRUE(ImportEngine::Commit(mgr, session, error)) << error;
 	EXPECT_EQ(Stored(), 1 + hold);
 	EXPECT_EQ(At(Stored() - 1)->GetDate(), 46005);
+}
+
+TEST_F(ImportSessionTests, EveryRowIsTriedUpFront) {
+	mgr.AddKeyword(QueryTopic::CLIENT, Id(2), "LIDL");
+	RawImportData data = RawFile();
+	RawTransactionData& last = data.data.emplace_back();
+	last.amount = Money(HUF, -700);
+	last.date = 46006;
+	last.type = "CARD";
+	last.client = String::FromUTF8("LIDL ÜLLŐI");
+	ImportSession session;
+	std::string error;
+	ASSERT_TRUE(ImportEngine::Start(mgr, data, "export.xml", "GRANIT_XML", session, error)) << error;
+	const std::vector<size_t> open = ImportEngine::OpenRows(session);
+	ASSERT_FALSE(open.empty());
+	EXPECT_EQ(session.cursor, open.front());
+	EXPECT_LT(open.front(), session.rows.size() - 1);
+	EXPECT_EQ(session.rows.back().how, "aaa");          // settled though earlier rows are open
+	EXPECT_EQ(session.rows.back().category_id, Id(1));  // Groceries, by the LIDL keyword
+	EXPECT_EQ(session.rows[0].how, "aaa");              // LIDL BUDAPEST too
+	EXPECT_EQ(Stored(), 3u);                            // nothing saved
+}
+
+TEST_F(ImportSessionTests, AKeywordSettlesOtherRowsButAnswersStay) {
+	ImportSession session = Start();
+	const size_t first_bistro = 3, second_bistro = 4; // file rows 4 and 5
+	auto answer = [&](size_t row, QueryTopic topic, ImportAnswer::Kind kind, Id id, const char* name) {
+		ImportAnswer a;
+		a.row = row;
+		a.topic = topic;
+		a.kind = kind;
+		a.id = id;
+		a.new_name = name;
+		std::string error;
+		EXPECT_TRUE(ImportEngine::Answer(mgr, session, a, error)) << error;
+	};
+	// Answered out of order: the question for any open row can be answered.
+	answer(first_bistro, QueryTopic::CLIENT, ImportAnswer::Kind::CreateNew, Id(INVALID_ID), "Chez Pierre"); // a name BISTRO doesn't match
+	const Id bistro = session.rows[first_bistro].client_id;
+	answer(first_bistro, QueryTopic::CATEGORY, ImportAnswer::Kind::Select, Id(2), "");
+	EXPECT_EQ(session.rows[second_bistro].client_id, Id(INVALID_ID)); // no keyword yet
+
+	mgr.AddKeyword(QueryTopic::CLIENT, bistro, "BISTRO");   // e.g. from the client's page
+	mgr.AddKeyword(QueryTopic::CATEGORY, Id(1), "BISTRO");  // Groceries, oddly
+	EXPECT_TRUE(ImportEngine::Resolve(mgr, session));
+	EXPECT_EQ(session.rows[second_bistro].client_id, bistro);
+	EXPECT_EQ(session.rows[second_bistro].how, "aaa");
+	EXPECT_EQ(session.rows[second_bistro].category_id, Id(1));
+	EXPECT_EQ(session.rows[first_bistro].category_id, Id(2)); // the answer is kept
+	EXPECT_EQ(session.rows[first_bistro].how, "amm");
+	EXPECT_FALSE(ImportEngine::Resolve(mgr, session));         // nothing new the second time
+}
+
+TEST_F(ImportSessionTests, AKeywordThatMakesARowAmbiguousReopensIt) {
+	ImportSession session = Start();
+	const size_t bistro = 4; // file row 5, BISTRO
+	mgr.AddKeyword(QueryTopic::CLIENT, Id(1), "BISTRO");
+	ImportEngine::Resolve(mgr, session);
+	ASSERT_EQ(session.rows[bistro].client_id, Id(1)); // settled by the keyword
+	// (An exact name match - TESCO for Tesco - wins outright and can't become ambiguous.)
+	mgr.AddKeyword(QueryTopic::CLIENT, Id(2), "BISTRO");
+	ImportEngine::Resolve(mgr, session);
+	EXPECT_EQ(session.rows[bistro].client_id, Id(INVALID_ID));
+	const std::optional<ImportQuestion> q = ImportEngine::Question(mgr, session, bistro);
+	ASSERT_TRUE(q);
+	EXPECT_EQ(q->topic, QueryTopic::CLIENT);
+	EXPECT_EQ(q->choices, (IdSet{ Id(1), Id(2) }));
+}
+
+TEST_F(ImportSessionTests, ClientsGetTheirBankAccountNumbersOnlyOnSave) {
+	ImportSession session = Start();
+	AnswerAll(session);
+	const Id employer = session.rows[5].client_id; // file row 6, created by an answer
+	ASSERT_NE((Id::Type)employer, 0);
+	EXPECT_TRUE(mgr.GetClientAccountNumbers(employer).empty());
+	std::string error;
+	ASSERT_TRUE(ImportEngine::Commit(mgr, session, error)) << error;
+	EXPECT_EQ(mgr.GetClientAccountNumbers(employer).size(), 1u);
 }
 
 TEST_F(ImportSessionTests, ANewAccountIsCreatedOnCommitWithItsName) {
@@ -372,11 +454,10 @@ TEST_F(ImportSessionTests, ACommitIsRefusedIfTheAccountChangedSinceTheUpload) {
 
 TEST_F(ImportSessionTests, AStaleAnswerIsRefused) {
 	ImportSession session = Start();
-	std::optional<ImportQuestion> q = ImportEngine::Advance(mgr, session);
-	ASSERT_TRUE(q);
+	ASSERT_TRUE(session.rows[1].Resolved());
 	ImportAnswer answer;
-	answer.row = q->row + 1;
-	answer.topic = q->topic;
+	answer.row = 1; // settled by keywords: no question
+	answer.topic = QueryTopic::CATEGORY;
 	answer.kind = ImportAnswer::Kind::Default;
 	std::string error;
 	EXPECT_FALSE(ImportEngine::Answer(mgr, session, answer, error));
@@ -504,6 +585,20 @@ TEST_F(ImportDaemonTests, ASessionIsSavedWithTheDatabaseAndContinuesAfterARestar
 	SqliteStore store(path.string(), SqliteStore::Mode::ReadOnly);
 	ASSERT_TRUE(store.HoldsOnlyMigratedData(only_migrated));
 	EXPECT_FALSE(only_migrated); // an open import ends the .baf refresh like any other change
+}
+
+TEST_F(ImportDaemonTests, AKeywordAddedElsewhereSettlesRowsOfAnOpenImport) {
+	const json details = Upload();
+	const size_t open_before = details["open"];
+	ASSERT_EQ(Sessions()[0].rows[0].client_id, Id(INVALID_ID)); // LIDL BUDAPEST: no keyword
+	std::string error;
+	ASSERT_TRUE(db->Write("a@x", [&](AccountManager& mgr) {
+		return AddKeyword(json{{"topic", "client"}, {"id", 2}, {"keyword", "LIDL"}}, mgr).http_status == 200;
+	}, error)) << error;
+	EXPECT_EQ(Sessions()[0].rows[0].client_id, Id(2));
+	Reopen(); // and it was saved with the keyword
+	EXPECT_EQ(Sessions()[0].rows[0].client_id, Id(2));
+	EXPECT_LT(ImportEngine::OpenRows(Sessions()[0]).size(), open_before);
 }
 
 TEST_F(ImportDaemonTests, ASecondUploadForTheSameAccountPointsToTheOpenOne) {
