@@ -63,8 +63,24 @@ deploy/migrate-db.sh
 
 The running service notices the new file within a few seconds; no redeploy needed. It refuses to
 replace a database that Persely has changed itself, so it can never throw away work done in
-Persely. The daemon can write since story 2, but nothing in the web app makes changes yet (story
-3), so until then the refresh keeps working. The `.baf` itself is never written to.
+Persely. The `.baf` itself is never written to.
+
+### Editing in Persely (off until the cutover)
+
+Persely can edit (transaction category/client/note, keywords, rename, merge, categorize by
+keywords, exchange rates - design doc story 3), but only with `BANKACCOUNT_EDITS=on`. It is off by
+default because **the first change made in Persely ends the refresh above for good**: from then on
+a desktop import can't be brought over, and until Persely imports by itself (stories 4-5) new
+transactions would have no way in. To switch it on, after the last desktop import and a final
+`deploy/migrate-db.sh`:
+
+```bash
+echo BANKACCOUNT_EDITS=on >> ~/.config/bankaccount/web.env
+docker compose -f ~/bankaccount-live/deploy/docker-compose.yml up -d
+```
+
+With it on, the daemon also checks MNB's exchange rates once a day (a 3.6 MB download) and keeps
+the ones the transactions need.
 
 Who may change data: only the Tailscale logins on the allowlist; a LAN password session stays
 read-only. Each change is one SQL transaction, recorded with the login that made it

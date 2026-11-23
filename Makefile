@@ -23,7 +23,9 @@ CC       := gcc
 # the read path calls into those methods, so as long as a consumer never references them either,
 # --gc-sections at the consumer's link step drops them (and their otherwise-undefined-reference
 # callees) instead of requiring DataImporter.cpp to be linked in.
-CXXFLAGS := -std=c++17 -O2 -Wall -Iinclude -Ithird_party/ziplib -Ithird_party/sqlite -ffunction-sections -fdata-sections $(shell wx-config --cxxflags)
+# CPPHTTPLIB_OPENSSL_SUPPORT for every source alike (httplib is header-only, so it must be the
+# same everywhere): MnbExchangeRateClient.cpp downloads MNB's rates over HTTPS with it.
+CXXFLAGS := -std=c++17 -O2 -Wall -DCPPHTTPLIB_OPENSSL_SUPPORT -Iinclude -Ithird_party/ziplib -Ithird_party/sqlite -ffunction-sections -fdata-sections $(shell wx-config --cxxflags)
 # extlibs/zlib's vendored .c sources use old K&R-style function definitions (e.g. adler32.c's
 # `adler32(adler, buf, len)` with the parameter types on separate lines) - valid C, but a syntax
 # error under a C++ compiler, so these need the real C frontend (gcc) rather than g++, unlike
@@ -57,6 +59,7 @@ SRCS := \
 	src/Account.cpp \
 	src/Transaction.cpp \
 	src/ExchangeRateHistory.cpp \
+	src/MnbExchangeRateClient.cpp \
 	src/Query.cpp \
 	src/WQuery.cpp \
 	src/FavoriteQuery.cpp \
@@ -106,11 +109,11 @@ OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS)) \
 # (include/httplib.h, same low-friction single-header precedent as nlohmann/json) - header-only
 # but still needs -pthread for its worker thread pool at link time.
 # WebAuth.cpp needs OpenSSL's libcrypto (PBKDF2 password hashing, CSPRNG session tokens).
-DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/Backups.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
+DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/Backups.cpp daemon/EditApi.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
 DAEMON_SRCS := daemon/main.cpp $(DAEMON_LIB_SRCS)
 DAEMON_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_SRCS))
 DAEMON_LIB_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_LIB_SRCS))
-DAEMON_LIBS := $(shell wx-config --libs base) -lcrypto -pthread -lstdc++fs
+DAEMON_LIBS := $(shell wx-config --libs base) -lssl -lcrypto -pthread -lstdc++fs
 # Under bin/, not directly in $(BUILD): the object files above already live in $(BUILD)/daemon/,
 # and a plain file can't share that path with the directory holding them.
 DAEMON_BIN  := $(BUILD)/bin/daemon
@@ -124,7 +127,7 @@ MIGRATE_LIBS := $(shell wx-config --libs base) -pthread -lstdc++fs
 # daemon/tests/: GoogleTest suite for the daemon-only code (WebAuth etc.). Kept apart from tests/,
 # which the Windows BankAccountTests.vcxproj builds and which has no OpenSSL to link against.
 DAEMON_TEST_SRCS := daemon/tests/WebAuthTests.cpp daemon/tests/FavoritesStoreTests.cpp daemon/tests/SqliteStoreTests.cpp \
-	daemon/tests/DaemonDbTests.cpp daemon/tests/BackupsTests.cpp
+	daemon/tests/DaemonDbTests.cpp daemon/tests/BackupsTests.cpp daemon/tests/EditApiTests.cpp
 DAEMON_TEST_OBJS := $(patsubst daemon/tests/%.cpp,$(BUILD)/daemon/tests/%.o,$(DAEMON_TEST_SRCS))
 DAEMON_TEST_BIN  := $(BUILD)/bin/daemon_tests
 

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api, cachedNames, type QueryDef } from '../api'
+import { api, cachedNames, canEdit, type QueryDef, type TransactionRow } from '../api'
+import { EditTransaction } from '../components/EditTransaction'
+import { Icon } from '../components/Icons'
 import { NamePicker } from '../components/NamePicker'
 import { AccountLink, CategoryTag, ClientName, periodOf } from '../components/TopicLinks'
 import { displayName, useNameIndex } from '../drill'
@@ -29,6 +31,8 @@ export function Transactions({ params }: { params: URLSearchParams }) {
   const search = params.get('search') ?? ''
   const direction = (params.get('dir') ?? '') as Direction
   const [text, setText] = useState(search)
+  const [editing, setEditing] = useState<TransactionRow>()
+  const editable = canEdit()
   const names = useNameIndex()
   const accounts = useAsync(() => cachedNames('accounts'), 'accounts')
   const clientNames = useAsync(() => cachedNames('clients'), 'clients')
@@ -94,7 +98,7 @@ export function Transactions({ params }: { params: URLSearchParams }) {
       )}
     </p>
   )
-  const columns = 4 + Number(showCategory) + Number(showAccount)
+  const columns = 4 + Number(showCategory) + Number(showAccount) + Number(editable)
 
   return (
     <div className="page">
@@ -192,6 +196,7 @@ export function Transactions({ params }: { params: URLSearchParams }) {
       </section>
 
       {page.error && <div className="alert">{page.error}</div>}
+      {editing && <EditTransaction key={`${editing.account_id}:${editing.seq}`} transaction={editing} onClose={() => setEditing(undefined)} />}
       <section className="card">
         {page.loading && !page.data ? (
           <Skeleton rows={10} />
@@ -208,6 +213,7 @@ export function Transactions({ params }: { params: URLSearchParams }) {
                   <th className="hide-narrow">Type</th>
                   {showAccount && <th className="hide-narrow">Account</th>}
                   <th className="num">Amount</th>
+                  {editable && <th className="action-col"><span className="visually-hidden">Edit</span></th>}
                 </tr>
               </thead>
               <tbody className={page.loading ? 'stale' : undefined}>
@@ -235,6 +241,13 @@ export function Transactions({ params }: { params: URLSearchParams }) {
                         </td>
                       )}
                       <td className={`num strong nowrap${t.amount > 0 ? ' pos' : ''}`}>{formatMoney(t.amount, t.currency, { sign: true })}</td>
+                      {editable && (
+                        <td className="action-col">
+                          <button type="button" className="icon-button" aria-label={`Edit ${t.client || t.type} on ${t.date}`} title="Edit" onClick={() => setEditing(t)}>
+                            <Icon name="edit" size={16} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   )
                 })}

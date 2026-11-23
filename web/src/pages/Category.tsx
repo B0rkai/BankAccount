@@ -9,6 +9,7 @@ import { daysBetween, describeRange, isoDate, parseIso, rangeOf, type DateRange 
 import { linkHandler, navigate } from '../router'
 import { AccountLink } from '../components/TopicLinks'
 import { LargestTransactions } from '../components/LargestTransactions'
+import { ManageEntity } from '../components/ManageEntity'
 import { TopicSearch } from '../components/TopicSearch'
 import { Skeleton } from './Overview'
 
@@ -216,6 +217,7 @@ export function Category({ params }: { params: URLSearchParams }) {
           <Skeleton rows={6} />
         )}
       </section>
+      {id !== 0 && <ManageEntity topic="category" id={id} name={fullName} />}
     </div>
   )
 }

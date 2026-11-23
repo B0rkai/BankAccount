@@ -43,6 +43,25 @@ public:
 	// Single additions, outside an Import() - Persely's writes (and their tests) use them.
 	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
 	Id CreateClientId(const String& client_name, const String& client_account_number);
+
+	// For Persely's edit API (daemon/EditApi.h).
+	// True if `id` names an existing CLIENT/CATEGORY/TYPE/ACCOUNT.
+	bool IsValidId(QueryTopic topic, Id id) const;
+	// nullptr if the account or position doesn't exist.
+	const Transaction* FindTransaction(const TransactionIdentity& identity) const;
+	// A CLIENT/CATEGORY/TYPE's keywords, bare, with their tier (true = definitive).
+	std::vector<std::pair<String, bool>> GetKeywordsOf(QueryTopic topic, Id id) const;
+	StringVector GetClientAccountNumbers(Id client_id) const;
+	bool RemoveKeyword(QueryTopic topic, Id id, const String& keyword, bool definitive);
+	// The category the keywords give `tr` today (0: none) - what adding it now would pick.
+	Id SuggestCategory(const Transaction& tr) const;
+	// Every date a transaction falls on: the exchange rates worth keeping.
+	std::set<uint16_t> ExchangeRateDates() const;
+	bool HasMissingExchangeRates() const;
+	// Takes the rates `fetched` holds for ExchangeRateDates() (and drops cached ones for other
+	// dates), like UpdateExchangeRates() does after a download - for a caller that downloads
+	// without holding this manager's lock. True if anything changed.
+	bool ApplyFetchedExchangeRates(const ExchangeRateHistory& fetched);
 private:
 	ManagerType<TransactionType> m_ttype_man;
 	ClientManager m_client_man;
@@ -52,8 +71,6 @@ private:
 	Logger& m_logger;
 	IJournal& m_journal;
 	int m_new_transactions = 0;
-
-	bool HasMissingExchangeRates() const;
 
 	Id CreateTransactionTypeId(const String& type);
 	Id CreateOrGetAccountId(const String& account_number, const String& bank_name, const CurrencyType curr, INewAccount* newaccount_if);

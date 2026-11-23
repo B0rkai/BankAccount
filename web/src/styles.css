@@ -401,3 +401,13 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .breakdown-side h3 { margin: 12px 0 10px; font-weight: 600; text-transform: none; }
 .common { margin: 0 0 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .common span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- editing ---- */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.data-table .action-col { width: 1%; padding-left: 0; padding-right: 0; text-align: center; }
+.keyword-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.chip.suggestion { opacity: 0.75; font-style: italic; }
+.inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 12px; }
+.inline-form .grow-1 { flex: 1; min-width: 180px; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; min-height: 36px; }
+.card-actions.wrap { flex-wrap: wrap; }

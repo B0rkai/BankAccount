@@ -38,6 +38,7 @@ public:
 	void AppendKeyword(QueryTopic topic, Id id, const String& keyword, bool definitive) override;
 	void AppendRename(QueryTopic topic, Id id, const String& new_name) override;
 	void AppendMerge(QueryTopic topic, const IdSet& from, Id to) override;
+	void AppendRemoveKeyword(QueryTopic topic, Id id, const String& keyword, bool definitive) override;
 	void AppendTruncate(Id account_id, size_t new_size) override;
 	void AppendClientAccountNumber(Id client_id, const String& account_number) override;
 	void AppendExchangeRates() override;

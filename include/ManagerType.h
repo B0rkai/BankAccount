@@ -27,6 +27,8 @@ public:
 	}
 
 	inline size_t size() const { return m_children.size(); }
+	// Read access to one entry (throws if out of bounds).
+	const Child& At(const Id id) const { return *m_children.at(id); }
 	inline unsigned int GetNewChildCount() const { return m_new_children; }
 
 	Id GetId(const String& name) const {
@@ -190,6 +192,14 @@ public:
 	bool AddKeyword(const Id id, const String& keyword, bool definitive = true) {
 		if (m_children.at(id)->AddKeyword(keyword, definitive)) {
 			m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' added to ID " << (Id::Type)id << " " << GetName(id).utf8_str() << (definitive ? "" : " (suggestion)");
+			return true;
+		}
+		return false;
+	}
+
+	bool RemoveKeyword(const Id id, const String& keyword, bool definitive) {
+		if (m_children.at(id)->RemoveKeyword(keyword, definitive)) {
+			m_logger.LogInfo() << "Keyword '" << keyword.utf8_str() << "' removed from ID " << (Id::Type)id << " " << GetName(id).utf8_str();
 			return true;
 		}
 		return false;

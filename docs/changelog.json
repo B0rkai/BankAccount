@@ -17,7 +17,8 @@
                        "Persely: a client, category or account every listed transaction shares is named once above the list, as a link; a single transaction keeps all its columns",
                        "Linux daemon: a result in a single foreign currency also carries its HUF conversion, so Persely's totals no longer count euros as forints",
                        "Persely: runs from its own SQLite database on the server, converted from BData.baf and verified identical (bankaccount-migrate, refreshed with deploy/migrate-db.sh); the server build is optimized, so queries answer 4-8x faster",
-                       "Persely: the server can now save changes straight into its database (one transaction per change, recorded with who made it, Tailscale sign-ins only) and keeps daily snapshots on the storage disk; nothing in the web app edits yet"
+                       "Persely: the server can now save changes straight into its database (one transaction per change, recorded with who made it, Tailscale sign-ins only) and keeps daily snapshots on the storage disk; nothing in the web app edits yet",
+                       "Persely: editing - a transaction's category, client and note, keywords, renaming and merging clients/categories, categorizing by keywords, and MNB exchange rates downloaded on the server; switched off until the cutover (BANKACCOUNT_EDITS=on)"
                    ],
     "released":  [
                      {

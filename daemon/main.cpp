@@ -20,6 +20,9 @@
 #include "BrowseApi.h"
 #include "CommonTypes.h"
 #include "DaemonDb.h"
+#include "EditApi.h"
+#include "ExchangeRateHistory.h"
+#include "MnbExchangeRateClient.h"
 #include "FavoriteQuery.h"
 #include "FavoriteReport.h"
 #include "FavoritesApi.h"
@@ -190,6 +193,10 @@ struct Context {
 	const String chartjs_source;
 	const String gridjs_source;
 	const String gridjs_css;
+	// BANKACCOUNT_EDITS=on: the edit routes work. Off by default - see main().
+	const bool edits_enabled;
+	Backups* backups; // null: no snapshots
+	std::atomic<bool>& rates_running;
 };
 
 // Runs `fn(const AccountManager&)` against the loaded db, or answers 503 while nothing is loaded.
@@ -209,22 +216,79 @@ std::string WriterLogin(const httplib::Request& req, Listener listener) {
 	return (listener == Listener::TAILNET) ? req.get_header_value(TAILSCALE_LOGIN_HEADER) : std::string();
 }
 
-// Runs `fn(AccountManager&)` as one write (DaemonDb::Write) on behalf of the request's tailnet
-// login, recorded as created_by/updated_by. Answers 403 for a read-only request, 409 when the
-// database can't take the change (not writable, changed elsewhere, or the change failed);
-// `fn` sends the success response itself.
-template <class Fn>
-void WithWritableDb(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Fn&& fn) {
+// One edit route: `edit(body, AccountManager&)` (EditApi.h) runs as one write (DaemonDb::Write)
+// on behalf of the request's tailnet login, recorded as created_by/updated_by. 403 when editing
+// is off or the request may only read; the edit's own 4xx when it refuses; 409 when the database
+// can't take the change (changed elsewhere, or the write failed).
+template <class Edit>
+void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Edit&& edit) {
+	if (!ctx.edits_enabled) {
+		SendError(res, 403, "Editing is turned off on this server");
+		return;
+	}
 	const std::string login = WriterLogin(req, listener);
 	if (login.empty()) {
 		SendError(res, 403, "Changes can only be made over Tailscale");
 		return;
 	}
+	nlohmann::json body = nlohmann::json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
+	if (body.is_discarded()) {
+		SendError(res, 400, "Malformed JSON");
+		return;
+	}
+	QueryApiResult result{0, ""};
 	std::string error;
-	if (!ctx.db.Write(login, fn, error)) {
+	const bool written = ctx.db.Write(login, [&](AccountManager& mgr) {
+		result = edit(body, mgr);
+		return result.http_status == 200;
+	}, error);
+	if (result.http_status != 0 && result.http_status != 200) {
+		SendResult(res, result); // the edit refused before changing anything
+	} else if (!written) {
 		LogWarn("WRITE") << req.method << " " << req.path << " by " << login << " failed: " << error;
 		SendError(res, 409, error);
+	} else {
+		LogInfo("WRITE") << req.method << " " << req.path << " by " << login;
+		SendResult(res, result);
 	}
+}
+
+// Downloads MNB's rates without holding the database lock (it takes 10-30 s), then takes the
+// ones the transactions need in one write. False (with `message`) if nothing was needed, another
+// update is running, or the download/write failed.
+bool UpdateExchangeRates(DaemonDb& db, std::atomic<bool>& running, const std::string& actor, std::string& message) {
+	if (running.exchange(true)) {
+		message = "An update is already running";
+		return false;
+	}
+	struct Done {
+		std::atomic<bool>& flag;
+		~Done() { flag = false; }
+	} done{running};
+	std::set<uint16_t> dates;
+	bool missing = false;
+	db.WithManager([&](const AccountManager& mgr) {
+		dates = mgr.ExchangeRateDates();
+		missing = mgr.HasMissingExchangeRates();
+	});
+	if (!missing) {
+		message = "All exchange rates are already there";
+		return false;
+	}
+	ExchangeRateHistory fetched;
+	if (!MnbExchangeRateFetcher::Instance().Fetch(fetched, nullptr, &dates, nullptr)) {
+		message = "Downloading the rates from MNB failed";
+		return false;
+	}
+	bool changed = false;
+	if (!db.Write(actor, [&](AccountManager& mgr) {
+			changed = mgr.ApplyFetchedExchangeRates(fetched);
+			return true;
+		}, message)) {
+		return false;
+	}
+	message = changed ? "Exchange rates updated" : "MNB had no new rates";
+	return changed;
 }
 
 void InstallAuth(httplib::Server& server, Context& ctx, Listener listener) {
@@ -272,7 +336,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		body["version"] = APP_VERSION;
 		body["db_loaded"] = ctx.db.IsLoaded();
 		body["last_loaded"] = ctx.db.LastLoadedIso();
-		body["can_edit"] = ctx.db.IsWritable() && !WriterLogin(req, listener).empty();
+		body["can_edit"] = ctx.edits_enabled && ctx.db.IsWritable() && !WriterLogin(req, listener).empty();
 		if (listener == Listener::TAILNET) {
 			body["via"] = "tailscale";
 			body["login"] = req.get_header_value(TAILSCALE_LOGIN_HEADER);
@@ -339,6 +403,57 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
 			SendResult(res, ListTransactions(req.body, mgr));
 		});
+	});
+
+	// Edits (EditApi.h) - only work with BANKACCOUNT_EDITS=on, over Tailscale.
+	server.Patch("/api/v1/transactions", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleEdit(ctx, req, res, listener, EditTransaction);
+	});
+	server.Post("/api/v1/entities", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleEdit(ctx, req, res, listener, CreateEntity);
+	});
+	server.Post("/api/v1/entities/rename", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleEdit(ctx, req, res, listener, RenameEntity);
+	});
+	server.Post("/api/v1/entities/keywords", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleEdit(ctx, req, res, listener, AddKeyword);
+	});
+	server.Delete("/api/v1/entities/keywords", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleEdit(ctx, req, res, listener, RemoveKeyword);
+	});
+	server.Post("/api/v1/entities/merge", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		// A merge is the one edit that's hard to undo by hand: snapshot first.
+		if (ctx.edits_enabled && ctx.backups && !WriterLogin(req, listener).empty()) {
+			std::string error;
+			if (!ctx.backups->TakeNow("merge", error)) {
+				SendError(res, 500, "Could not take a snapshot before merging: " + error);
+				return;
+			}
+		}
+		HandleEdit(ctx, req, res, listener, MergeEntities);
+	});
+	server.Post("/api/v1/recategorize", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleEdit(ctx, req, res, listener, ApplyRecategorize);
+	});
+	server.Get("/api/v1/recategorize", [&ctx](const httplib::Request&, httplib::Response& res) {
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			SendResult(res, PreviewRecategorize(mgr));
+		});
+	});
+	server.Get("/api/v1/entity", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			SendResult(res, EntityDetails(req.get_param_value("topic"), req.get_param_value("id"), mgr));
+		});
+	});
+	server.Post("/api/v1/exchange-rates/update", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = WriterLogin(req, listener);
+		if (!ctx.edits_enabled || login.empty()) {
+			SendError(res, 403, ctx.edits_enabled ? "Changes can only be made over Tailscale" : "Editing is turned off on this server");
+			return;
+		}
+		std::string message;
+		const bool changed = UpdateExchangeRates(ctx.db, ctx.rates_running, login, message);
+		SendJson(res, 200, nlohmann::json{{"changed", changed}, {"message", message}});
 	});
 
 	server.Get("/api/v1/favorites/queries", [&ctx](const httplib::Request&, httplib::Response& res) {
@@ -505,6 +620,13 @@ int main(int argc, char** argv) {
 	FavoritesStore favorites("db");
 	LogInfo("MAIN") << "Found " << favorites.Queries().size() << " favorite queries and " << favorites.Reports().size() << " favorite reports";
 
+	// Editing stays off until BANKACCOUNT_EDITS=on: the first change made in Persely stops
+	// deploy/migrate-db.sh from refreshing this database from the desktop app's .baf, so it is
+	// switched on at the cutover (docs/persely-sqlite-import-design.md, section 7).
+	const bool edits_enabled = Env("BANKACCOUNT_EDITS") == "on" && db.IsWritable();
+	LogInfo("DAEMON") << "Editing is " << (edits_enabled ? "on" : "off (BANKACCOUNT_EDITS)");
+	std::atomic<bool> rates_running{false};
+
 	std::unique_ptr<Backups> backups;
 	if (!args.backup_dir.empty() && db.IsWritable()) {
 		std::error_code ec;
@@ -519,10 +641,18 @@ int main(int argc, char** argv) {
 	std::atomic<bool> stop_watcher{false};
 	std::thread watcher([&] {
 		auto next_backup = std::chrono::steady_clock::now();
+		std::string rates_checked_on;
 		while (!stop_watcher.load()) {
 			if (backups && std::chrono::steady_clock::now() >= next_backup) {
 				backups->RunDaily(UtcToday());
 				next_backup = std::chrono::steady_clock::now() + BACKUP_CHECK_INTERVAL;
+			}
+			// Exchange rates, once a day, once editing is on (it's a write like any other).
+			if (edits_enabled && UtcToday() != rates_checked_on) {
+				rates_checked_on = UtcToday();
+				std::string message;
+				UpdateExchangeRates(db, rates_running, "exchange-rates", message);
+				LogInfo("DAEMON") << "Daily exchange-rate check: " << message;
 			}
 			std::this_thread::sleep_for(RELOAD_POLL_INTERVAL);
 			if (stop_watcher.load()) {
@@ -537,7 +667,7 @@ int main(int argc, char** argv) {
 	SessionStore sessions;
 	LoginThrottle throttle;
 	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
-		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss()};
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), edits_enabled, backups.get(), rates_running};
 
 	httplib::Server tailnet_server;
 	InstallAuth(tailnet_server, ctx, Listener::TAILNET);

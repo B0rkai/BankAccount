@@ -364,7 +364,8 @@ stories 2-5.
    rollback/reload, tailnet-only write auth, `updated_by`, backups. **Done** — see "Story 2 as
    built" below.
 3. **Edits in Persely** — transaction edit sheet, keywords, rename, merge, re-run keywords,
-   exchange-rate download on the server (MNB port).
+   exchange-rate download on the server (MNB port). **Done**, behind `BANKACCOUNT_EDITS=on` — see
+   "Story 3 as built" below.
 4. **Import engine** — `ImportSession` + tables + API, unit tests with scripted answers
    (same result as an uninterrupted import; stop-here; overlap replacement; recall; merge during
    an open session).
@@ -452,6 +453,40 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
   read-only layouts, snapshot), `SnapshotsToDelete`. Also checked by hand on a copy of the live
   database: prune 20 + add 1, an edit, a client merge, a new client with keyword - each reloaded
   byte-identical.
+
+## Story 3 as built (2026-11-23)
+
+- **Off by default** (`BANKACCOUNT_EDITS=on` in the env file switches it on; `/api/v1/me`'s
+  `can_edit` tells the web app). The first edit sets `changed_at`, which ends `migrate-db.sh`
+  refreshes for good, and Persely can't import yet - so editing is switched on at the cutover,
+  not before.
+- **Routes** ([daemon/EditApi.h](../daemon/EditApi.h), each one `DaemonDb::Write`):
+  `PATCH /transactions` (category, client, note; addressed by `account_id`+`seq` from the list,
+  refused with 409 if the date/amount there no longer match), `POST /entities` (create or find a
+  client/category), `/entities/rename`, `POST`/`DELETE /entities/keywords`, `/entities/merge`
+  (snapshot first), `GET`/`POST /recategorize` (uncategorized transactions today's keywords would
+  file, applied only if still true), `GET /entity` (keywords, a client's bank accounts),
+  `POST /exchange-rates/update`.
+- **Exchange rates**: `MnbExchangeRateClient.cpp` builds on Linux (cpp-httplib + OpenSSL instead
+  of WinHTTP; `CPPHTTPLIB_OPENSSL_SUPPORT` for every source; the runtime image gained
+  `ca-certificates`). The download (3.6 MB, ~18 s) runs without the database lock;
+  `AccountManager::ApplyFetchedExchangeRates()` then takes what the transactions need in one write,
+  comparing with a tolerance (rates converted from the old text format differ in the last bit -
+  3,208 of 11,656 would otherwise "change"). Daily, with editing on. Some transactions fall on days
+  MNB publishes nothing for, so the daily check downloads every day and usually changes nothing.
+- **Core additions**: `MappedType/ManagerType/AccountManager::RemoveKeyword` (+ `IJournal::
+  AppendRemoveKeyword`), `ManagerType::At`, and on `AccountManager`: `IsValidId`,
+  `FindTransaction`, `GetKeywordsOf`, `GetClientAccountNumbers`, `SuggestCategory`,
+  `ExchangeRateDates`, `HasMissingExchangeRates` (public now).
+- **Web**: an edit button on every transaction row (dialog: category, client - a new name creates
+  the client - and note); a Keywords card on client and category pages (list always; rename, add
+  / remove keyword, merge into... when editing); an Upkeep card in Settings (categorize by
+  keywords with a checklist, update exchange rates). After any edit every page reloads its data
+  and the cached name lists (`api.ts`'s data version, `useAsync`).
+- Tested: `EditApiTests` (7), and end to end on a copy of the live database in a scratch container
+  - edits, stale-edit 409, a non-allowlisted login 403, create, keyword, merge (+ snapshot),
+  restart (all persisted, `updated_by` recorded), MNB download, and the UI in a headless browser.
+  The live database's keywords would file 53 uncategorized transactions today.
 
 ## Tests
 

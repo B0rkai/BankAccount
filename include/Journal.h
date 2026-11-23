@@ -128,6 +128,8 @@ public:
 	// The last transactions of an account were removed, leaving `new_size` (an import's
 	// re-import overlap, PruneLastTransactions).
 	virtual void AppendTruncate(Id /*account_id*/, size_t /*new_size*/) {}
+	// A keyword was removed from a CLIENT/CATEGORY/TYPE entity.
+	virtual void AppendRemoveKeyword(QueryTopic /*topic*/, Id /*id*/, const String& /*keyword*/, bool /*definitive*/) {}
 	// A client got a new account number (import, CreateClientId).
 	virtual void AppendClientAccountNumber(Id /*client_id*/, const String& /*account_number*/) {}
 	// The stored exchange rates changed (UpdateExchangeRates).

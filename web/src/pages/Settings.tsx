@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { api } from '../api'
+import { api, canEdit } from '../api'
+import { Maintenance } from '../components/Maintenance'
 import { NamePicker } from '../components/NamePicker'
 import { topicTotals } from '../components/Summary'
 import { useNameIndex, type NameIndex } from '../drill'
@@ -122,6 +123,7 @@ export function Settings() {
           <Skeleton rows={3} />
         )}
       </section>
+      {canEdit() && <Maintenance />}
     </div>
   )
 }

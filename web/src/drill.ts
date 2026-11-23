@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { cachedNameList, type DatasetKey, type QueryDef } from './api'
+import { cachedNameList, getDataVersion, onDataChanged, type DatasetKey, type QueryDef } from './api'
 import { bucketRange, intersect, rangeOf, type DateRange } from './periods'
 
 // Click-through: from a number in a chart or table to the transactions behind it. A drill-down
@@ -26,6 +26,7 @@ function index(names: string[], ids: number[] = []) {
 }
 
 let shared: Promise<NameIndex> | undefined
+onDataChanged(() => (shared = undefined)) // a rename, a new client, a merge
 export function loadNameIndex(): Promise<NameIndex> {
   shared ??= Promise.all([cachedNameList('categories'), cachedNameList('clients')]).then(([cats, clients]) => {
     const c = index(cats.names, cats.ids)
@@ -38,9 +39,11 @@ export function loadNameIndex(): Promise<NameIndex> {
 
 export function useNameIndex(): NameIndex | undefined {
   const [value, setValue] = useState<NameIndex>()
+  const [version, setVersion] = useState(getDataVersion)
+  useEffect(() => onDataChanged(() => setVersion(getDataVersion())), [])
   useEffect(() => {
     loadNameIndex().then(setValue, () => {})
-  }, [])
+  }, [version])
   return value
 }
 

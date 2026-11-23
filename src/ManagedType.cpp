@@ -60,6 +60,10 @@ bool MappedType::AddKeyword(const String& acc, bool definitive) {
     return m_keywords.insert(stored).second;
 }
 
+bool MappedType::RemoveKeyword(const String& bare, bool definitive) {
+    return m_keywords.erase(definitive ? bare : (String(SUGGESTED_KEYWORD_MARKER) + bare)) > 0;
+}
+
 StringVector MappedType::GetDisplayKeywords() const {
     StringVector display;
     display.reserve(m_keywords.size());

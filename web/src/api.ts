@@ -11,6 +11,7 @@ export interface Me {
   accounts?: number
   transactions?: number
   last_record_date?: string
+  can_edit?: boolean // editing is on on the server and this sign-in may change data (Tailscale)
 }
 
 // One query, as POST /api/v1/query takes it - the favorite_queries.json field set minus "name"
@@ -96,6 +97,8 @@ export interface TransactionRow {
   amount: number
   currency: string
   display: string
+  account_id: number // where it is: what an edit addresses
+  seq: number
 }
 
 export interface TransactionPage {
@@ -181,6 +184,50 @@ function favoritesChanged<T>(result: T): T {
   return result
 }
 
+// Every change made here bumps this: pages reload what they show, cached names are dropped.
+let dataVersion = 0
+const dataListeners = new Set<() => void>()
+export function onDataChanged(listener: () => void): () => void {
+  dataListeners.add(listener)
+  return () => dataListeners.delete(listener)
+}
+export function getDataVersion() {
+  return dataVersion
+}
+function dataChanged<T>(result: T): T {
+  dataVersion++
+  nameCache.clear()
+  firstYear = undefined
+  dataListeners.forEach((l) => l())
+  return result
+}
+
+// Who is signed in, set once by the app shell.
+let currentMe: Me | undefined
+export function setMe(me: Me) {
+  currentMe = me
+}
+export const canEdit = () => !!currentMe?.can_edit
+
+export type EntityTopic = 'client' | 'category' | 'type'
+export interface Keyword {
+  keyword: string
+  definitive: boolean // false: only a suggestion, never sorts on its own
+}
+export interface EntityDetails {
+  id: number
+  name: string
+  keywords: Keyword[]
+  account_numbers?: string[]
+}
+export interface TransactionEdit {
+  category_id?: number
+  client_id?: number
+  description?: string
+}
+// The transaction to edit, as the list showed it - the server checks date and amount still match.
+const address = (t: TransactionRow) => ({ account_id: t.account_id, seq: t.seq, date: t.date, amount: t.amount })
+
 export const api = {
   me: () => request<Me>('/api/v1/me'),
   login: (password: string, remember: boolean) => post<{ ok: boolean }>('/api/v1/login', { password, remember }),
@@ -201,9 +248,26 @@ export const api = {
   settings: () => request<WebSettings>('/api/v1/settings'),
   saveSettings: (settings: WebSettings) => put<WebSettings>('/api/v1/settings', settings),
   deleteFavoriteReport: (name: string) => del(`/api/v1/favorites/reports?name=${encodeURIComponent(name)}`).then(favoritesChanged),
+
+  entity: (topic: EntityTopic, id: number) => request<EntityDetails>(`/api/v1/entity?topic=${topic}&id=${id}`),
+  editTransaction: (t: TransactionRow, change: TransactionEdit) =>
+    request<{ transaction: TransactionRow }>('/api/v1/transactions', { method: 'PATCH', body: JSON.stringify({ ...address(t), ...change }) }).then(dataChanged),
+  createEntity: (topic: 'client' | 'category', name: string) => post<{ id: number; name: string; created: boolean }>('/api/v1/entities', { topic, name }).then(dataChanged),
+  renameEntity: (topic: EntityTopic | 'account', id: number, name: string) => post<{ changed: boolean }>('/api/v1/entities/rename', { topic, id, name }).then(dataChanged),
+  addKeyword: (topic: EntityTopic, id: number, keyword: string, definitive: boolean) =>
+    post<{ changed: boolean }>('/api/v1/entities/keywords', { topic, id, keyword, definitive }).then(dataChanged),
+  removeKeyword: (topic: EntityTopic, id: number, k: Keyword) =>
+    request<{ changed: boolean }>('/api/v1/entities/keywords', { method: 'DELETE', body: JSON.stringify({ topic, id, ...k }) }).then(dataChanged),
+  // Responds with the target's id after the merge (ids after the removed ones shift down).
+  merge: (topic: EntityTopic, from: number[], to: number) => post<{ id: number }>('/api/v1/entities/merge', { topic, from, to }).then(dataChanged),
+  recategorizePreview: () => request<{ proposals: TransactionRow[] }>('/api/v1/recategorize'),
+  recategorize: (items: TransactionRow[]) =>
+    post<{ applied: number; skipped: number }>('/api/v1/recategorize', { items: items.map((t) => ({ account_id: t.account_id, seq: t.seq, category_id: t.category_id })) }).then(dataChanged),
+  updateExchangeRates: () =>
+    post<{ changed: boolean; message: string }>('/api/v1/exchange-rates/update', {}).then((r) => (r.changed ? dataChanged(r) : r)),
 }
 
-// Names change only when the desktop app saves; one fetch per page load is plenty.
+// Names change when the desktop app saves or an edit here does (dataChanged clears this).
 const nameCache = new Map<string, Promise<NameList>>()
 export function cachedNameList(topic: NameTopic): Promise<NameList> {
   let p = nameCache.get(topic)

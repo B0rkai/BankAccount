@@ -5,6 +5,7 @@ import { Breakdown, topicLabels } from '../components/Breakdown'
 import { ChartStyleControls, datasetTotal, goTo, IncomeExpenseBars, Kpi, Legend, useChartStyle, periodSeries, transactionCount } from '../components/Summary'
 import { AccountLink, CategoryTag } from '../components/TopicLinks'
 import { LargestTransactions } from '../components/LargestTransactions'
+import { ManageEntity } from '../components/ManageEntity'
 import { TopicSearch } from '../components/TopicSearch'
 import { categoryLink, drillLink, transactionsLink, useNameIndex } from '../drill'
 import { formatCount, formatDate, formatMoney, shortCategory } from '../format'
@@ -163,6 +164,7 @@ export function Client({ params }: { params: URLSearchParams }) {
           <Skeleton rows={6} />
         )}
       </section>
+      {id !== 0 && <ManageEntity topic="client" id={id} name={name} />}
     </div>
   )
 }

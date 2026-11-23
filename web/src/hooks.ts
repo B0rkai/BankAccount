@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getDataVersion, onDataChanged } from './api'
 
 export interface Async<T> {
   data: T | undefined
@@ -6,9 +7,18 @@ export interface Async<T> {
   loading: boolean
 }
 
-// Runs `load` whenever `key` changes, dropping results of a superseded run.
+// The data version (api.ts): changes after every edit made here.
+export function useDataVersion(): number {
+  const [version, setVersion] = useState(getDataVersion)
+  useEffect(() => onDataChanged(() => setVersion(getDataVersion())), [])
+  return version
+}
+
+// Runs `load` whenever `key` changes - or the data does, after an edit - dropping results of a
+// superseded run.
 export function useAsync<T>(load: () => Promise<T>, key: string): Async<T> {
   const [state, setState] = useState<Async<T>>({ data: undefined, error: undefined, loading: true })
+  const version = useDataVersion()
   useEffect(() => {
     let live = true
     setState((s) => ({ ...s, loading: true, error: undefined }))
@@ -19,7 +29,7 @@ export function useAsync<T>(load: () => Promise<T>, key: string): Async<T> {
     return () => {
       live = false
     }
-  }, [key])
+  }, [key, version])
   return state
 }
 

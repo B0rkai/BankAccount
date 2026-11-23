@@ -45,6 +45,8 @@ public:
 	bool CheckDefinitiveKeywords(const String& text, bool fullmatch = false) const;
 	bool CheckSuggestedKeywords(const String& text, bool fullmatch = false) const;
 	bool AddKeyword(const String& acc, bool definitive = true);
+	// False if there was no such keyword (in that tier).
+	bool RemoveKeyword(const String& bare, bool definitive);
 	// For UI listings: definitive keywords as-is, suggestion-tier ones with a trailing '*' -
 	// never exposes the internal marker convention outside this class.
 	StringVector GetDisplayKeywords() const;

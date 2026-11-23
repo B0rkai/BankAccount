@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <nlohmann/json.hpp>
 #include "AccountManager.h"
 #include "QueryApi.h"
 
@@ -14,10 +15,18 @@
 // only income, "out": only expenses). Responds {"total", "offset", "transactions": [{"account",
 // "date" (YYYY-MM-DD), "type", "client", "client_id", "memo", "description", "category",
 // "category_id", "amount" (a number in the currency's own unit, negative for an expense),
-// "currency" (short code), "display" (the desktop's own formatting of the amount)}, ...]}. A name
+// "currency" (short code), "display" (the desktop's own formatting of the amount), "account_id"
+// and "seq" (where it is - what an edit addresses, EditApi.h)}, ...]}. A name
 // filter of "#<id>" matches that one client/category exactly (Query.cpp's QueryByName), unlike a
 // plain name, which matches fuzzily - the web app's drill-downs and client pages use the ids.
 QueryApiResult ListTransactions(const std::string& request_body, const AccountManager& mgr);
+
+// One transaction as ListTransactions() lists it.
+nlohmann::json TransactionToJson(const Transaction& tr, const AccountManager& mgr);
+// "YYYY-MM-DD" for an Excel serial date.
+std::string IsoDate(uint16_t serial);
+// The amount in the currency's own unit (forints, euros - not cents), negative for an expense.
+double Amount(const Transaction& tr);
 
 // GET /api/v1/names?topic=accounts|categories|clients: every name of that kind, for the web app's
 // filter pickers/autocomplete, as {"names": [...], "ids": [...]} (parallel arrays; ids only for

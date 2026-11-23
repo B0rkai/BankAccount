@@ -8,9 +8,15 @@
 #include <cstdlib>
 #include <cctype>
 #include <chrono>
+#ifdef _WIN32
 #define NOMINMAX // windows.h's min/max macros break ZipLib's template code (e.g. clamp<T>) once both are included here
 #include <windows.h>
 #include <winhttp.h>
+#else
+// The Linux daemon (Persely) downloads with cpp-httplib over OpenSSL instead of WinHTTP; the
+// Makefile defines CPPHTTPLIB_OPENSSL_SUPPORT for every source, so httplib is the same everywhere.
+#include "httplib.h"
+#endif
 
 #include "MnbExchangeRateClient.h"
 #include "ExchangeRateHistory.h"
@@ -18,7 +24,9 @@
 #include "Logger.h"
 #include "ZipFile.h"
 
+#ifdef _WIN32
 #pragma comment(lib, "winhttp.lib")
+#endif
 
 void FetchCancelToken::SetActiveHandle(void* handle) {
 	std::lock_guard<std::mutex> lock(m_mutex);
@@ -42,6 +50,7 @@ void FetchCancelToken::Cancel() {
 		handle = m_active_handle;
 		m_active_handle = nullptr;
 	}
+#ifdef _WIN32
 	if (handle) {
 		// Documented WinHTTP cancellation idiom: closing a handle with a blocking call
 		// outstanding on it (from another thread) makes that call fail promptly instead of
@@ -52,10 +61,14 @@ void FetchCancelToken::Cancel() {
 		// so a Cancel() racing against normal completion can never double-close a handle.
 		WinHttpCloseHandle((HINTERNET)handle);
 	}
+#else
+	(void)handle; // the Linux download checks IsCancelled() between chunks instead
+#endif
 }
 
 namespace {
 
+#ifdef _WIN32
 const wchar_t* MNB_HOST = L"www.mnb.hu";
 const wchar_t* MNB_PATH = L"/Root/ExchangeRate/arfolyam.xlsx";
 
@@ -167,6 +180,42 @@ std::string HttpGet(const std::function<void(const std::string&)>& report_phase,
 	LogInfo() << "MNB fetch: HttpGet total " << ms_since(t_start) << " ms";
 	return response;
 }
+#else
+const char* MNB_HOST = "www.mnb.hu";
+const char* MNB_PATH = "/Root/ExchangeRate/arfolyam.xlsx";
+
+// Same contract as the WinHTTP version above: the raw bytes, or "" on failure/cancellation.
+std::string HttpGet(const std::function<void(const std::string&)>& report_phase, FetchCancelToken* cancel_token) {
+	if (report_phase) {
+		report_phase("Connecting to MNB...");
+	}
+	const auto t_start = std::chrono::steady_clock::now();
+	httplib::SSLClient client(MNB_HOST);
+	client.set_connection_timeout(10, 0);
+	client.set_read_timeout(20, 0);
+	client.set_follow_location(true);
+	std::string response;
+	auto result = client.Get(MNB_PATH, [&](const char* data, size_t length) {
+		response.append(data, length);
+		return !(cancel_token && cancel_token->IsCancelled());
+	});
+	if (cancel_token && cancel_token->IsCancelled()) {
+		LogWarn() << "MNB fetch: cancelled";
+		return "";
+	}
+	if (!result) {
+		LogError() << "MNB fetch: download failed (" << httplib::to_string(result.error()) << ")";
+		return "";
+	}
+	if (result->status != 200) {
+		LogError() << "MNB fetch: HTTP status " << result->status;
+		return "";
+	}
+	LogInfo() << "MNB fetch: downloaded " << response.size() << " bytes in "
+		<< std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t_start).count() << " ms";
+	return response;
+}
+#endif
 
 std::string XmlUnescape(const std::string& in) {
 	std::string out;

@@ -24,8 +24,9 @@ COPY daemon daemon
 RUN make -j"$(nproc)" all daemon-tests
 
 FROM debian:trixie-slim
+# ca-certificates: the daemon downloads MNB's exchange rates over HTTPS.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libwxbase3.2-1t64 libssl3t64 \
+    && apt-get install -y --no-install-recommends libwxbase3.2-1t64 libssl3t64 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 # The daemon resolves resources/ (Chart.js/Grid.js for downloaded reports) and
 # db/favorite_*.json relative to its working directory.

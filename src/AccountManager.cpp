@@ -1,3 +1,4 @@
+#include <cmath>
 #include <sstream>
 #include <algorithm>
 #include <fstream>
@@ -1082,4 +1083,101 @@ void AccountManager::UpdateExchangeRates(const std::function<void(const std::str
 
 StringTable AccountManager::GetExchangeRateTable(CurrencyType type) const {
 	return m_exchange_rates.GetTable(type);
+}
+
+bool AccountManager::IsValidId(const QueryTopic topic, const Id id) const {
+	const size_t i = (Id::Type)id;
+	switch (topic) {
+	case QueryTopic::ACCOUNT: return i < m_accounts.size();
+	case QueryTopic::CLIENT: return i < m_client_man.size();
+	case QueryTopic::CATEGORY: return i < m_category_system.size();
+	case QueryTopic::TYPE: return i < m_ttype_man.size();
+	default: return false;
+	}
+}
+
+const Transaction* AccountManager::FindTransaction(const TransactionIdentity& identity) const {
+	if (!IsValidId(QueryTopic::ACCOUNT, identity.account_id)) {
+		return nullptr;
+	}
+	const Account* acc = m_accounts[identity.account_id];
+	return (identity.position < acc->Size()) ? &acc->GetTransactionAt(identity.position) : nullptr;
+}
+
+std::vector<std::pair<String, bool>> AccountManager::GetKeywordsOf(const QueryTopic topic, const Id id) const {
+	if (!IsValidId(topic, id)) {
+		return {};
+	}
+	switch (topic) {
+	case QueryTopic::CLIENT: return m_client_man.At(id).GetKeywordsWithTier();
+	case QueryTopic::CATEGORY: return m_category_system.At(id).GetKeywordsWithTier();
+	case QueryTopic::TYPE: return m_ttype_man.At(id).GetKeywordsWithTier();
+	default: return {};
+	}
+}
+
+StringVector AccountManager::GetClientAccountNumbers(const Id client_id) const {
+	StringVector numbers;
+	if (IsValidId(QueryTopic::CLIENT, client_id)) {
+		for (const String acc : m_client_man.At(client_id).GetAccountNumbers()) {
+			numbers.push_back(acc);
+		}
+	}
+	return numbers;
+}
+
+bool AccountManager::RemoveKeyword(const QueryTopic topic, const Id id, const String& keyword, bool definitive) {
+	if (!IsValidId(topic, id)) {
+		return false;
+	}
+	bool change = false;
+	if (topic == QueryTopic::TYPE) {
+		change = m_ttype_man.RemoveKeyword(id, keyword, definitive);
+	} else if (topic == QueryTopic::CLIENT) {
+		change = m_client_man.RemoveKeyword(id, keyword, definitive);
+	} else if (topic == QueryTopic::CATEGORY) {
+		change = m_category_system.RemoveKeyword(id, keyword, definitive);
+	}
+	if (change) {
+		Modified();
+		m_journal.AppendRemoveKeyword(topic, id, keyword, definitive);
+	}
+	return change;
+}
+
+Id AccountManager::SuggestCategory(const Transaction& tr) const {
+	// Categorize() only reads (and logs); it just isn't declared const in its interface.
+	CategorySystem& categories = const_cast<CategorySystem&>(m_category_system);
+	return categories.Categorize({ GetTransactionType(tr.GetTypeId()), GetClientName(tr.GetClientId()), tr.GetMemo() });
+}
+
+std::set<uint16_t> AccountManager::ExchangeRateDates() const {
+	std::set<uint16_t> dates;
+	for (const Account* acc : m_accounts) {
+		for (size_t i = 0; i < acc->Size(); ++i) {
+			dates.insert(acc->GetTransactionAt(i).GetDate());
+		}
+	}
+	return dates;
+}
+
+bool AccountManager::ApplyFetchedExchangeRates(const ExchangeRateHistory& fetched) {
+	const std::set<uint16_t> wanted = ExchangeRateDates();
+	bool changed = m_exchange_rates.PruneToDates(wanted) > 0;
+	size_t added = 0;
+	fetched.ForEachStoredRate([&](CurrencyType type, uint16_t date, double stored_rate) {
+		// Tolerant: the same published rate parsed from the old text format can differ in the last bit.
+		if (wanted.count(date) && (!m_exchange_rates.HasRate(type, date)
+				|| std::abs(m_exchange_rates.GetRate(type, date) - stored_rate) > 1e-9 * std::abs(stored_rate))) {
+			m_exchange_rates.SetStoredRate(type, date, stored_rate);
+			++added;
+		}
+	});
+	changed |= added > 0;
+	if (changed) {
+		m_logger.LogInfo() << "Exchange rates: " << added << " rate(s) added or updated";
+		Modified();
+		m_journal.AppendExchangeRates();
+	}
+	return changed;
 }

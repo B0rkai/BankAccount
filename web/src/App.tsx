@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, onUnauthorized, type Me } from './api'
+import { api, ApiError, onUnauthorized, setMe, type Me } from './api'
 import { Icon, type IconName } from './components/Icons'
 import { formatDate, formatDateTime } from './format'
 import { Category } from './pages/Category'
@@ -24,7 +24,10 @@ export function App() {
 
   const load = () =>
     api.me().then(
-      (me) => setSession({ state: 'ready', me }),
+      (me) => {
+        setMe(me)
+        setSession({ state: 'ready', me })
+      },
       (e: ApiError) => setSession(e.status === 401 ? { state: 'signed-out' } : { state: 'error', message: e.message }),
     )
 
@@ -95,7 +98,9 @@ export function App() {
         {route === 'year' && <Year params={params} />}
         {route === 'category' && <Category params={params} />}
         {route === 'settings' && <Settings />}
-        <footer className="footer muted small">Persely · BankAccount {me.version} · read-only view of the desktop database (favorites can be saved)</footer>
+        <footer className="footer muted small">
+          Persely · BankAccount {me.version} · {me.can_edit ? 'changes are saved as you make them' : 'read-only (favorites and settings can be saved)'}
+        </footer>
       </main>
 
       <nav aria-label="Main" className="tabbar">

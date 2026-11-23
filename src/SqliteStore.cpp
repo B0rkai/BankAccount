@@ -712,6 +712,10 @@ void SqliteJournal::AppendMerge(QueryTopic topic, const IdSet&, Id) {
 	m_id_columns.insert(topic);
 }
 
+void SqliteJournal::AppendRemoveKeyword(QueryTopic topic, Id, const String&, bool) {
+	m_entities.insert(topic);
+}
+
 void SqliteJournal::AppendTruncate(Id account_id, size_t new_size) {
 	auto [it, inserted] = m_truncated_to.emplace(account_id, new_size);
 	if (!inserted) {

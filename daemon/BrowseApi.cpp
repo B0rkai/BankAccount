@@ -21,14 +21,6 @@ std::string Utf8(const String& s) {
 	return std::string(s.utf8_str());
 }
 
-std::string IsoDate(uint16_t serial) {
-	int d = 0, m = 0, y = 0;
-	ExcelSerialDateToDMY(serial, d, m, y);
-	char buf[16];
-	std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
-	return buf;
-}
-
 size_t ReadSize(const nlohmann::json& j, const char* key, size_t fallback) {
 	if (j.contains(key) && j[key].is_number_unsigned()) {
 		return j[key].get<size_t>();
@@ -36,14 +28,11 @@ size_t ReadSize(const nlohmann::json& j, const char* key, size_t fallback) {
 	return fallback;
 }
 
-double Amount(const Transaction& tr) {
-	const Currency* currency = MakeCurrency(tr.GetCurrencyType());
-	return currency->HasCents() ? tr.GetAmount() / 100.0 : static_cast<double>(tr.GetAmount());
-}
-
 std::string ReadString(const nlohmann::json& j, const char* key) {
 	return (j.contains(key) && j[key].is_string()) ? j[key].get<std::string>() : std::string();
 }
+
+} // namespace
 
 nlohmann::json TransactionToJson(const Transaction& tr, const AccountManager& mgr) {
 	StringVector printed = tr.PrintDebug(&mgr);
@@ -64,10 +53,24 @@ nlohmann::json TransactionToJson(const Transaction& tr, const AccountManager& mg
 	j["amount"] = Amount(tr);
 	j["currency"] = currency->GetShortName();
 	j["display"] = Utf8(printed[Transaction::AMOUNT]);
+	const AccountManager::TransactionIdentity identity = mgr.Identify(&tr);
+	j["account_id"] = static_cast<Id::Type>(identity.account_id);
+	j["seq"] = identity.position;
 	return j;
 }
 
-} // namespace
+std::string IsoDate(uint16_t serial) {
+	int d = 0, m = 0, y = 0;
+	ExcelSerialDateToDMY(serial, d, m, y);
+	char buf[16];
+	std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
+	return buf;
+}
+
+double Amount(const Transaction& tr) {
+	const Currency* currency = MakeCurrency(tr.GetCurrencyType());
+	return currency->HasCents() ? tr.GetAmount() / 100.0 : static_cast<double>(tr.GetAmount());
+}
 
 QueryApiResult ListTransactions(const std::string& request_body, const AccountManager& mgr) {
 	nlohmann::json body = nlohmann::json::parse(request_body, nullptr, false);
