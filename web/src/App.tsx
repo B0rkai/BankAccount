@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, onUnauthorized, setMe, type Me } from './api'
+import { api, ApiError, onDataChanged, onUnauthorized, setMe, type Me } from './api'
 import { Icon, type IconName } from './components/Icons'
 import { formatDate, formatDateTime } from './format'
 import { Category } from './pages/Category'
 import { Client } from './pages/Client'
 import { Explore } from './pages/Explore'
+import { ImportPage } from './pages/ImportSession'
+import { Imports } from './pages/Imports'
 import { Login } from './pages/Login'
 import { daysSince, Overview, STALE_DAYS } from './pages/Overview'
 import { Reports } from './pages/Reports'
@@ -33,7 +35,12 @@ export function App() {
 
   useEffect(() => {
     load()
-    return onUnauthorized(() => setSession({ state: 'signed-out' }))
+    const offData = onDataChanged(() => load()) // an import moves the newest transaction's date
+    const offAuth = onUnauthorized(() => setSession({ state: 'signed-out' }))
+    return () => {
+      offData()
+      offAuth()
+    }
   }, [])
 
   if (session.state === 'loading') return <div className="boot" aria-busy="true" />
@@ -51,6 +58,7 @@ export function App() {
   const { me } = session
   const stale = (daysSince(me.last_record_date) ?? 0) > STALE_DAYS
   const menu = menuRoute(route)
+  const routes = ROUTES.filter((r) => r.route !== 'imports' || me.can_edit)
   const signOut = async () => {
     await api.logout().catch(() => {})
     setSession({ state: 'signed-out' })
@@ -65,7 +73,7 @@ export function App() {
             Persely
           </a>
           <nav aria-label="Main" className="nav">
-            {ROUTES.map((r) => (
+            {routes.map((r) => (
               <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === menu ? 'page' : undefined}>
                 {r.label}
               </a>
@@ -98,16 +106,18 @@ export function App() {
         {route === 'year' && <Year params={params} />}
         {route === 'category' && <Category params={params} />}
         {route === 'settings' && <Settings />}
+        {route === 'imports' && <Imports />}
+        {route === 'import' && <ImportPage params={params} />}
         <footer className="footer muted small">
           Persely · BankAccount {me.version} · {me.can_edit ? 'changes are saved as you make them' : 'read-only (favorites and settings can be saved)'}
         </footer>
       </main>
 
       <nav aria-label="Main" className="tabbar">
-        {ROUTES.map((r) => (
+        {routes.map((r) => (
           <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === menu ? 'page' : undefined}>
             <Icon name={r.route as IconName} size={22} />
-            {r.label}
+            <span className="tab-label">{r.short ?? r.label}</span>
           </a>
         ))}
       </nav>

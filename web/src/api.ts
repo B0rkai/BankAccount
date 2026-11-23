@@ -109,9 +109,11 @@ export interface TransactionPage {
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  body: unknown // the error response as sent (an import's 409 says who is busy, or which session)
+  constructor(status: number, message: string, body: unknown = null) {
     super(message)
     this.status = status
+    this.body = body
   }
 }
 
@@ -126,7 +128,7 @@ export function onUnauthorized(listener: () => void): () => void {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
+    headers: init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
     credentials: 'same-origin',
   })
   const text = await res.text()
@@ -139,7 +141,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     if (res.status === 401) unauthorizedListeners.forEach((l) => l())
     const message = (body as { error?: string } | null)?.error ?? `${res.status} ${res.statusText}`
-    throw new ApiError(res.status, message)
+    throw new ApiError(res.status, message, body)
   }
   return body as T
 }
@@ -265,6 +267,124 @@ export const api = {
     post<{ applied: number; skipped: number }>('/api/v1/recategorize', { items: items.map((t) => ({ account_id: t.account_id, seq: t.seq, category_id: t.category_id })) }).then(dataChanged),
   updateExchangeRates: () =>
     post<{ changed: boolean; message: string }>('/api/v1/exchange-rates/update', {}).then((r) => (r.changed ? dataChanged(r) : r)),
+}
+
+// ---- imports (daemon/ImportApi.h) ----
+
+export type ImportTopic = 'type' | 'client' | 'category'
+export type How = 'auto' | 'manual' | 'recalled' | null
+
+export interface ImportSummary {
+  id: number
+  state: 'categorizing' | 'review' | 'committed'
+  account_id: number | null
+  account: string
+  new_account: boolean
+  account_number: string
+  bank: string
+  currency: string
+  source_name: string
+  source_format: string
+  from: string | null
+  to: string | null
+  rows: number
+  open: number // rows still needing an answer
+  dropped: number // cut off by Stop here
+  stop_at: number | null
+  first_stoppable: number // rows before this replace stored ones: Stop here can't drop them
+  skipped: number // older than what's stored, left out
+  replaced: number // stored transactions this import replaces on Save
+  created_at: string
+  created_by: string
+  updated_at: string
+  updated_by: string
+}
+
+// What an upload would start (preview) - the summary without id/state.
+export interface ImportDetected extends Omit<ImportSummary, 'id' | 'state'> {
+  file_rows: number
+  new_rows: number
+}
+
+export interface ImportRow {
+  idx: number
+  date: string
+  amount: number
+  currency: string
+  raw: { type: string; client: string; client_account: string; memo: string }
+  type_id: number | null
+  type: string | null
+  client_id: number | null
+  client: string | null
+  category_id: number | null
+  category: string | null
+  description: string
+  how: Record<ImportTopic, How>
+}
+
+export interface ImportQuestion {
+  row: number
+  topic: ImportTopic
+  choices: { id: number; name: string }[]
+  preselect: number | null
+  create_suggestion: string
+  exact_value: string
+  optional: boolean // "Default" (no client / uncategorized) is allowed
+}
+
+export interface ImportDetails extends ImportSummary {
+  open_rows: number[]
+  question: ImportQuestion | null
+  current: ImportRow | null
+  next: ImportRow | null
+  previous: (ImportRow | (TransactionRow & { history: true }))[] // near the start: the account's last stored ones
+}
+
+export interface ImportAnswer {
+  row: number
+  topic: ImportTopic
+  kind: 'select' | 'create' | 'default'
+  id?: number
+  name?: string
+  keyword?: string
+  definitive?: boolean
+  description?: string
+}
+
+export interface ImportRows {
+  rows: ImportRow[]
+  summary: { count: number; total: number; currency: string; replaced: number; open: number; dropped: number }
+  session: ImportSummary
+}
+
+// Someone else changed the session within the last 10 minutes: their change is refused until "take over".
+export const busyOf = (e: unknown) =>
+  e instanceof ApiError && e.status === 409 ? (e.body as { busy?: { by: string; at: string } } | null)?.busy : undefined
+
+const imp = (id: number, rest = '') => `/api/v1/imports/${id}${rest}`
+
+export const imports = {
+  list: () => request<{ imports: ImportSummary[] }>('/api/v1/imports').then((r) => r.imports),
+  // preview: only report what was detected. A 409 ApiError's body has the open session_id.
+  upload: (file: File, opts: { preview?: boolean; accountName?: string }) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (opts.preview) form.append('preview', '1')
+    if (opts.accountName) form.append('account_name', opts.accountName)
+    return request<ImportDetails & { detected?: ImportDetected }>('/api/v1/imports', { method: 'POST', body: form })
+  },
+  details: (id: number, row?: number) => request<ImportDetails>(imp(id, row === undefined ? '' : `?row=${row}`)),
+  // Answers can create clients, categories and keywords: the rest of the app reloads.
+  answer: (id: number, answer: ImportAnswer, takeOver = false) =>
+    post<ImportDetails>(imp(id, '/answer'), { ...answer, take_over: takeOver }).then((r) => (answer.kind === 'create' || answer.keyword ? dataChanged(r) : r)),
+  // row: where to cut (null keeps every row again); left out, the first open row.
+  stop: (id: number, row: number | null | undefined, takeOver = false) =>
+    post<ImportDetails>(imp(id, '/stop'), row === undefined ? { take_over: takeOver } : { row, take_over: takeOver }),
+  rows: (id: number) => request<ImportRows>(imp(id, '/rows')),
+  editRow: (id: number, idx: number, change: TransactionEdit, takeOver = false) =>
+    request<{ ok: boolean; row: ImportRow }>(imp(id, `/rows/${idx}`), { method: 'PATCH', body: JSON.stringify({ ...change, take_over: takeOver }) }),
+  commit: (id: number, takeOver = false) => post<{ ok: boolean; account_id: number; saved: number }>(imp(id, '/commit'), { take_over: takeOver }).then(dataChanged),
+  discard: (id: number, takeOver = false) => request<{ ok: boolean }>(imp(id), { method: 'DELETE', body: JSON.stringify({ take_over: takeOver }) }),
 }
 
 // Names change when the desktop app saves or an edit here does (dataChanged clears this).

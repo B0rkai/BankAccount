@@ -371,6 +371,7 @@ stories 2-5.
    (same result as an uninterrupted import; stop-here; overlap replacement; recall; merge during
    an open session). **Done**, behind `BANKACCOUNT_EDITS=on` — see "Story 4 as built" below.
 5. **Import UI** — Imports page, upload, categorize screen, review, Overview banner.
+   **Done**, behind `BANKACCOUNT_EDITS=on` — see "Story 5 as built" below.
    → **Cutover** (§7).
 6. **Cleanup** — delete the Windows projects and desktop-only code, rewrite `CLAUDE.md`, the
    Linux daemon docs, and decide what `docs/changelog.json` becomes (e.g. a "What's new" in
@@ -550,6 +551,43 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
   scratch container - preview, upload (three rows resolved by keywords, one recalled, stopped at a
   card hold's type question), stop, review, row edit, a password session's 403, save (snapshot,
   `created_by`, the session closed), the background rate update.
+
+## Story 5 as built (2026-11-23)
+
+- **Import** in the nav (phone tab bar too; there "Transactions" is labelled "Activity" so six
+  tabs fit), only for a sign-in that may edit. `web/src/pages/Imports.tsx`: Upload bank file →
+  a preview of what was detected (account or "New account" with a name field, file format, range,
+  how many rows are new, how many stored ones they replace, how many will need an answer) →
+  Start. A second file for an account with an open import is refused with a link to it. Below:
+  the imports in progress with progress, who started and last changed them, Continue / Discard.
+- **The import's page** (`web/src/pages/ImportSession.tsx`, `/import?id=N`, `&row=R` asks
+  about another open row, `&view=rows` the review): two tabs, *Answer (n)* and *All rows*.
+  *Answer* shows the context strip (up to 5 rows before - near the start the account's last
+  stored transactions, greyed - the current row highlighted, the next one; unresolved names in
+  the bank's raw text) and the question: the choices as pills (the client's past categories for
+  a category, the matches for a type or client), a find-or-create field with every client or
+  category name, "+ Create …" pre-filled with the bank's text (and when nothing matches, the
+  field itself is pre-filled with it), an optional keyword ("Use “…”" fills the bank's exact
+  text; "Sort automatically" off makes it a suggestion), a note, and OK / No client or
+  Uncategorized (when allowed) / Stop here (from the first row that may be dropped, confirmed
+  "Keep N rows and drop this one and the M after it?"). An answer that creates something or adds
+  a keyword reloads the rest of the app's names.
+- **Review** (*All rows*, and where the page lands once nothing is open): totals, "replaces N
+  stored from the same days", the rows Stop here drops with *Keep them*, open rows highlighted
+  with *Answer*, every other row editable (category, client - a new name creates it -, note,
+  and Stop here from that row), a recalled category marked "kept". **Save N transactions** (only
+  with nothing open) → "Saved" with a link to the account's transactions; **Discard**.
+- **Two devices**: the page reloads when its tab becomes visible again; an answer another
+  device already gave reloads to whatever is open now; someone else's change within 10 minutes
+  asks "… is working on this import. Take over?" and resends with `take_over`.
+- **Overview**: a banner per open import ("Fő: 3 to categorize · Continue", "ready to save ·
+  Review"); the stale-data notice links to Import instead of naming the desktop app.
+- Tested in a scratch container on a copy of the live database, driven by Playwright on a phone
+  and a desktop viewport: a 14-row Gránit file for an existing account (6 overlapping, 5 to
+  answer) - an uncategorized ATM row, a new client with a keyword that settled its second row,
+  a category, Stop here on the card hold's type question - then review, a row edit, *Keep it*
+  (the card hold open again), Stop here again, Save (transactions in, snapshot taken, session
+  committed); a second upload for the same account refused; a new account asking for a name.
 
 ## Tests
 

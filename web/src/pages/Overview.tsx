@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { api, cachedNames, type Me, type QueryDef, type Section } from '../api'
+import { api, cachedNames, canEdit, imports, type Me, type QueryDef, type Section } from '../api'
 import { Icon } from '../components/Icons'
 import { AccountLink, CategoryTag } from '../components/TopicLinks'
 import { TopicSearch } from '../components/TopicSearch'
@@ -24,6 +24,7 @@ import { formatCount, formatDate, formatMoney, periodTitle, shortCategory } from
 import { useAsync, useStoredState } from '../hooks'
 import { comparisonsFor, describeRange } from '../periods'
 import { linkHandler } from '../router'
+import { importLink, shortAccount } from './ImportSession'
 import { incomeSplit, useSettings, withoutExcluded, type IncomeSplit } from '../settings'
 
 const PERIODS = [
@@ -131,10 +132,20 @@ export function Overview({ me }: { me: Me }) {
   return (
     <div className="page">
       <TopicSearch period={period} />
+      <ImportBanner />
       {stale !== undefined && stale > STALE_DAYS && (
         <div className="notice" role="status">
-          <strong>The newest transaction is {stale} days old</strong> ({formatDate(me.last_record_date!.replace(/\./g, '-'), { year: true })}). Import the latest
-          bank exports in the desktop app to see recent spending.
+          <strong>The newest transaction is {stale} days old</strong> ({formatDate(me.last_record_date!.replace(/\./g, '-'), { year: true })}).{' '}
+          {canEdit() ? (
+            <>
+              <a href="/imports" onClick={linkHandler('/imports')}>
+                Import
+              </a>{' '}
+              the latest bank exports to see recent spending.
+            </>
+          ) : (
+            'Import the latest bank exports to see recent spending.'
+          )}
         </div>
       )}
 
@@ -425,6 +436,26 @@ function Movers({ title, rows, link }: { title: string; rows: TrendRow[]; link: 
             {formatMoney(Math.abs(r.delta), 'HUF')} {r.delta > 0 ? 'more' : 'less'} than usual
           </span>
         </a>
+      ))}
+    </div>
+  )
+}
+
+// Imports in progress, for a sign-in that can continue them.
+function ImportBanner() {
+  const open = useAsync(() => (canEdit() ? imports.list() : Promise.resolve([])), 'imports')
+  if (!open.data?.length) return null
+  return (
+    <div className="overview-imports">
+      {open.data.map((s) => (
+        <div key={s.id} className="notice import-banner" role="status">
+          <span>
+            <strong>{shortAccount(s.account)}</strong>: {s.open ? `${formatCount(s.open)} to categorize` : 'ready to save'}
+          </span>
+          <a href={importLink(s.id)} onClick={linkHandler(importLink(s.id))}>
+            {s.open ? 'Continue' : 'Review'}
+          </a>
+        </div>
       ))}
     </div>
   )

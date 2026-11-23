@@ -68,11 +68,11 @@ Persely. The `.baf` itself is never written to.
 ### Editing in Persely (off until the cutover)
 
 Persely can edit (transaction category/client/note, keywords, rename, merge, categorize by
-keywords, exchange rates - design doc story 3) and import bank files step by step (story 4; the
-screens for it come with story 5), but only with `BANKACCOUNT_EDITS=on`. It is off by
-default because **the first change made in Persely ends the refresh above for good**: from then on
-a desktop import can't be brought over, and until Persely's import screens exist (story 5) new
-transactions would have no way in. To switch it on, after the last desktop import and a final
+keywords, exchange rates - design doc story 3) and import bank files step by step (the Import
+page - stories 4 and 5), but only with `BANKACCOUNT_EDITS=on`. It is off by default because
+**the first change made in Persely ends the refresh above for good**: from then on a desktop
+import can't be brought over, and new transactions come in through Persely's Import page only.
+To switch it on - the cutover - after the last desktop import and a final
 `deploy/migrate-db.sh`:
 
 ```bash
