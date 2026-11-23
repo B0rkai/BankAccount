@@ -95,6 +95,32 @@ rm -f ~/.local/share/bankaccount/data/bankaccount.db-journal
 docker compose -f ~/bankaccount-live/deploy/docker-compose.yml start
 ```
 
+## Bank connections (Enable Banking)
+
+Persely can fetch transactions straight from the banks through Enable Banking
+([enable-banking-import-design.md](enable-banking-import-design.md)). It needs the Enable Banking
+app's id and private key in `~/.config/bankaccount/enablebanking/` (mounted read-only at
+`/app/enablebanking`; `deploy.sh` creates the folder):
+
+```bash
+install -m 600 scripts/enablebanking/config.json scripts/enablebanking/config.pem ~/.config/bankaccount/enablebanking/
+deploy/deploy.sh   # or restart the container: the files are read at startup
+```
+
+`config.json` is what `scripts/enablebanking/register_app.py` writes: `{"applicationId", "keyPath"}`,
+the key path relative to that folder. Without it the logs say "Bank connections are off" and
+Persely shows nothing about banks.
+
+- **Connecting** (Settings → Bank connections → Connect, over Tailscale): the bank login comes back
+  to `https://<persely host>/api/v1/bank/callback` if that address is one of the app's redirect
+  URLs (Enable Banking Control Panel → the app → Redirect URLs). Otherwise it ends on the app's
+  first redirect URL and Persely asks for that page's address to be pasted.
+- **Consents** last up to 180 days (MBH ex-Budapest Bank: 90); Settings and the overview warn 14
+  days ahead, and Renew logs in again. They're kept in `db/bank_connections.json` (mode 600 - it
+  holds Enable Banking's session ids, usable only with the app's key).
+- **Fetching** (Import → Fetch from the bank) opens an ordinary import per account with something
+  new, from the day before its newest stored day.
+
 ## First-time setup (done once)
 
 1. Build the image once (the next step hashes the password with it):

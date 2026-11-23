@@ -21,16 +21,16 @@ std::string EnableBankingJwt(const EnableBankingApp& app, int64_t now, std::stri
 class IEnableBankingHttp {
 public:
 	virtual ~IEnableBankingHttp() = default;
-	// `path` may carry a query string; `body` set means POST. The parsed answer, or nullopt with
-	// `error` (the HTTP status and Enable Banking's message).
-	virtual std::optional<nlohmann::json> Call(const std::string& path, const nlohmann::json* body, std::string& error) = 0;
+	// `method` GET, POST (with `body`) or DELETE; `path` may carry a query string. The parsed
+	// answer, or nullopt with `error` (the HTTP status and Enable Banking's message).
+	virtual std::optional<nlohmann::json> Call(const std::string& method, const std::string& path, const nlohmann::json* body, std::string& error) = 0;
 };
 
 class EnableBankingHttp : public IEnableBankingHttp {
 	EnableBankingApp m_app;
 public:
 	explicit EnableBankingHttp(EnableBankingApp app) : m_app(std::move(app)) {}
-	std::optional<nlohmann::json> Call(const std::string& path, const nlohmann::json* body, std::string& error) override;
+	std::optional<nlohmann::json> Call(const std::string& method, const std::string& path, const nlohmann::json* body, std::string& error) override;
 };
 
 namespace EnableBanking {

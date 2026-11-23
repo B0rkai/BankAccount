@@ -12,9 +12,13 @@ Steps:
   `ImportEngine::AlignToKeywords()` ([include/ImportSession.h](../include/ImportSession.h)) undoes
   the API's text differences, and the daemon's `EnableBankingHttp`
   ([daemon/EnableBankingClient.h](../daemon/EnableBankingClient.h)) makes the signed calls.
-- **7b - storage and secrets**: the app's id and key on the server, bank connections in SQLite.
-- **7c - "Fetch from bank"** on the Import page: one import session per account.
-- **7d - bank connections in Settings**: Connect / Renew, days left, expiry warnings.
+- **7b-7d - connections and fetching** (done): `BankApi` ([daemon/BankApi.h](../daemon/BankApi.h))
+  and `/api/v1/bank/...`; the app's id and key in `~/.config/bankaccount/enablebanking/`
+  (read-only mount), the connections in `db/bank_connections.json` (mode 600; a JSON file next to
+  the settings rather than a SQLite table - they aren't part of the money data, and need no schema
+  change). Settings → Bank connections connects, renews and disconnects; Import → Fetch from the
+  bank opens an import per account; the overview warns 14 days before a connection runs out.
+  Setup: [linux-daemon-deployment.md](linux-daemon-deployment.md#bank-connections-enable-banking).
 - **7e (later)** - a scheduled fetch that only opens the session; Viki's MBH account.
 
 ## Why Enable Banking
@@ -161,11 +165,15 @@ Exact-string types/clients seen in the pull (`POS vásárlás tranzakció belfö
 Decided 2026-11-23:
 
 - **The pull runs in the daemon** (C++; cpp-httplib + OpenSSL, already linked), not a Python job.
-- **Consent returns to Persely**: the app's redirect URL points at Persely's callback, so the
-  bank login ends back in Persely instead of a copy-paste step. It must work from the LAN page
-  (plain http) as well as the tailnet one: the callback carries the starting origin in `state`
-  and, where the registered redirect can't reach the device, Persely falls back to pasting the
-  address the bank ended on.
+- **Consent returns to Persely**: Connect passes the page's own `/api/v1/bank/callback`
+  (https on the tailnet, http on the LAN) as the redirect when the app has it registered, so the
+  bank login ends back in Persely; otherwise it ends on the app's first redirect URL and Persely
+  asks for that address to be pasted. Connecting, like every change, needs a Tailscale sign-in -
+  the LAN page shows the connections read-only.
+- A fetch asks from two days before the account's newest stored day (in the bank's dates) and
+  marks the data complete from there (`RawImportData::complete_from`), so an import starting
+  after a quiet stretch isn't refused as a gap. Only booked rows are imported; pending ones come
+  with a later fetch.
 - Session ids are saved server-side the moment a consent completes (the test pull's session id
   was only printed, so that consent can't be reused).
 

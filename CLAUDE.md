@@ -46,7 +46,7 @@ core tests build fixture data; daemon tests mostly `StreamIn()` a small text sam
 - `daemon/` - the HTTP server (vendored cpp-httplib, `include/httplib.h`): `main.cpp` (routes,
   auth wiring), `DaemonDb` (the loaded AccountManager, writes, reloads), `QueryApi`/`BrowseApi`
   (reads), `EditApi` (edits), `ImportApi` (imports), `FavoritesStore`/`FavoritesApi`, `WebAuth`
-  (Tailscale login header or LAN password), `EnableBankingClient` (bank API), `Backups` (daily snapshots), `MigrateMain`
+  (Tailscale login header or LAN password), `EnableBankingClient`/`BankApi` (bank connections), `Backups` (daily snapshots), `MigrateMain`
   (`bankaccount-migrate`, `.baf` -> SQLite).
 - `web/src/` - the web app: `api.ts` (every API call and its types), `router.ts`, `pages/`,
   `components/`, `styles.css`.
@@ -105,8 +105,10 @@ core tests build fixture data; daemon tests mostly `StreamIn()` a small text sam
 - Enable Banking (PSD2 bank API, story 7 - [docs/enable-banking-import-design.md](docs/enable-banking-import-design.md)):
   `EnableBankingToRaw()` ([include/EnableBankingImport.h](include/EnableBankingImport.h)) turns an
   account's API answers into the same `RawImportData`, `ImportEngine::AlignToKeywords()` undoes the
-  API's text differences (cut types, squeezed spaces), and `daemon/EnableBankingClient.h` makes the
-  RS256-signed calls. Never commit `scripts/enablebanking/config*.json`, `*.pem` or `out/`.
+  API's text differences (cut types, squeezed spaces), `daemon/EnableBankingClient.h` makes the
+  RS256-signed calls and `daemon/BankApi.h` holds the connections (`db/bank_connections.json`) and
+  turns a fetch into import sessions. Never commit `scripts/enablebanking/config*.json`, `*.pem`
+  or `out/`.
 
 ## Data storage
 

@@ -22,23 +22,6 @@ QueryApiResult Ok(const json& body) {
 	return { 200, body.dump() };
 }
 
-std::string IsoUtc(std::time_t t) {
-	std::tm tm{};
-	gmtime_r(&t, &tm);
-	char buf[32];
-	std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
-	return buf;
-}
-
-// 0 if `iso` isn't one IsoUtc() wrote.
-std::time_t ParseIsoUtc(const std::string& iso) {
-	std::tm tm{};
-	if (!strptime(iso.c_str(), "%Y-%m-%dT%H:%M:%SZ", &tm)) {
-		return 0;
-	}
-	return timegm(&tm);
-}
-
 const char* TopicName(QueryTopic topic) {
 	return topic == QueryTopic::TYPE ? "type" : topic == QueryTopic::CLIENT ? "client" : "category";
 }
@@ -234,6 +217,22 @@ QueryApiResult NoSuchImport() {
 
 } // namespace
 
+std::string IsoUtc(std::time_t t) {
+	std::tm tm{};
+	gmtime_r(&t, &tm);
+	char buf[32];
+	std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+	return buf;
+}
+
+std::time_t ParseIsoUtc(const std::string& iso) {
+	std::tm tm{};
+	if (!strptime(iso.c_str(), "%Y-%m-%dT%H:%M:%SZ", &tm)) {
+		return 0;
+	}
+	return timegm(&tm);
+}
+
 std::string ImportFormatOf(const std::string& file_name) {
 	auto ends_with = [&](const char* ext) {
 		const size_t n = std::strlen(ext);
@@ -256,7 +255,8 @@ QueryApiResult StartImport(const RawImportData& data, const ImportUpload& upload
 	}
 	ImportSession session;
 	std::string error;
-	if (!ImportEngine::Start(mgr, data, String::FromUTF8(upload.file_name.c_str()), ImportFormatOf(upload.file_name), session, error)) {
+	const std::string format = upload.source_format.empty() ? ImportFormatOf(upload.file_name) : upload.source_format;
+	if (!ImportEngine::Start(mgr, data, String::FromUTF8(upload.file_name.c_str()), format, session, error)) {
 		return MakeErrorResult(422, error);
 	}
 	const size_t new_rows = session.rows.size() - session.FirstStoppableRow();

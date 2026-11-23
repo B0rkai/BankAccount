@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { api, cachedNames, canEdit, imports, type Me, type QueryDef, type Section } from '../api'
+import { api, bank, cachedNames, canEdit, imports, type Me, type QueryDef, type Section } from '../api'
+import { RENEW_DAYS } from '../components/BankConnections'
 import { Icon } from '../components/Icons'
 import { AccountLink, CategoryTag } from '../components/TopicLinks'
 import { TopicSearch } from '../components/TopicSearch'
@@ -133,6 +134,7 @@ export function Overview({ me }: { me: Me }) {
     <div className="page">
       <TopicSearch period={period} />
       <ImportBanner />
+      <BankExpiryBanner />
       {stale !== undefined && stale > STALE_DAYS && (
         <div className="notice" role="status">
           <strong>The newest transaction is {stale} days old</strong> ({formatDate(me.last_record_date!.replace(/\./g, '-'), { year: true })}).{' '}
@@ -442,6 +444,29 @@ function Movers({ title, rows, link }: { title: string; rows: TrendRow[]; link: 
 }
 
 // Imports in progress, for a sign-in that can continue them.
+// A bank connection running out: fetching stops then, so say it early (never silently).
+function BankExpiryBanner() {
+  const status = useAsync(() => bank.status(), 'bank')
+  const ending = (status.data?.connections ?? []).filter((c) => c.days_left !== null && c.days_left <= RENEW_DAYS)
+  if (!ending.length) return null
+  return (
+    <div className="overview-imports">
+      {ending.map((c) => (
+        <div key={c.id} className="notice" role="status">
+          <span>
+            <strong>{c.bank}</strong>: the bank connection {c.days_left! < 0 ? 'has expired' : c.days_left === 0 ? 'runs out today' : `runs out in ${c.days_left} day${c.days_left === 1 ? '' : 's'}`}
+          </span>{' '}
+          {canEdit() && (
+            <a href="/settings" onClick={linkHandler('/settings')}>
+              Renew
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ImportBanner() {
   const open = useAsync(() => (canEdit() ? imports.list() : Promise.resolve([])), 'imports')
   if (!open.data?.length) return null

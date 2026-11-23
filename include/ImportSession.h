@@ -114,7 +114,7 @@ class ImportEngine {
 public:
 	// Builds a session from an extracted file, already Resolve()d, without changing anything.
 	// Fails (with `error`) for an empty file, an unreadable account number, or a file that doesn't
-	// reach back to the account's last stored day.
+	// reach back to the account's last stored day (unless data.complete_from does).
 	static bool Start(const AccountManager& manager, const RawImportData& data, const String& source_name, const String& source_format, ImportSession& session, std::string& error);
 
 	// Resolves every row not answered by hand, in file order; updates the cursor (the first open
@@ -135,6 +135,15 @@ public:
 	// transactions with rows [0, End()), state becomes Committed. Refuses while a row is open or
 	// if the account changed since the upload.
 	static bool Commit(AccountManager& manager, ImportSession& session, std::string& error);
+
+	// The stored account an import of `account_number` goes to (matched the way Start() does), or
+	// nullopt for one that doesn't exist yet. last_date: its last transaction's date, 0 if none.
+	struct StoredAccount {
+		Id id;
+		String name;
+		uint16_t last_date = 0;
+	};
+	static std::optional<StoredAccount> FindAccount(const AccountManager& manager, const String& account_number);
 
 	// Bank APIs write some texts differently from the files the keywords were made from: Enable
 	// Banking cuts types at 35 characters and squeezes runs of spaces in names. A type or client

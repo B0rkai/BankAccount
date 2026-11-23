@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { ApiError, canEdit, imports, type ImportDetected, type ImportSummary } from '../api'
+import { ApiError, bank, canEdit, imports, type BankConnection, type BankFetchResult, type ImportDetected, type ImportSummary } from '../api'
+import { daysLeftText } from '../components/BankConnections'
 import { Icon } from '../components/Icons'
 import { formatCount, formatDate, formatDateTime } from '../format'
 import { useAsync } from '../hooks'
@@ -7,7 +8,7 @@ import { linkHandler, navigate } from '../router'
 import { Skeleton } from './Overview'
 import { importLink, Progress, shortAccount, withTakeOver } from './ImportSession'
 
-const FORMATS: Record<string, string> = { MBH_CSV: 'MBH Bank CSV', GRANIT_XML: 'Gránit Bank XML' }
+const FORMATS: Record<string, string> = { MBH_CSV: 'MBH Bank CSV', GRANIT_XML: 'Gránit Bank XML', ENABLE_BANKING: 'from the bank' }
 
 // Imports in progress, and uploading a bank export to start one: Persely first says what it found
 // in the file (which account, which days, how many rows are new and how many will need an
@@ -43,9 +44,10 @@ export function Imports() {
       <div className="page-head">
         <div>
           <h1>Import</h1>
-          <p className="muted">MBH Bank CSV and Gránit Bank XML exports. Nothing reaches the transactions until you save.</p>
+          <p className="muted">Straight from the bank, or MBH Bank CSV and Gránit Bank XML exports. Nothing reaches the transactions until you save.</p>
         </div>
       </div>
+      <FromTheBank onFetched={() => setVersion((v) => v + 1)} />
       <Upload onStarted={(id) => navigate(importLink(id))} />
       {(list.error || error) && <p className="alert">{list.error ?? error}</p>}
       {list.loading && !list.data ? (
@@ -206,6 +208,103 @@ function Upload({ onStarted }: { onStarted: (id: number) => void }) {
           </div>
         </form>
       )}
+    </section>
+  )
+}
+
+// Fetch: every account of a bank connection (Settings → Bank connections) from its newest stored
+// day on. Each account with something new becomes an import like an uploaded file's.
+function FromTheBank({ onFetched }: { onFetched: () => void }) {
+  const status = useAsync(() => bank.status(), 'bank')
+  const [busy, setBusy] = useState<string>()
+  const [results, setResults] = useState<{ connection: string; list: BankFetchResult[] }>()
+  const [error, setError] = useState<string>()
+
+  const fetch = async (c: BankConnection) => {
+    setBusy(c.id)
+    setError(undefined)
+    setResults(undefined)
+    try {
+      const r = await bank.fetch(c.id)
+      setResults({ connection: c.id, list: r.results })
+      onFetched()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
+  const s = status.data
+  if (!s?.configured) return null
+  if (!s.connections.length)
+    return (
+      <p className="muted small">
+        Connect a bank in{' '}
+        <a href="/settings" onClick={linkHandler('/settings')}>
+          Settings
+        </a>{' '}
+        to fetch transactions without downloading files.
+      </p>
+    )
+  return (
+    <section className="card bank-fetch">
+      {s.connections.map((c) => {
+        const expired = c.days_left !== null && c.days_left < 0
+        return (
+          <div key={c.id} className="bank-fetch-row">
+            <div className="card-head">
+              <div className="grow-1">
+                <h3>{c.bank}</h3>
+                <p className="muted small">
+                  {c.accounts.map((a) => (a.account_name ? shortAccount(a.account_name) : a.name)).join(', ')} · {daysLeftText(c)}
+                </p>
+              </div>
+              {expired ? (
+                <a className="button secondary small" href="/settings" onClick={linkHandler('/settings')}>
+                  Renew in Settings
+                </a>
+              ) : (
+                <button type="button" className="button primary" disabled={!!busy} onClick={() => fetch(c)}>
+                  <Icon name="imports" /> {busy === c.id ? 'Fetching…' : 'Fetch from the bank'}
+                </button>
+              )}
+            </div>
+            {results?.connection === c.id && (
+              <ul className="bank-results">
+                {results.list.map((r) => (
+                  <li key={r.account_number}>
+                    <strong>{shortAccount(r.account_name)}</strong>{' '}
+                    {r.error ? (
+                      <span className="alert-text">{r.error}</span>
+                    ) : r.nothing_new ? (
+                      <span className="muted">nothing new</span>
+                    ) : r.in_progress ? (
+                      <>
+                        <span className="muted">already has an import in progress</span> ·{' '}
+                        <a href={importLink(r.session_id!)} onClick={linkHandler(importLink(r.session_id!))}>
+                          Continue
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <span className="muted">
+                          {formatCount(r.rows ?? 0)} rows{r.open ? `, ${formatCount(r.open)} to categorize` : ', all sorted'}
+                        </span>{' '}
+                        ·{' '}
+                        <a href={importLink(r.session_id!)} onClick={linkHandler(importLink(r.session_id!))}>
+                          {r.open ? 'Continue' : 'Review'}
+                        </a>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      })}
+      {error && <p className="alert">{error}</p>}
     </section>
   )
 }

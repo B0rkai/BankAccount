@@ -6,8 +6,10 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -17,6 +19,7 @@
 #include <nlohmann/json.hpp>
 #include "httplib.h"
 #include "Backups.h"
+#include "BankApi.h"
 #include "BrowseApi.h"
 #include "CommonTypes.h"
 #include "DaemonDb.h"
@@ -29,6 +32,7 @@
 #include "FavoritesStore.h"
 #include "HtmlReport.h"
 #include "ImportApi.h"
+#include "ImportSession.h"
 #include "DataImporter.h"
 #include "Logger.h"
 #include "Query.h"
@@ -76,7 +80,8 @@ void PrintUsage(const char* argv0) {
 		<< "       " << argv0 << " --hash-password   (reads a password from stdin, prints its hash)\n"
 		<< "       " << argv0 << " --health-check <port>\n"
 		<< "Environment: BANKACCOUNT_ALLOWED_LOGINS (comma-separated Tailscale logins),\n"
-		<< "             BANKACCOUNT_LAN_PASSWORD_HASH (required with --lan-port)\n";
+		<< "             BANKACCOUNT_LAN_PASSWORD_HASH (required with --lan-port),\n"
+		<< "             BANKACCOUNT_ENABLEBANKING_DIR (the bank API app's config.json and key; optional)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Args& out) {
@@ -202,6 +207,7 @@ struct Context {
 	const bool edits_enabled;
 	Backups* backups; // null: no snapshots
 	std::atomic<bool>& rates_running;
+	BankApi& bank;
 };
 
 // The whole file, or "" if it can't be read.
@@ -351,6 +357,57 @@ bool UpdateExchangeRates(DaemonDb& db, std::atomic<bool>& running, const std::st
 	}
 	message = changed ? "Exchange rates updated" : "MNB had no new rates";
 	return changed;
+}
+
+// The login a bank-connection route acts for, or "" after answering 403 (as HandleChange()).
+std::string RequireWriter(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener) {
+	const std::string login = WriterLogin(req, listener);
+	if (!ctx.edits_enabled || login.empty()) {
+		SendError(res, 403, ctx.edits_enabled ? "Changes can only be made over Tailscale" : "Editing is turned off on this server");
+		return "";
+	}
+	return login;
+}
+
+// Where a bank login started on this page comes back to: the address the browser used - https on
+// the tailnet (behind `tailscale serve`), http on the LAN.
+std::string BankCallbackUrl(const httplib::Request& req, Listener listener) {
+	return std::string(listener == Listener::TAILNET ? "https://" : "http://") + req.get_header_value("Host") + "/api/v1/bank/callback";
+}
+
+// Downloads a connection's new transactions without holding the database lock, then opens their
+// import sessions in one write.
+void FetchFromBank(Context& ctx, const std::string& connection_id, const std::string& login, httplib::Response& res) {
+	const std::vector<BankAccountLink> accounts = ctx.bank.Accounts(connection_id);
+	if (accounts.empty()) {
+		SendError(res, 404, "No such bank connection");
+		return;
+	}
+	std::map<std::string, uint16_t> last_dates;
+	ctx.db.WithManager([&](const AccountManager& mgr) {
+		for (const BankAccountLink& a : accounts) {
+			if (auto stored = ImportEngine::FindAccount(mgr, String::FromUTF8(a.account_number.c_str()))) {
+				last_dates[a.account_number] = stored->last_date;
+			}
+		}
+	});
+	const std::time_t now = std::time(nullptr);
+	std::vector<BankPull> pulled;
+	QueryApiResult result{0, ""};
+	if (!ctx.bank.Pull(connection_id, last_dates, now, pulled, result)) {
+		SendResult(res, result);
+		return;
+	}
+	std::string error;
+	const bool written = ctx.db.WriteImports(login, [&](AccountManager& mgr, DaemonDb::Imports& imports) {
+		result = StartBankImports(pulled, mgr, imports, login, now);
+		return true;
+	}, error);
+	if (!written) {
+		SendError(res, 409, error);
+		return;
+	}
+	SendResult(res, result);
 }
 
 void InstallAuth(httplib::Server& server, Context& ctx, Listener listener) {
@@ -601,6 +658,58 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		});
 	});
 
+	// Bank connections (BankApi.h). The callback is where a bank login ends: it isn't called by
+	// the web app but by the browser, so it answers with a redirect back into Settings.
+	server.Get("/api/v1/bank", [&ctx](const httplib::Request&, httplib::Response& res) {
+		WithDb(ctx, res, [&](const AccountManager& mgr) {
+			SendResult(res, ctx.bank.Status(mgr, std::time(nullptr)));
+		});
+	});
+	server.Post("/api/v1/bank/connect", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (!login.empty()) {
+			SendResult(res, ctx.bank.Connect(ParseBody(req), BankCallbackUrl(req, listener), login, std::time(nullptr)));
+		}
+	});
+	server.Get("/api/v1/bank/callback", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = WriterLogin(req, listener);
+		QueryApiResult result = !ctx.edits_enabled || login.empty() ? MakeErrorResult(403, "Bank connections can only be made over Tailscale")
+			: ctx.bank.CompleteFromUrl(req.target, login, std::time(nullptr));
+		std::string error;
+		if (result.http_status != 200) {
+			const nlohmann::json body = nlohmann::json::parse(result.body, nullptr, false);
+			error = body.is_object() && body.contains("error") ? body["error"].get<std::string>() : "The bank connection failed";
+		}
+		res.set_redirect(error.empty() ? "/settings?bank=connected" : "/settings?bank_error=" + EnableBanking::UrlEncode(error));
+	});
+	server.Post("/api/v1/bank/complete", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (!login.empty()) {
+			const nlohmann::json body = ParseBody(req);
+			const std::string url = body.is_object() && body.contains("url") && body["url"].is_string() ? body["url"].get<std::string>() : "";
+			SendResult(res, ctx.bank.CompleteFromUrl(url, login, std::time(nullptr)));
+		}
+	});
+	server.Delete(R"(/api/v1/bank/connections/([0-9a-f]+))", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (!login.empty()) {
+			SendResult(res, ctx.bank.Disconnect(req.matches[1]));
+		}
+	});
+	server.Post("/api/v1/bank/fetch", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (login.empty()) {
+			return;
+		}
+		if (!ctx.db.IsLoaded()) {
+			SendError(res, 503, "Database not loaded");
+			return;
+		}
+		const nlohmann::json body = ParseBody(req);
+		const std::string id = body.is_object() && body.contains("connection_id") && body["connection_id"].is_string() ? body["connection_id"].get<std::string>() : "";
+		FetchFromBank(ctx, id, login, res);
+	});
+
 	server.Get("/api/v1/entity", [&ctx](const httplib::Request& req, httplib::Response& res) {
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
 			SendResult(res, EntityDetails(req.get_param_value("topic"), req.get_param_value("id"), mgr));
@@ -828,8 +937,23 @@ int main(int argc, char** argv) {
 
 	SessionStore sessions;
 	LoginThrottle throttle;
+	// Bank connections (story 7): the Enable Banking app's config.json and key, mounted read-only
+	// from the server's ~/.config/bankaccount/enablebanking; without them the feature is off.
+	std::unique_ptr<EnableBankingHttp> bank_http;
+	{
+		const std::string dir = Env("BANKACCOUNT_ENABLEBANKING_DIR").empty() ? "enablebanking" : Env("BANKACCOUNT_ENABLEBANKING_DIR");
+		std::string error;
+		if (std::optional<EnableBankingApp> app = LoadEnableBankingApp(dir, error)) {
+			bank_http = std::make_unique<EnableBankingHttp>(std::move(*app));
+			LogInfo("DAEMON") << "Bank connections are on (" << dir << ")";
+		} else {
+			LogInfo("DAEMON") << "Bank connections are off: " << error;
+		}
+	}
+	BankApi bank(bank_http.get(), "db/bank_connections.json");
+
 	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
-		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running};
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank};
 
 	httplib::Server tailnet_server;
 	InstallAuth(tailnet_server, ctx, Listener::TAILNET);

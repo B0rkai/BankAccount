@@ -23,10 +23,16 @@ struct RawImportData;
 constexpr int IMPORT_EDITOR_MINUTES = 10;
 
 struct ImportUpload {
-	std::string file_name;   // as uploaded
+	std::string file_name;   // as uploaded (a bank fetch: what it came from)
 	bool preview = false;    // only report what was detected
 	String account_name;     // for an account that doesn't exist yet
+	std::string source_format; // "" - from the file name (ImportFormatOf())
 };
+
+// Times as the import sessions keep them: "2026-11-23T12:00:00Z"; ParseIsoUtc() gives 0 for
+// anything else.
+std::string IsoUtc(std::time_t t);
+std::time_t ParseIsoUtc(const std::string& iso);
 
 // "MBH_CSV" / "GRANIT_XML" from the file name, "" for one Persely can't read.
 std::string ImportFormatOf(const std::string& file_name);

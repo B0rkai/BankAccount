@@ -22,6 +22,11 @@
 // It also keeps the web app's settings, `<dir>/web_settings.json`: one JSON object, so the phone and
 // the LAN browser agree on them. Settings refer to categories by id, so a renamed category keeps its
 // place in them.
+// Writes `content` to a temporary file next to `path` and renames it over `path`, keeping the old
+// file's permissions (a new file gets `new_file_mode`). False with `error` on failure, the old
+// file untouched.
+bool WriteFileAtomically(const std::string& path, const std::string& content, std::string& error, unsigned new_file_mode = 0660);
+
 class FavoritesStore {
 public:
 	explicit FavoritesStore(std::string dir);

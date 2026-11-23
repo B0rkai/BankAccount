@@ -65,9 +65,9 @@ std::filesystem::file_time_type MTime(const std::string& path) {
 	return ec ? std::filesystem::file_time_type{} : t;
 }
 
-// Writes `content` to a temporary file next to `path` and renames it over `path`. Keeps the old
-// file's permissions.
-bool WriteAtomically(const std::string& path, const std::string& content, std::string& error) {
+} // namespace
+
+bool WriteFileAtomically(const std::string& path, const std::string& content, std::string& error, unsigned new_file_mode) {
 	std::filesystem::path target(path);
 	std::string tmpl = (target.parent_path() / ("." + target.filename().string() + ".XXXXXX")).string();
 	std::vector<char> tmp_path(tmpl.begin(), tmpl.end());
@@ -78,7 +78,7 @@ bool WriteAtomically(const std::string& path, const std::string& content, std::s
 		return false;
 	}
 	struct stat old_stat{};
-	mode_t mode = (stat(path.c_str(), &old_stat) == 0) ? (old_stat.st_mode & 07777) : 0660;
+	mode_t mode = (stat(path.c_str(), &old_stat) == 0) ? (old_stat.st_mode & 07777) : (mode_t)new_file_mode;
 	bool ok = fchmod(fd, mode) == 0;
 	size_t written = 0;
 	while (ok && written < content.size()) {
@@ -98,8 +98,6 @@ bool WriteAtomically(const std::string& path, const std::string& content, std::s
 	std::remove(tmp_path.data());
 	return false;
 }
-
-} // namespace
 
 FavoritesStore::FavoritesStore(std::string dir)
 	: m_queries_path(dir + "/favorite_queries.json"), m_reports_path(dir + "/favorite_reports.json"), m_settings_path(dir + "/web_settings.json") {}
@@ -161,7 +159,7 @@ QueryApiResult FavoritesStore::EditLocked(const std::string& path, const std::st
 		arr.push_back(*entry);
 	}
 	std::string error;
-	if (!WriteAtomically(path, arr.dump(2) + "\n", error)) {
+	if (!WriteFileAtomically(path, arr.dump(2) + "\n", error)) {
 		LogError("FAVORITES") << "Couldn't write " << path << ": " << error;
 		return MakeErrorResult(500, "Couldn't save " + file + ": " + error);
 	}
@@ -277,7 +275,7 @@ QueryApiResult FavoritesStore::SaveSettings(const std::string& request_body) {
 	}
 	std::lock_guard<std::mutex> lock(m_mutex);
 	std::string error;
-	if (!WriteAtomically(m_settings_path, body.dump(2) + "\n", error)) {
+	if (!WriteFileAtomically(m_settings_path, body.dump(2) + "\n", error)) {
 		LogError("SETTINGS") << "Couldn't write " << m_settings_path << ": " << error;
 		return MakeErrorResult(500, "Couldn't save the settings: " + error);
 	}

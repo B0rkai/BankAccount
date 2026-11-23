@@ -22,6 +22,8 @@ export BANKACCOUNT_BACKUP_DIR=${BANKACCOUNT_BACKUP_DIR:-/mnt/storage/dev/BankAcc
 export BANKACCOUNT_FAVORITES_DIR=${BANKACCOUNT_FAVORITES_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bankaccount}
 # BANKACCOUNT_ALLOWED_LOGINS and BANKACCOUNT_LAN_PASSWORD_HASH (chmod 600) - written by deploy/set-secrets.sh.
 export BANKACCOUNT_ENV_FILE=${BANKACCOUNT_ENV_FILE:-$HOME/.config/bankaccount/web.env}
+# The Enable Banking app's config.json + private key (chmod 600), for bank connections - optional.
+export BANKACCOUNT_ENABLEBANKING_DIR=${BANKACCOUNT_ENABLEBANKING_DIR:-$HOME/.config/bankaccount/enablebanking}
 # The server's address on the home LAN (it must stay put: a DHCP reservation in the router).
 export BANKACCOUNT_LAN_ADDRESS=${BANKACCOUNT_LAN_ADDRESS:-192.168.1.100}
 BANKACCOUNT_UID=$(id -u)
@@ -37,6 +39,7 @@ fi
 
 mkdir -p "$BANKACCOUNT_FAVORITES_DIR" "$BANKACCOUNT_DB_DIR"
 [ -d "$BANKACCOUNT_BACKUP_DIR" ] || mkdir -m 700 -p "$BANKACCOUNT_BACKUP_DIR"
+[ -d "$BANKACCOUNT_ENABLEBANKING_DIR" ] || mkdir -m 700 -p "$BANKACCOUNT_ENABLEBANKING_DIR"
 [ -d "$LIVE_DIR/.git" ] || git clone -q "$REPO" "$LIVE_DIR"
 git -C "$LIVE_DIR" fetch -q --prune origin
 commit=$(git -C "$LIVE_DIR" rev-parse --verify "$ref^{commit}")

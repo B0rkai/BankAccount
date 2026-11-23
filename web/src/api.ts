@@ -394,6 +394,52 @@ export const imports = {
   discard: (id: number, takeOver = false) => request<{ ok: boolean }>(imp(id), { method: 'DELETE', body: JSON.stringify({ take_over: takeOver }) }),
 }
 
+// Bank connections (daemon/BankApi.h): Enable Banking consents Persely fetches transactions with.
+export interface BankAccountLink {
+  uid: string
+  account_number: string
+  currency: string
+  name: string // the bank's product name
+  account_id: number | null // null: not in Persely yet (a fetch creates it)
+  account_name: string | null
+  last_date: string | null // its newest transaction
+}
+export interface BankConnection {
+  id: string
+  bank: string
+  valid_until: string
+  days_left: number | null // -1: expired
+  created_at: string
+  created_by: string
+  accounts: BankAccountLink[]
+}
+export interface BankStatus {
+  configured: boolean // the server has the Enable Banking app's key
+  banks: string[]
+  connections: BankConnection[]
+}
+export interface BankFetchResult {
+  account_number: string
+  account_name: string
+  bank: string
+  session_id?: number // the import it opened (or the one already in progress)
+  rows?: number
+  open?: number
+  nothing_new?: boolean
+  in_progress?: boolean
+  error?: string
+}
+
+export const bank = {
+  status: () => request<BankStatus>('/api/v1/bank'),
+  // url: the bank's login page. paste: the login ends on lands_on, not back in Persely.
+  connect: (name: string) => post<{ url: string; paste: boolean; lands_on: string }>('/api/v1/bank/connect', { bank: name }),
+  complete: (url: string) => post<{ ok: boolean; connection: BankConnection }>('/api/v1/bank/complete', { url }),
+  disconnect: (id: string) => del<{ ok: boolean }>(`/api/v1/bank/connections/${id}`),
+  // Opens an import per account with something new: the import list and banners reload.
+  fetch: (connectionId: string) => post<{ results: BankFetchResult[] }>('/api/v1/bank/fetch', { connection_id: connectionId }).then(dataChanged),
+}
+
 // Names change with an edit or import here (dataChanged clears this).
 const nameCache = new Map<string, Promise<NameList>>()
 export function cachedNameList(topic: NameTopic): Promise<NameList> {

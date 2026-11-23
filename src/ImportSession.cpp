@@ -124,6 +124,16 @@ String Aligned(const Manager& entities, const String& text, size_t cut_length) {
 
 } // namespace
 
+std::optional<ImportEngine::StoredAccount> ImportEngine::FindAccount(const AccountManager& manager, const String& account_number) {
+	for (size_t i = 0; i < manager.m_accounts.size(); ++i) {
+		const Account& account = *manager.m_accounts[i];
+		if (manager.m_accounts[i]->CheckAccNumber(account_number)) {
+			return StoredAccount{ Id((Id::Type)i), account.GetName(), account.Size() ? account.GetLastRecord()->GetDate() : (uint16_t)0 };
+		}
+	}
+	return std::nullopt;
+}
+
 void ImportEngine::AlignToKeywords(const AccountManager& manager, RawImportData& data) {
 	for (RawTransactionData& raw : data.data) {
 		if (!raw.type.empty() && manager.SearchIds(QueryTopic::TYPE, raw.type, false).empty()) {
@@ -179,7 +189,10 @@ bool ImportEngine::Start(const AccountManager& manager, const RawImportData& dat
 		while (first < data.data.size() && data.data[first].date + 1 < last) {
 			++first;
 		}
-		if (first == data.data.size() || data.data[first].date > last) {
+		// A file must reach back to that day, or the days between would be missing; a bank fetch
+		// asked from before it, so a first row after it just means nothing happened in between.
+		const bool gapless = data.complete_from && data.complete_from <= last;
+		if (first == data.data.size() || (data.data[first].date > last && !gapless)) {
 			error = "The file doesn't reach back to " + std::string(DateAsString(last).utf8_str())
 				+ ", the last day already in " + std::string(account->GetName().utf8_str()) + " - download a longer period";
 			return false;

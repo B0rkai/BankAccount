@@ -78,7 +78,7 @@ class FakeHttp : public IEnableBankingHttp {
 public:
 	std::vector<std::string> paths;
 	std::vector<json> pages;
-	std::optional<json> Call(const std::string& path, const json* body, std::string& error) override {
+	std::optional<json> Call(const std::string& method, const std::string& path, const json* body, std::string& error) override {
 		paths.push_back(path);
 		if (paths.size() > pages.size()) {
 			error = "Enable Banking answered 401: expired";

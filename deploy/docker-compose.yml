@@ -28,4 +28,7 @@ services:
       # folder rather than the two files: saving renames a new file over the old one, which a
       # single-file mount refuses.
       - "${BANKACCOUNT_FAVORITES_DIR:?}:/app/db"
+      # The Enable Banking app's config.json and private key (bank connections - see
+      # docs/linux-daemon-deployment.md); an empty folder leaves them off.
+      - "${BANKACCOUNT_ENABLEBANKING_DIR:?}:/app/enablebanking:ro"
     restart: unless-stopped

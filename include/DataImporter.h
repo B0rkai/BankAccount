@@ -22,6 +22,9 @@ struct RawImportData {
 	String bank_name;
 	CurrencyType currency;
 	std::vector<RawTransactionData> data;
+	// The first day `data` is known to hold every transaction of (a bank fetch: the day it asked
+	// from); 0 - from its first row, as for a file.
+	uint16_t complete_from = 0;
 };
 
 void ImportFromFile(const String& filename, RawImportData& import_data);

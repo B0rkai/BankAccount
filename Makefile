@@ -97,7 +97,7 @@ OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS)) \
 # daemon/: the HTTP server (vendored cpp-httplib, include/httplib.h - header-only, -pthread for
 # its worker threads).
 # WebAuth.cpp needs OpenSSL's libcrypto (PBKDF2 password hashing, CSPRNG session tokens).
-DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/EnableBankingClient.cpp daemon/Backups.cpp daemon/EditApi.cpp daemon/ImportApi.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
+DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/EnableBankingClient.cpp daemon/BankApi.cpp daemon/Backups.cpp daemon/EditApi.cpp daemon/ImportApi.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
 DAEMON_SRCS := daemon/main.cpp $(DAEMON_LIB_SRCS)
 DAEMON_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_SRCS))
 DAEMON_LIB_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_LIB_SRCS))
@@ -144,7 +144,7 @@ CORE_TEST_SRCS := \
 	tests/WQueryTests.cpp
 DAEMON_TEST_SRCS := daemon/tests/WebAuthTests.cpp daemon/tests/FavoritesStoreTests.cpp daemon/tests/SqliteStoreTests.cpp \
 	daemon/tests/DaemonDbTests.cpp daemon/tests/BackupsTests.cpp daemon/tests/EditApiTests.cpp \
-	daemon/tests/ImportSessionTests.cpp daemon/tests/EnableBankingClientTests.cpp
+	daemon/tests/ImportSessionTests.cpp daemon/tests/EnableBankingClientTests.cpp daemon/tests/BankApiTests.cpp
 DAEMON_TEST_OBJS := $(patsubst daemon/tests/%.cpp,$(BUILD)/daemon/tests/%.o,$(DAEMON_TEST_SRCS)) \
 	$(patsubst tests/%.cpp,$(BUILD)/tests/%.o,$(CORE_TEST_SRCS))
 DAEMON_TEST_BIN  := $(BUILD)/bin/tests

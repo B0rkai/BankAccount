@@ -67,7 +67,7 @@ std::string EnableBankingJwt(const EnableBankingApp& app, int64_t now, std::stri
 	return signing_input + "." + Base64Url(signature);
 }
 
-std::optional<json> EnableBankingHttp::Call(const std::string& path, const json* body, std::string& error) {
+std::optional<json> EnableBankingHttp::Call(const std::string& method, const std::string& path, const json* body, std::string& error) {
 	const std::string jwt = EnableBankingJwt(m_app, (int64_t)time(nullptr), error);
 	if (jwt.empty()) {
 		return std::nullopt;
@@ -76,17 +76,17 @@ std::optional<json> EnableBankingHttp::Call(const std::string& path, const json*
 	client.set_connection_timeout(15, 0);
 	client.set_read_timeout(60, 0);
 	const httplib::Headers headers = { { "Authorization", "Bearer " + jwt } };
-	httplib::Result result = body ? client.Post(path, headers, body->dump(), "application/json") : client.Get(path, headers);
-	const std::string method = body ? "POST " : "GET ";
+	httplib::Result result = method == "POST" ? client.Post(path, headers, body ? body->dump() : "{}", "application/json")
+		: method == "DELETE" ? client.Delete(path, headers) : client.Get(path, headers);
 	// Only the path before '?' goes in the log: query parameters may hold continuation keys.
-	const std::string logged = method + path.substr(0, path.find('?'));
+	const std::string logged = method + " " + path.substr(0, path.find('?'));
 	if (!result) {
 		error = "Enable Banking can't be reached (" + httplib::to_string(result.error()) + ")";
 		LogError("EBNK") << logged << ": " << error;
 		return std::nullopt;
 	}
-	json answer = json::parse(result->body, nullptr, false);
-	if (result->status != 200) {
+	json answer = result->body.empty() ? json::object() : json::parse(result->body, nullptr, false);
+	if (result->status < 200 || result->status > 299) {
 		std::string message = answer.is_object() && answer.contains("message") && answer["message"].is_string() ? answer["message"].get<std::string>() : result->body.substr(0, 300);
 		error = "Enable Banking answered " + std::to_string(result->status) + ": " + message;
 		LogWarn("EBNK") << logged << ": " << error;
@@ -126,7 +126,7 @@ std::optional<json> FetchTransactions(IEnableBankingHttp& http, const std::strin
 		if (!continuation.empty()) {
 			path += "&continuation_key=" + UrlEncode(continuation);
 		}
-		std::optional<json> answer = http.Call(path, nullptr, error);
+		std::optional<json> answer = http.Call("GET", path, nullptr, error);
 		if (!answer) {
 			return std::nullopt;
 		}

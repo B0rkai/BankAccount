@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, canEdit } from '../api'
+import { BankConnections } from '../components/BankConnections'
 import { Maintenance } from '../components/Maintenance'
 import { NamePicker } from '../components/NamePicker'
 import { WhatsNew } from '../components/WhatsNew'
@@ -124,6 +125,7 @@ export function Settings() {
           <Skeleton rows={3} />
         )}
       </section>
+      <BankConnections />
       {canEdit() && <Maintenance />}
       <WhatsNew />
     </div>
