@@ -38,6 +38,11 @@ public:
 	};
 	// Reads and rebuilds the private collections below directly - see include/SqliteStore.h.
 	friend class SqliteStore;
+	friend class SqliteJournal;
+
+	// Single additions, outside an Import() - Persely's writes (and their tests) use them.
+	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
+	Id CreateClientId(const String& client_name, const String& client_account_number);
 private:
 	ManagerType<TransactionType> m_ttype_man;
 	ClientManager m_client_man;
@@ -50,10 +55,8 @@ private:
 
 	bool HasMissingExchangeRates() const;
 
-	void AddNewTransaction(const Id acc_id, const uint16_t date, const Id type_id, const int32_t amount, const Id client_id, const String& memo);
 	Id CreateTransactionTypeId(const String& type);
 	Id CreateOrGetAccountId(const String& account_number, const String& bank_name, const CurrencyType curr, INewAccount* newaccount_if);
-	Id CreateClientId(const String& client_name, const String& client_account_number);
 
 	virtual String GetCategoryName(const Id id) const override;
 	virtual String GetTransactionType(const Id id) const override;

@@ -2,6 +2,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -14,6 +16,7 @@
 #include <unistd.h>
 #include <nlohmann/json.hpp>
 #include "httplib.h"
+#include "Backups.h"
 #include "BrowseApi.h"
 #include "CommonTypes.h"
 #include "DaemonDb.h"
@@ -49,6 +52,7 @@ struct Args {
 	int tailnet_port = 0;
 	int lan_port = 0; // 0: no LAN listener
 	std::string web_dir;
+	std::string backup_dir; // empty: no snapshots
 };
 
 struct AuthConfig {
@@ -63,7 +67,7 @@ constexpr const char* TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login";
 constexpr const char* TAILSCALE_NAME_HEADER = "Tailscale-User-Name";
 
 void PrintUsage(const char* argv0) {
-	std::cerr << "Usage: " << argv0 << " --db <path> --host <bind-host> --tailnet-port <port> [--lan-port <port>] --web-dir <dir>\n"
+	std::cerr << "Usage: " << argv0 << " --db <path> --host <bind-host> --tailnet-port <port> [--lan-port <port>] --web-dir <dir> [--backup-dir <dir>]\n"
 		<< "       " << argv0 << " --hash-password   (reads a password from stdin, prints its hash)\n"
 		<< "       " << argv0 << " --health-check <port>\n"
 		<< "Environment: BANKACCOUNT_ALLOWED_LOGINS (comma-separated Tailscale logins),\n"
@@ -86,6 +90,8 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 			out.lan_port = std::atoi(next().c_str());
 		} else if (arg == "--web-dir") {
 			out.web_dir = next();
+		} else if (arg == "--backup-dir") {
+			out.backup_dir = next();
 		} else {
 			return false;
 		}
@@ -196,6 +202,31 @@ void WithDb(Context& ctx, httplib::Response& res, Fn&& fn) {
 	ctx.db.WithManager(fn);
 }
 
+// Who may change data: an allowlisted tailnet login (the pre-routing handler has already checked
+// the allowlist), never a LAN password session - a shared password on plain HTTP shouldn't be
+// able to change anything. Returns that login, or "" for a request that may only read.
+std::string WriterLogin(const httplib::Request& req, Listener listener) {
+	return (listener == Listener::TAILNET) ? req.get_header_value(TAILSCALE_LOGIN_HEADER) : std::string();
+}
+
+// Runs `fn(AccountManager&)` as one write (DaemonDb::Write) on behalf of the request's tailnet
+// login, recorded as created_by/updated_by. Answers 403 for a read-only request, 409 when the
+// database can't take the change (not writable, changed elsewhere, or the change failed);
+// `fn` sends the success response itself.
+template <class Fn>
+void WithWritableDb(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Fn&& fn) {
+	const std::string login = WriterLogin(req, listener);
+	if (login.empty()) {
+		SendError(res, 403, "Changes can only be made over Tailscale");
+		return;
+	}
+	std::string error;
+	if (!ctx.db.Write(login, fn, error)) {
+		LogWarn("WRITE") << req.method << " " << req.path << " by " << login << " failed: " << error;
+		SendError(res, 409, error);
+	}
+}
+
 void InstallAuth(httplib::Server& server, Context& ctx, Listener listener) {
 	server.set_pre_routing_handler([&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		if (req.path == "/api/v1/health") {
@@ -241,6 +272,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		body["version"] = APP_VERSION;
 		body["db_loaded"] = ctx.db.IsLoaded();
 		body["last_loaded"] = ctx.db.LastLoadedIso();
+		body["can_edit"] = ctx.db.IsWritable() && !WriterLogin(req, listener).empty();
 		if (listener == Listener::TAILNET) {
 			body["via"] = "tailscale";
 			body["login"] = req.get_header_value(TAILSCALE_LOGIN_HEADER);
@@ -400,6 +432,17 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 // mtime poll interval for reloading the db in place - see the design doc's "File-watch reload"
 // decision.
 constexpr auto RELOAD_POLL_INTERVAL = std::chrono::seconds(5);
+// How often the watcher checks whether today's snapshot is due (Backups::RunDaily).
+constexpr auto BACKUP_CHECK_INTERVAL = std::chrono::hours(1);
+
+std::string UtcToday() {
+	const std::time_t now = std::time(nullptr);
+	std::tm tm{};
+	gmtime_r(&now, &tm);
+	char buf[16];
+	std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
+	return buf;
+}
 
 // The image has no curl/wget - Docker's HEALTHCHECK runs the daemon itself to ask the running one.
 int HealthCheckMode(const char* port) {
@@ -462,9 +505,25 @@ int main(int argc, char** argv) {
 	FavoritesStore favorites("db");
 	LogInfo("MAIN") << "Found " << favorites.Queries().size() << " favorite queries and " << favorites.Reports().size() << " favorite reports";
 
+	std::unique_ptr<Backups> backups;
+	if (!args.backup_dir.empty() && db.IsWritable()) {
+		std::error_code ec;
+		if (std::filesystem::is_directory(args.backup_dir, ec)) {
+			backups = std::make_unique<Backups>(db, args.db_path, args.backup_dir);
+			LogInfo("DAEMON") << "Daily snapshots into " << args.backup_dir;
+		} else {
+			LogWarn("DAEMON") << "No folder " << args.backup_dir << " - no snapshots will be taken";
+		}
+	}
+
 	std::atomic<bool> stop_watcher{false};
 	std::thread watcher([&] {
+		auto next_backup = std::chrono::steady_clock::now();
 		while (!stop_watcher.load()) {
+			if (backups && std::chrono::steady_clock::now() >= next_backup) {
+				backups->RunDaily(UtcToday());
+				next_backup = std::chrono::steady_clock::now() + BACKUP_CHECK_INTERVAL;
+			}
 			std::this_thread::sleep_for(RELOAD_POLL_INTERVAL);
 			if (stop_watcher.load()) {
 				break;

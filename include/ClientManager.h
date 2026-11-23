@@ -16,7 +16,8 @@ public:
 
 	// create new client if not found
 	Id GetClientId(const String& name);
-	void AddAccountNumber(const Id id, const String& acc_number);
+	// True if the client didn't have this account number yet.
+	bool AddAccountNumber(const Id id, const String& acc_number);
 
 	virtual StringTable GetInfos() const override;
 

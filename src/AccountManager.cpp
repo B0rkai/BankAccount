@@ -121,7 +121,9 @@ String AccountManager::GetName(const QueryTopic topic, const Id id) const {
 
 Id AccountManager::CreateClientId(const String& client_name, const String& acc_num) {
 	Id id = m_client_man.Create(client_name);
-	m_client_man.AddAccountNumber(id, acc_num);
+	if (m_client_man.AddAccountNumber(id, acc_num)) {
+		m_journal.AppendClientAccountNumber(id, acc_num);
+	}
 	return id;
 }
 
@@ -819,7 +821,9 @@ void AccountManager::ProcessOneTransaction(Account* acc, const RawTransactionDat
 
 	// Client
 	Id client = ProcessOneTopic(data, QueryTopic::CLIENT, data.client, resolve_if, true);
-	m_client_man.AddAccountNumber(client, data.client_account_number);
+	if (m_client_man.AddAccountNumber(client, data.client_account_number)) {
+		m_journal.AppendClientAccountNumber(client, data.client_account_number);
+	}
 	String client_name = m_client_man.GetName(client);
 
 	// Category
@@ -1061,6 +1065,7 @@ void AccountManager::UpdateExchangeRates(const std::function<void(const std::str
 	if (pruned) {
 		m_logger.LogInfo() << "Exchange rates: pruned " << pruned << " cached rate(s) for dates none of our transactions fall on";
 		Modified();
+		m_journal.AppendExchangeRates();
 	}
 	if (!HasMissingExchangeRates()) {
 		m_logger.LogInfo() << "Exchange rates: nothing missing, skipping MNB download";
@@ -1071,6 +1076,7 @@ void AccountManager::UpdateExchangeRates(const std::function<void(const std::str
 	if (fetcher.Fetch(m_exchange_rates, report_phase, &wanted_dates, cancel_token)) {
 		m_logger.LogInfo() << "Exchange rates: MNB archive downloaded and applied";
 		Modified();
+		m_journal.AppendExchangeRates();
 	}
 }
 

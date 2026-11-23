@@ -54,11 +54,13 @@ Id ClientManager::GetClientId(const String& client_name) {
 	return Id(s);
 }
 
-void ClientManager::AddAccountNumber(const Id id, const String& acc_number) {
+bool ClientManager::AddAccountNumber(const Id id, const String& acc_number) {
 	if (acc_number.size() < 16) {
-		return; // don't bother
+		return false; // don't bother
 	}
+	const size_t size_before = m_children[id]->GetAccountNumbers().size();
 	m_children[id]->AddAccountNumber(acc_number);
+	return m_children[id]->GetAccountNumbers().size() != size_before;
 }
 
 StringTable ClientManager::GetInfos() const {

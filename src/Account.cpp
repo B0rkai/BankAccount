@@ -40,6 +40,7 @@ bool Account::PrepareImport(const uint16_t date) {
 			m_transactions.pop_back();
 			++popped;
 		} while (!m_transactions.empty() && GetLastRecord()->GetDate() >= date);
+		m_journal.AppendTruncate(GetId(), m_transactions.size());
 		m_logger.LogInfo() << "PrepareImport: dropped " << popped << " stored transaction(s) on/after " << DateAsString(date).utf8_str()
 			<< " from '" << GetName().utf8_str() << "' to re-import them fresh";
 		return true;
@@ -161,6 +162,9 @@ size_t Account::PruneLastTransactions(size_t count) {
 		StashCategorization(*it);
 	}
 	m_transactions.erase(m_transactions.end() - count, m_transactions.end());
+	if (count) {
+		m_journal.AppendTruncate(GetId(), m_transactions.size());
+	}
 	return count;
 }
 

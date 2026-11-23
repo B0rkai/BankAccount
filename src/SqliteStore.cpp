@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -161,6 +162,94 @@ bool SaveEntities(sqlite3* db, const ManagerType<Child>& manager, const std::str
 	return ok;
 }
 
+bool SaveClientAccounts(sqlite3* db, const ClientManager& clients, std::string& error) {
+	Stmt number(db, "INSERT INTO client_accounts(client_id, seq, account_number) VALUES(?, ?, ?)");
+	bool ok = true;
+	clients.ForEachStored([&](const Client& client) {
+		int64_t seq = 0;
+		for (const String acc : client.GetAccountNumbers()) {
+			if (ok && !number.BindInt(1, (Id::Type)client.GetId()).BindInt(2, seq++).BindText(3, acc).Run()) {
+				error = "client_accounts: " + number.Error();
+				ok = false;
+			}
+		}
+	});
+	return ok;
+}
+
+// Inserts or updates every account row. Upsert rather than delete-and-insert: transactions
+// reference accounts.
+bool SaveAccounts(sqlite3* db, const PtrVector<Account>& accounts, std::string& error) {
+	Stmt account(db, "INSERT INTO accounts(id, number, name, bank, currency, open) VALUES(?, ?, ?, ?, ?, ?)"
+		" ON CONFLICT(id) DO UPDATE SET number = excluded.number, name = excluded.name, bank = excluded.bank,"
+		" currency = excluded.currency, open = excluded.open");
+	Id::Type acc_id = 0; // account IDs are positions, like every other ID here
+	for (const Account* acc : accounts) {
+		if (!account.BindInt(1, acc_id++).BindText(2, acc->GetAccNumber()).BindText(3, acc->GetName())
+				.BindText(4, acc->GetGroupName()).BindText(5, std::string(acc->GetCurrency()->GetShortName()))
+				.BindInt(6, acc->IsOpen() ? 1 : 0).Run()) {
+			error = "accounts: " + account.Error();
+			return false;
+		}
+	}
+	return true;
+}
+
+// Inserts transactions [from, Size()) of account `acc_id` (their seq is their position).
+bool SaveTransactions(sqlite3* db, Id::Type acc_id, const Account& acc, size_t from, const std::string& now, const std::string& created_by, std::string& error) {
+	Stmt tr(db, "INSERT INTO transactions(account_id, seq, date, amount, type_id, client_id, category_id, memo, description, created_at, created_by)"
+		" VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+	for (size_t i = from; i < acc.Size(); ++i) {
+		const Transaction& t = acc.GetTransactionAt(i);
+		if (!tr.BindInt(1, acc_id).BindInt(2, (int64_t)i).BindInt(3, t.GetDate()).BindInt(4, t.GetAmount())
+				.BindInt(5, (Id::Type)t.GetTypeId()).BindInt(6, (Id::Type)t.GetClientId()).BindInt(7, (Id::Type)t.GetCategoryId())
+				.BindTextOrNull(8, t.GetMemo()).BindTextOrNull(9, t.GetDescription()).BindText(10, now).BindText(11, created_by).Run()) {
+			error = "transactions: " + tr.Error();
+			return false;
+		}
+	}
+	return true;
+}
+
+bool SaveExchangeRates(sqlite3* db, const ExchangeRateHistory& rates, std::string& error) {
+	Stmt rate(db, "INSERT INTO exchange_rates(currency, date, rate) VALUES(?, ?, ?)");
+	bool ok = true;
+	rates.ForEachStoredRate([&](CurrencyType type, uint16_t date, double stored_rate) {
+		if (ok && !rate.BindText(1, std::string(MakeCurrency(type)->GetShortName())).BindInt(2, date).BindReal(3, stored_rate).Run()) {
+			error = "exchange_rates: " + rate.Error();
+			ok = false;
+		}
+	});
+	return ok;
+}
+
+// Runs one statement without parameters, e.g. a DELETE.
+bool Run(sqlite3* db, const std::string& sql, std::string& error) {
+	Stmt stmt(db, sql);
+	if (!stmt.Run()) {
+		error = sql + ": " + stmt.Error();
+		return false;
+	}
+	return true;
+}
+
+const char* IdColumn(QueryTopic topic) {
+	switch (topic) {
+	case QueryTopic::TYPE: return "type_id";
+	case QueryTopic::CLIENT: return "client_id";
+	case QueryTopic::CATEGORY: return "category_id";
+	default: return nullptr;
+	}
+}
+
+Id::Type IdOf(const Transaction& t, QueryTopic topic) {
+	switch (topic) {
+	case QueryTopic::TYPE: return t.GetTypeId();
+	case QueryTopic::CLIENT: return t.GetClientId();
+	default: return t.GetCategoryId();
+	}
+}
+
 using KeywordMap = std::map<std::pair<std::string, int64_t>, std::vector<std::pair<String, bool>>>;
 
 // Loads one manager's children (in ID order - IDs are positions) plus their keywords.
@@ -213,7 +302,7 @@ SqliteStore::SqliteStore(const std::string& path, Mode mode)
 		Fail("'" + path + "' already exists");
 		return;
 	}
-	if (mode == Mode::ReadOnly && !exists) {
+	if (mode != Mode::Create && !exists) {
 		Fail("'" + path + "' does not exist");
 		return;
 	}
@@ -225,6 +314,10 @@ SqliteStore::SqliteStore(const std::string& path, Mode mode)
 		return;
 	}
 	Exec("PRAGMA foreign_keys = ON");
+	if (mode == Mode::ReadWrite) {
+		sqlite3_busy_timeout(m_db, 5000);
+		Exec("PRAGMA synchronous = FULL");
+	}
 }
 
 SqliteStore::~SqliteStore() {
@@ -279,58 +372,17 @@ bool SqliteStore::SaveAll(const AccountManager& manager, const std::string& sour
 			|| !SaveEntities(m_db, manager.m_category_system, "categories", TOPIC_CATEGORY, error)) {
 			return false;
 		}
-		{
-			Stmt number(m_db, "INSERT INTO client_accounts(client_id, seq, account_number) VALUES(?, ?, ?)");
-			bool ok = true;
-			manager.m_client_man.ForEachStored([&](const Client& client) {
-				int64_t seq = 0;
-				for (const String acc : client.GetAccountNumbers()) {
-					if (ok && !number.BindInt(1, (Id::Type)client.GetId()).BindInt(2, seq++).BindText(3, acc).Run()) {
-						error = "client_accounts: " + number.Error();
-						ok = false;
-					}
-				}
-			});
-			if (!ok) {
+		if (!SaveClientAccounts(m_db, manager.m_client_man, error) || !SaveAccounts(m_db, manager.m_accounts, error)) {
+			return false;
+		}
+		Id::Type acc_id = 0;
+		for (const Account* acc : manager.m_accounts) {
+			if (!SaveTransactions(m_db, acc_id++, *acc, 0, now, "migrated", error)) {
 				return false;
 			}
 		}
-		{
-			Stmt account(m_db, "INSERT INTO accounts(id, number, name, bank, currency, open) VALUES(?, ?, ?, ?, ?, ?)");
-			Stmt tr(m_db, "INSERT INTO transactions(account_id, seq, date, amount, type_id, client_id, category_id, memo, description, created_at, created_by)"
-				" VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'migrated')");
-			Id::Type acc_id = 0; // account IDs are positions, like every other ID here
-			for (const Account* acc : manager.m_accounts) {
-				if (!account.BindInt(1, acc_id).BindText(2, acc->GetAccNumber()).BindText(3, acc->GetName())
-						.BindText(4, acc->GetGroupName()).BindText(5, std::string(acc->GetCurrency()->GetShortName()))
-						.BindInt(6, acc->IsOpen() ? 1 : 0).Run()) {
-					error = "accounts: " + account.Error();
-					return false;
-				}
-				for (size_t i = 0; i < acc->Size(); ++i) {
-					const Transaction& t = acc->GetTransactionAt(i);
-					if (!tr.BindInt(1, acc_id).BindInt(2, (int64_t)i).BindInt(3, t.GetDate()).BindInt(4, t.GetAmount())
-							.BindInt(5, (Id::Type)t.GetTypeId()).BindInt(6, (Id::Type)t.GetClientId()).BindInt(7, (Id::Type)t.GetCategoryId())
-							.BindTextOrNull(8, t.GetMemo()).BindTextOrNull(9, t.GetDescription()).BindText(10, now).Run()) {
-						error = "transactions: " + tr.Error();
-						return false;
-					}
-				}
-				++acc_id;
-			}
-		}
-		{
-			Stmt rate(m_db, "INSERT INTO exchange_rates(currency, date, rate) VALUES(?, ?, ?)");
-			bool ok = true;
-			manager.m_exchange_rates.ForEachStoredRate([&](CurrencyType type, uint16_t date, double stored_rate) {
-				if (ok && !rate.BindText(1, std::string(MakeCurrency(type)->GetShortName())).BindInt(2, date).BindReal(3, stored_rate).Run()) {
-					error = "exchange_rates: " + rate.Error();
-					ok = false;
-				}
-			});
-			if (!ok) {
-				return false;
-			}
+		if (!SaveExchangeRates(m_db, manager.m_exchange_rates, error)) {
+			return false;
 		}
 		return true;
 	};
@@ -464,4 +516,213 @@ bool SqliteStore::LoadAll(AccountManager& manager) {
 	}
 	m_logger.LogInfo() << "Loaded " << manager.CountAccounts() << " accounts, " << manager.CountTransactions() << " transactions from '" << m_path << "'";
 	return true;
+}
+
+bool SqliteStore::Begin() {
+	if (!m_db) {
+		return false;
+	}
+	if (m_mode != Mode::ReadWrite) {
+		return Fail("Begin() needs a store opened with Mode::ReadWrite");
+	}
+	return Exec("BEGIN IMMEDIATE");
+}
+
+bool SqliteStore::Commit() {
+	return m_db && Exec("COMMIT");
+}
+
+void SqliteStore::Rollback() {
+	if (m_db && !sqlite3_get_autocommit(m_db)) {
+		Exec("ROLLBACK");
+	}
+}
+
+bool SqliteStore::WriteChanges(const AccountManager& manager, const SqliteJournal& journal, const std::string& actor) {
+	if (!m_db) {
+		return false;
+	}
+	if (m_mode != Mode::ReadWrite || sqlite3_get_autocommit(m_db)) {
+		return Fail("WriteChanges() needs Begin() first");
+	}
+	if (actor.empty()) {
+		return Fail("WriteChanges() needs to know who made the change");
+	}
+	const std::string now = NowIso();
+	std::string error;
+	auto write = [&]() -> bool {
+		for (QueryTopic topic : journal.m_entities) {
+			const char* name = (topic == QueryTopic::TYPE) ? TOPIC_TYPE : (topic == QueryTopic::CLIENT) ? TOPIC_CLIENT : TOPIC_CATEGORY;
+			if (!Run(m_db, std::string("DELETE FROM keywords WHERE topic = '") + name + "'", error)) {
+				return false;
+			}
+			bool ok = false;
+			if (topic == QueryTopic::TYPE) {
+				ok = Run(m_db, "DELETE FROM transaction_types", error)
+					&& SaveEntities(m_db, manager.m_ttype_man, "transaction_types", TOPIC_TYPE, error);
+			} else if (topic == QueryTopic::CLIENT) {
+				ok = Run(m_db, "DELETE FROM client_accounts", error) && Run(m_db, "DELETE FROM clients", error)
+					&& SaveEntities(m_db, manager.m_client_man, "clients", TOPIC_CLIENT, error)
+					&& SaveClientAccounts(m_db, manager.m_client_man, error);
+			} else {
+				ok = Run(m_db, "DELETE FROM categories", error)
+					&& SaveEntities(m_db, manager.m_category_system, "categories", TOPIC_CATEGORY, error);
+			}
+			if (!ok) {
+				return false;
+			}
+		}
+		if ((journal.m_accounts || manager.m_accounts.size() > journal.m_stored_sizes.size())
+				&& !SaveAccounts(m_db, manager.m_accounts, error)) {
+			return false;
+		}
+
+		Stmt remove(m_db, "DELETE FROM transactions WHERE account_id = ? AND seq >= ?");
+		Stmt edit(m_db, "UPDATE transactions SET date = ?, amount = ?, type_id = ?, client_id = ?, category_id = ?, memo = ?, description = ?,"
+			" updated_at = ?, updated_by = ? WHERE account_id = ? AND seq = ?");
+		for (Id::Type acc_id = 0; acc_id < manager.m_accounts.size(); ++acc_id) {
+			const Account& acc = *manager.m_accounts[acc_id];
+			const size_t stored = (acc_id < journal.m_stored_sizes.size()) ? journal.m_stored_sizes[acc_id] : 0;
+			// Rows [0, keep) stay in place; rows from `keep` on are deleted and written afresh.
+			size_t keep = std::min(stored, acc.Size());
+			auto truncated = journal.m_truncated_to.find(acc_id);
+			if (truncated != journal.m_truncated_to.end()) {
+				keep = std::min(keep, truncated->second);
+			}
+			if (keep < stored && !remove.BindInt(1, acc_id).BindInt(2, (int64_t)keep).Run()) {
+				error = "transactions: " + remove.Error();
+				return false;
+			}
+			auto edited = journal.m_edited.find(acc_id);
+			if (edited != journal.m_edited.end()) {
+				for (size_t pos : edited->second) {
+					if (pos >= keep) {
+						continue; // rewritten below anyway
+					}
+					const Transaction& t = acc.GetTransactionAt(pos);
+					if (!edit.BindInt(1, t.GetDate()).BindInt(2, t.GetAmount()).BindInt(3, (Id::Type)t.GetTypeId())
+							.BindInt(4, (Id::Type)t.GetClientId()).BindInt(5, (Id::Type)t.GetCategoryId())
+							.BindTextOrNull(6, t.GetMemo()).BindTextOrNull(7, t.GetDescription())
+							.BindText(8, now).BindText(9, actor).BindInt(10, acc_id).BindInt(11, (int64_t)pos).Run()) {
+						error = "transactions: " + edit.Error();
+						return false;
+					}
+				}
+			}
+			// A merge shifts the IDs after the merged ones in every transaction - copy that column
+			// over, touching only the rows that differ.
+			for (QueryTopic topic : journal.m_id_columns) {
+				const std::string column = IdColumn(topic);
+				Stmt renumber(m_db, "UPDATE transactions SET " + column + " = ? WHERE account_id = ? AND seq = ? AND " + column + " <> ?");
+				for (size_t pos = 0; pos < keep; ++pos) {
+					const Id::Type id = IdOf(acc.GetTransactionAt(pos), topic);
+					if (!renumber.BindInt(1, id).BindInt(2, acc_id).BindInt(3, (int64_t)pos).BindInt(4, id).Run()) {
+						error = "transactions: " + renumber.Error();
+						return false;
+					}
+				}
+			}
+			if (!SaveTransactions(m_db, acc_id, acc, keep, now, actor, error)) {
+				return false;
+			}
+		}
+
+		if (journal.m_exchange_rates
+				&& (!Run(m_db, "DELETE FROM exchange_rates", error) || !SaveExchangeRates(m_db, manager.m_exchange_rates, error))) {
+			return false;
+		}
+		Stmt meta(m_db, "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+		if (!meta.BindText(1, std::string("changed_at")).BindText(2, now).Run()
+				|| !meta.BindText(1, std::string("changed_by")).BindText(2, actor).Run()) {
+			error = "meta: " + meta.Error();
+			return false;
+		}
+		return true;
+	};
+	if (!write()) {
+		return Fail(error.empty() ? m_error : error);
+	}
+	return true;
+}
+
+bool SqliteStore::Snapshot(const std::string& to_path) {
+	if (!m_db) {
+		return false;
+	}
+	if (std::filesystem::exists(to_path)) {
+		return Fail("'" + to_path + "' already exists");
+	}
+	Stmt vacuum(m_db, "VACUUM INTO ?");
+	if (!vacuum.BindText(1, to_path).Run()) {
+		return Fail("snapshot to '" + to_path + "' failed: " + vacuum.Error());
+	}
+	m_logger.LogInfo() << "Snapshot of '" << m_path << "' written to '" << to_path << "'";
+	return true;
+}
+
+void SqliteJournal::Reset(const AccountManager& manager) {
+	m_stored_sizes.clear();
+	for (const Account* acc : manager.m_accounts) {
+		m_stored_sizes.push_back(acc->Size());
+	}
+	m_truncated_to.clear();
+	m_edited.clear();
+	m_appended.clear();
+	m_entities.clear();
+	m_id_columns.clear();
+	m_accounts = false;
+	m_exchange_rates = false;
+}
+
+bool SqliteJournal::Empty() const {
+	return m_truncated_to.empty() && m_edited.empty() && m_appended.empty() && m_entities.empty() && m_id_columns.empty()
+		&& !m_accounts && !m_exchange_rates;
+}
+
+void SqliteJournal::AppendTransactionEdit(Id account_id, size_t position, QueryTopic, const Transaction&) {
+	m_edited[account_id].insert(position);
+}
+
+void SqliteJournal::AppendTransaction(Id account_id, uint16_t, Id, int32_t, Id, Id, const String&, const String&) {
+	m_appended.insert(account_id);
+}
+
+void SqliteJournal::AppendCreate(QueryTopic topic, Id, const String&) {
+	m_entities.insert(topic);
+}
+
+void SqliteJournal::AppendAccount(Id, const String&, const String&, const String&, const String&) {
+	m_accounts = true;
+}
+
+void SqliteJournal::AppendKeyword(QueryTopic topic, Id, const String&, bool) {
+	m_entities.insert(topic);
+}
+
+void SqliteJournal::AppendRename(QueryTopic topic, Id, const String&) {
+	if (topic == QueryTopic::ACCOUNT) {
+		m_accounts = true;
+	} else {
+		m_entities.insert(topic);
+	}
+}
+
+void SqliteJournal::AppendMerge(QueryTopic topic, const IdSet&, Id) {
+	m_entities.insert(topic);
+	m_id_columns.insert(topic);
+}
+
+void SqliteJournal::AppendTruncate(Id account_id, size_t new_size) {
+	auto [it, inserted] = m_truncated_to.emplace(account_id, new_size);
+	if (!inserted) {
+		it->second = std::min(it->second, new_size);
+	}
+}
+
+void SqliteJournal::AppendClientAccountNumber(Id, const String&) {
+	m_entities.insert(QueryTopic::CLIENT);
+}
+
+void SqliteJournal::AppendExchangeRates() {
+	m_exchange_rates = true;
 }

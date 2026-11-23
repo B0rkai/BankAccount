@@ -18,10 +18,11 @@ CC       := gcc
 # -ffunction-sections/-fdata-sections let a linker's --gc-sections drop dead code per-function
 # rather than per-object-file - needed because AccountManager.cpp is one translation unit
 # covering both the read path this library exposes and mutation-only methods (Import,
-# ApplyEdit, ...) that still reference the excluded WQuery/DataImporter machinery. Nothing in
+# ...) that still reference the excluded DataImporter machinery (WQuery.cpp is built since the
+# daemon started writing - docs/persely-sqlite-import-design.md, story 2). Nothing in
 # the read path calls into those methods, so as long as a consumer never references them either,
 # --gc-sections at the consumer's link step drops them (and their otherwise-undefined-reference
-# callees) instead of requiring WQuery.cpp/DataImporter.cpp to be linked in.
+# callees) instead of requiring DataImporter.cpp to be linked in.
 CXXFLAGS := -std=c++17 -O2 -Wall -Iinclude -Ithird_party/ziplib -Ithird_party/sqlite -ffunction-sections -fdata-sections $(shell wx-config --cxxflags)
 # extlibs/zlib's vendored .c sources use old K&R-style function definitions (e.g. adler32.c's
 # `adler32(adler, buf, len)` with the parameter types on separate lines) - valid C, but a syntax
@@ -40,7 +41,7 @@ LIB      := $(BUILD)/libbankaccountcore_ro.a
 # Kept in the same order as AccountManager's own dependency chain (CommonTypes/ManagerType up
 # through AccountManager itself) rather than alphabetically, so the list doubles as a rough map
 # of what depends on what - see docs/linux-query-daemon-design.md for the full breakdown of why
-# each of these is read-only-safe and what's deliberately excluded (WQuery, DataImporter,
+# each of these is read-only-safe and what's deliberately excluded (DataImporter,
 # ExcelExport, NetworkLock, MnbExchangeRateClient, everything under cMain/dialogs).
 SRCS := \
 	src/CommonTypes.cpp \
@@ -57,6 +58,7 @@ SRCS := \
 	src/Transaction.cpp \
 	src/ExchangeRateHistory.cpp \
 	src/Query.cpp \
+	src/WQuery.cpp \
 	src/FavoriteQuery.cpp \
 	src/FavoriteReport.cpp \
 	src/RelativePeriod.cpp \
@@ -104,7 +106,7 @@ OBJS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SRCS)) \
 # (include/httplib.h, same low-friction single-header precedent as nlohmann/json) - header-only
 # but still needs -pthread for its worker thread pool at link time.
 # WebAuth.cpp needs OpenSSL's libcrypto (PBKDF2 password hashing, CSPRNG session tokens).
-DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
+DAEMON_LIB_SRCS := daemon/DaemonDb.cpp daemon/Backups.cpp daemon/QueryApi.cpp daemon/FavoritesApi.cpp daemon/BrowseApi.cpp daemon/FavoritesStore.cpp daemon/WebAuth.cpp
 DAEMON_SRCS := daemon/main.cpp $(DAEMON_LIB_SRCS)
 DAEMON_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_SRCS))
 DAEMON_LIB_OBJS := $(patsubst daemon/%.cpp,$(BUILD)/daemon/%.o,$(DAEMON_LIB_SRCS))
@@ -121,7 +123,8 @@ MIGRATE_LIBS := $(shell wx-config --libs base) -pthread -lstdc++fs
 
 # daemon/tests/: GoogleTest suite for the daemon-only code (WebAuth etc.). Kept apart from tests/,
 # which the Windows BankAccountTests.vcxproj builds and which has no OpenSSL to link against.
-DAEMON_TEST_SRCS := daemon/tests/WebAuthTests.cpp daemon/tests/FavoritesStoreTests.cpp daemon/tests/SqliteStoreTests.cpp
+DAEMON_TEST_SRCS := daemon/tests/WebAuthTests.cpp daemon/tests/FavoritesStoreTests.cpp daemon/tests/SqliteStoreTests.cpp \
+	daemon/tests/DaemonDbTests.cpp daemon/tests/BackupsTests.cpp
 DAEMON_TEST_OBJS := $(patsubst daemon/tests/%.cpp,$(BUILD)/daemon/tests/%.o,$(DAEMON_TEST_SRCS))
 DAEMON_TEST_BIN  := $(BUILD)/bin/daemon_tests
 

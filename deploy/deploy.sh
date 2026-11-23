@@ -14,6 +14,9 @@ export BANKACCOUNT_DB_DIR=${BANKACCOUNT_DB_DIR:-${XDG_DATA_HOME:-$HOME/.local/sh
 export BANKACCOUNT_DB_FILE=${BANKACCOUNT_DB_FILE:-bankaccount.db}
 # The desktop app's database it is converted from (deploy/migrate-db.sh).
 export BANKACCOUNT_BAF=${BANKACCOUNT_BAF:-/mnt/storage/dev/BankAccount/db/BData.baf}
+# Daily snapshots of that database (docs/linux-daemon-deployment.md, "Backups") - on the storage
+# disk, so a failing system drive doesn't take them along. Private to this user.
+export BANKACCOUNT_BACKUP_DIR=${BANKACCOUNT_BACKUP_DIR:-/mnt/storage/dev/BankAccount/backup}
 # The web app's own favorite_queries.json/favorite_reports.json - on the system disk, not shared
 # with the desktop app; the one folder the service writes to.
 export BANKACCOUNT_FAVORITES_DIR=${BANKACCOUNT_FAVORITES_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bankaccount}
@@ -33,6 +36,7 @@ if [ ! -f "$BANKACCOUNT_ENV_FILE" ]; then
 fi
 
 mkdir -p "$BANKACCOUNT_FAVORITES_DIR" "$BANKACCOUNT_DB_DIR"
+[ -d "$BANKACCOUNT_BACKUP_DIR" ] || mkdir -m 700 -p "$BANKACCOUNT_BACKUP_DIR"
 [ -d "$LIVE_DIR/.git" ] || git clone -q "$REPO" "$LIVE_DIR"
 git -C "$LIVE_DIR" fetch -q --prune origin
 commit=$(git -C "$LIVE_DIR" rev-parse --verify "$ref^{commit}")

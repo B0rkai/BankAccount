@@ -361,7 +361,8 @@ stories 2-5.
    `bankaccount-migrate`, round-trip test. Daemon can run read-only from SQLite (flag).
    No user-visible change. **Done** — see "Story 1 as built" below.
 2. **Daemon writes** — `SqliteJournal`, transaction row ids, `IJournal` gaps, write mutex +
-   rollback/reload, tailnet-only write auth, `updated_by`, backups.
+   rollback/reload, tailnet-only write auth, `updated_by`, backups. **Done** — see "Story 2 as
+   built" below.
 3. **Edits in Persely** — transaction edit sheet, keywords, rename, merge, re-run keywords,
    exchange-rate download on the server (MNB port).
 4. **Import engine** — `ImportSession` + tables + API, unit tests with scripted answers
@@ -404,6 +405,53 @@ there'd be no way to keep the db current).
   daemon on the SQLite file answered `/names`, `/query` and `/transactions` byte-identically to
   one on the `.baf`. Conversion takes well under a second.
 - Tests: `daemon/tests/SqliteStoreTests.cpp` (11 tests).
+
+## Story 2 as built (2026-11-23)
+
+The daemon can write; nothing in the web app calls it yet (that's story 3), so the live service
+behaves as before and `deploy/migrate-db.sh` keeps working.
+
+- **`SqliteJournal`** ([SqliteStore.h](../include/SqliteStore.h)) is the AccountManager's
+  `IJournal` in the daemon. It records only *where* something changed;
+  `SqliteStore::WriteChanges()` then copies the current values out of memory. That keeps the
+  in-memory model the only place where merge renumbering, keyword tiers etc. are worked out:
+  - client/category/type changes rewrite that table (with its keywords and client account
+    numbers) whole - a few thousand rows;
+  - a merge also copies that ID column of every transaction (touching only rows that differ):
+    15 ms on the live database;
+  - an edited transaction is updated in place, with `updated_at`/`updated_by`;
+  - an account truncated (re-import overlap, prune) has its rows from the new end deleted, and
+    rows past the stored count are inserted with `created_by` = the login;
+  - accounts and exchange rates are rewritten when touched;
+  - every write sets meta `changed_at`/`changed_by`, which stops `bankaccount-migrate --replace`.
+- **`IJournal` gaps** filled, as no-op defaults so the desktop's `RealJournal` is unaffected:
+  `AppendTruncate` (both pop paths in `Account`), `AppendClientAccountNumber`
+  (`ClientManager::AddAccountNumber` now says whether it added one), `AppendExchangeRates`.
+- **No transaction row IDs**, unlike section 1 planned: transactions are only ever appended or
+  cut off at the end, so `(account_id, seq)` = the in-memory position is already stable between
+  writes. Revisit if transactions ever get inserted or deleted in the middle.
+- **No WAL**, unlike section 1 planned: `migrate-db.sh` refreshes the file by renaming a new one
+  over it, and a leftover `-wal` would be applied to the wrong database. The default rollback
+  journal leaves nothing behind after a transaction; `synchronous=FULL`.
+- **`DaemonDb::Write(actor, fn)`**: under the one mutex, opens the file read-write, `BEGIN
+  IMMEDIATE`, checks the file is still the one it loaded (device, inode, mtime, size - otherwise
+  reloads and refuses: "changed elsewhere, try again"), runs `fn`, writes, commits. If `fn` gives
+  up after changing memory, throws, or SQL fails: rollback and reload from the file. If even that
+  reload fails, the daemon unloads the database (503) rather than serve memory that differs from
+  disk. Reloading on change now compares that same stamp, so the daemon never reloads after its
+  own writes.
+- **Who may write**: `WithWritableDb()` in `daemon/main.cpp` - the tailnet login, never a LAN
+  session (403). `/api/v1/me` has `can_edit`.
+- **Backups** ([daemon/Backups.h](../daemon/Backups.h)): as section 6, in
+  `/mnt/storage/dev/BankAccount/backup/` (`--backup-dir`, mounted at `/backup`), daily only when
+  the database changed since the newest snapshot, and the newest daily is never deleted.
+  `Backups::TakeNow(reason)` is there for story 3's merge and story 4's import save.
+- `AddNewTransaction` and `CreateClientId` are public now; `WQuery.cpp` is in the Linux build.
+- Tests: `SqliteWriteTests` (each kind of change round-trips byte-identical, plus several writes
+  in a row), `DaemonDbTests` (commit, give-up, throw, no author, file replaced on disk,
+  read-only layouts, snapshot), `SnapshotsToDelete`. Also checked by hand on a copy of the live
+  database: prune 20 + add 1, an edit, a client merge, a new client with keyword - each reloaded
+  byte-identical.
 
 ## Tests
 

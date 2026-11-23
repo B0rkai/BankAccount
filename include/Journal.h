@@ -121,6 +121,17 @@ public:
 	virtual void AppendKeyword(QueryTopic topic, Id id, const String& keyword, bool definitive) = 0;
 	virtual void AppendRename(QueryTopic topic, Id id, const String& new_name) = 0;
 	virtual void AppendMerge(QueryTopic topic, const IdSet& from, Id to) = 0;
+
+	// Changes db\journal.txt never recorded (its recovery replays imports from scratch instead),
+	// but which Persely's SQLite write-through (SqliteJournal, include/SqliteStore.h) has to see.
+	// No-ops unless overridden, so RealJournal/NullJournal/test mocks need nothing new.
+	// The last transactions of an account were removed, leaving `new_size` (an import's
+	// re-import overlap, PruneLastTransactions).
+	virtual void AppendTruncate(Id /*account_id*/, size_t /*new_size*/) {}
+	// A client got a new account number (import, CreateClientId).
+	virtual void AppendClientAccountNumber(Id /*client_id*/, const String& /*account_number*/) {}
+	// The stored exchange rates changed (UpdateExchangeRates).
+	virtual void AppendExchangeRates() {}
 };
 
 // Production default: a thin pass-through to the real static Journal - Journal.cpp's actual

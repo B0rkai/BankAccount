@@ -12,9 +12,10 @@ lives at `https://persely.tail61796b.ts.net`; the repo, image, container and env
 | What | Where |
 |---|---|
 | Live checkout (built from GitHub, detached at the deployed commit) | `~/bankaccount-live` |
-| Database: Persely's own SQLite file, on the system drive (mounted read-only for now) | `~/.local/share/bankaccount/data/bankaccount.db` |
+| Database: Persely's own SQLite file, on the system drive | `~/.local/share/bankaccount/data/bankaccount.db` |
+| Daily snapshots of it (folder private to the server user) | `/mnt/storage/dev/BankAccount/backup/` |
 | The desktop app's database it is converted from (read only by `deploy/migrate-db.sh`) | `/mnt/storage/dev/BankAccount/db/BData.baf` |
-| The web app's favorites and settings (its own, not the desktop app's; the only things it writes) | `~/.local/share/bankaccount/favorite_{queries,reports}.json`, `web_settings.json` |
+| The web app's favorites and settings (its own, not the desktop app's) | `~/.local/share/bankaccount/favorite_{queries,reports}.json`, `web_settings.json` |
 | Secrets (allowed logins, LAN password hash; `chmod 600`) | `~/.config/bankaccount/web.env` |
 | Tailnet port (behind `tailscale serve`, identity headers trusted) | `127.0.0.1:8300` → `https://persely.tail61796b.ts.net` |
 | LAN port (plain HTTP, shared password) | `http://192.168.1.100:8400` |
@@ -61,9 +62,30 @@ deploy/migrate-db.sh
 ```
 
 The running service notices the new file within a few seconds; no redeploy needed. It refuses to
-replace a database that Persely has changed itself (none can yet - that starts with the design
-doc's story 2), so it can never throw away work done in Persely. The `.baf` itself is never
-written to.
+replace a database that Persely has changed itself, so it can never throw away work done in
+Persely. The daemon can write since story 2, but nothing in the web app makes changes yet (story
+3), so until then the refresh keeps working. The `.baf` itself is never written to.
+
+Who may change data: only the Tailscale logins on the allowlist; a LAN password session stays
+read-only. Each change is one SQL transaction, recorded with the login that made it
+(`created_by`/`updated_by` on the transaction, `changed_by` in `meta`).
+
+## Backups
+
+The daemon copies the database into `/mnt/storage/dev/BankAccount/backup/` (a different disk
+from the database): `bankaccount-YYYY-MM-DD.db` once a day, only when the database changed since
+the newest one, kept for 30 days and after that one per month; and
+`bankaccount-YYYY-MM-DD-HHMMSS-<reason>.db` right before an import is saved or a merge, kept for
+14 days. Each is a complete SQLite database, taken while the service runs.
+
+To restore one:
+
+```bash
+docker compose -f ~/bankaccount-live/deploy/docker-compose.yml stop
+cp /mnt/storage/dev/BankAccount/backup/bankaccount-2026-11-23.db ~/.local/share/bankaccount/data/bankaccount.db
+rm -f ~/.local/share/bankaccount/data/bankaccount.db-journal
+docker compose -f ~/bankaccount-live/deploy/docker-compose.yml start
+```
 
 ## First-time setup (done once)
 

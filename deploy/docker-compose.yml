@@ -17,10 +17,12 @@ services:
     environment:
       BANKACCOUNT_DB: "/data/${BANKACCOUNT_DB_FILE:?}"
     volumes:
-      # Persely's SQLite database (deploy/migrate-db.sh). Read-only until Persely writes to it
-      # (docs/persely-sqlite-import-design.md, story 2). A whole folder, so a refreshed file
-      # renamed over the old one shows up inside.
-      - "${BANKACCOUNT_DB_DIR:?}:/data:ro"
+      # Persely's SQLite database (deploy/migrate-db.sh), written as changes are made in Persely.
+      # A whole folder: SQLite keeps a short-lived -journal file next to the database during a
+      # write, and a refreshed file renamed over the old one shows up inside.
+      - "${BANKACCOUNT_DB_DIR:?}:/data"
+      # Daily snapshots of it (Backups.h).
+      - "${BANKACCOUNT_BACKUP_DIR:?}:/backup"
       # The web app's own favorites (favorite_queries.json/favorite_reports.json) and settings
       # (web_settings.json), writable. A whole
       # folder rather than the two files: saving renames a new file over the old one, which a

@@ -1,12 +1,17 @@
 #include <gtest/gtest.h>
 #include <filesystem>
+#include <functional>
+#include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unistd.h>
 #include "sqlite3.h"
 #include "AccountManager.h"
 #include "Journal.h"
+#include "MnbExchangeRateClient.h"
 #include "SqliteStore.h"
+#include "WQuery.h"
 
 namespace {
 
@@ -221,4 +226,163 @@ TEST_F(SqliteStoreTests, AFreshConversionHoldsOnlyMigratedDataUntilSomethingChan
 	EXPECT_FALSE(only_migrated());
 	Sql("DELETE FROM meta WHERE key = 'changed_at'; UPDATE transactions SET created_by = 'import' WHERE seq = 0 AND account_id = 0");
 	EXPECT_FALSE(only_migrated());
+}
+
+// Write-through: an AccountManager reporting to a SqliteJournal, changed in memory, written with
+// WriteChanges() - loading the file afresh must give back exactly what memory holds.
+namespace {
+
+class SqliteWriteTests : public SqliteStoreTests {
+protected:
+	SqliteJournal tracker;
+	std::unique_ptr<Manager> live;
+
+	void SetUp() override {
+		SqliteStoreTests::SetUp();
+		Manager original(journal);
+		SaveSample(original);
+		live = std::make_unique<Manager>(tracker);
+		SqliteStore store(path.string(), SqliteStore::Mode::ReadOnly);
+		ASSERT_TRUE(store.LoadAll(*live)) << store.LastError();
+		tracker.Reset(*live);
+	}
+
+	void WriteThrough(const std::string& actor = "viki@example.org") {
+		ASSERT_FALSE(tracker.Empty()) << "the change under test reported nothing";
+		SqliteStore store(path.string(), SqliteStore::Mode::ReadWrite);
+		ASSERT_TRUE(store.Begin()) << store.LastError();
+		ASSERT_TRUE(store.WriteChanges(*live, tracker, actor)) << store.LastError();
+		ASSERT_TRUE(store.Commit()) << store.LastError();
+		tracker.Reset(*live);
+	}
+	std::string Reloaded() {
+		Manager fresh(journal);
+		SqliteStore store(path.string(), SqliteStore::Mode::ReadOnly);
+		EXPECT_TRUE(store.LoadAll(fresh)) << store.LastError();
+		return fresh.Dump();
+	}
+};
+
+class FakeRateFetcher : public IExchangeRateFetcher {
+public:
+	bool Fetch(ExchangeRateHistory& history, const std::function<void(const std::string&)>&, const std::set<uint16_t>*, FetchCancelToken*) override {
+		history.SetStoredRate(EUR, 45000, 3.9);
+		return true;
+	}
+};
+
+} // namespace
+
+TEST_F(SqliteWriteTests, ANewTransactionIsWrittenWithWhoAddedIt) {
+	live->AddNewTransaction(Id(0), 46002, Id(0), -999, Id(1), "VASARLAS, TESCO");
+	WriteThrough();
+	EXPECT_EQ(Reloaded(), live->Dump());
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM transactions WHERE created_by = 'viki@example.org' AND account_id = 0 AND seq = 3"), 1);
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM transactions WHERE created_by = 'migrated'"), 4);
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM meta WHERE key = 'changed_by' AND value = 'viki@example.org'"), 1);
+	SqliteStore store(path.string(), SqliteStore::Mode::ReadOnly);
+	bool only_migrated = true;
+	ASSERT_TRUE(store.HoldsOnlyMigratedData(only_migrated));
+	EXPECT_FALSE(only_migrated);
+}
+
+TEST_F(SqliteWriteTests, TruncatingThenAppendingRewritesTheTail) {
+	// What a re-import does: drop the overlap, add the rows again (here one fewer).
+	ASSERT_EQ(live->PruneLastTransactions(Id(0), 2), 2u);
+	live->AddNewTransaction(Id(0), 46001, Id(1), 250000, Id(0), "");
+	WriteThrough();
+	EXPECT_EQ(Reloaded(), live->Dump());
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM transactions WHERE account_id = 0"), 2);
+	EXPECT_EQ(Count("SELECT MAX(seq) FROM transactions WHERE account_id = 0"), 1);
+}
+
+TEST_F(SqliteWriteTests, AnEditUpdatesThatRowAndRecordsWho) {
+	SetCategoryQuery category;
+	category.SetCategoryId(Id(2));
+	live->ApplyEdit({ Id(0), 1 }, category);
+	SetDescriptionQuery description;
+	description.SetDescription("Bonus, December");
+	live->ApplyEdit({ Id(0), 0 }, description);
+	WriteThrough("akos@example.org");
+	EXPECT_EQ(Reloaded(), live->Dump());
+	EXPECT_EQ(Count("SELECT category_id FROM transactions WHERE account_id = 0 AND seq = 1"), 2);
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM transactions WHERE updated_by = 'akos@example.org'"), 2);
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM transactions WHERE updated_by IS NULL"), 2);
+}
+
+TEST_F(SqliteWriteTests, ClientCategoryTypeAndAccountChangesAreWritten) {
+	const Id shop = live->CreateId(QueryTopic::CLIENT, "Corner shop");
+	live->AddKeyword(QueryTopic::CLIENT, shop, "CORNER", true);
+	live->AddKeyword(QueryTopic::CATEGORY, Id(1), "ALDI", false);
+	live->RenameId(QueryTopic::TYPE, Id(1), "Incoming transfer");
+	live->RenameId(QueryTopic::ACCOUNT, Id(1), "Euro savings");
+	live->CreateClientId("Landlord", "11773016-99999999-00000000");
+	WriteThrough();
+	EXPECT_EQ(Reloaded(), live->Dump());
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM client_accounts WHERE account_number = '11773016-99999999-00000000'"), 1);
+	EXPECT_EQ(Count("SELECT definitive FROM keywords WHERE topic = 'CATEGORY' AND keyword = 'ALDI'"), 0);
+}
+
+TEST_F(SqliteWriteTests, AMergeRenumbersEntitiesAndEveryTransaction) {
+	// Client 1 into client 2: client 1 disappears, so 2 becomes 1 everywhere.
+	const int64_t of_both = Count("SELECT COUNT(*) FROM transactions WHERE client_id IN (1, 2)");
+	ASSERT_GT(of_both, 0);
+	WQuery query;
+	query.SetReturnList(false);
+	ClientMergeQuery merge;
+	merge.AddTargetId(Id(2));
+	merge.AddOtherId(Id(1));
+	query.AddWElement(&merge);
+	live->MakeQuery(query);
+	WriteThrough();
+	EXPECT_EQ(Reloaded(), live->Dump());
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM clients"), 1);
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM transactions WHERE client_id = 2"), 0);
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM transactions WHERE client_id = 1"), of_both);
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM client_accounts WHERE client_id = 1"), 1);
+}
+
+TEST_F(SqliteWriteTests, ExchangeRateUpdatesAreWritten) {
+	FakeRateFetcher fetcher;
+	live->UpdateExchangeRates(nullptr, nullptr, fetcher);
+	WriteThrough();
+	EXPECT_EQ(Reloaded(), live->Dump());
+	EXPECT_EQ(Count("SELECT COUNT(*) FROM exchange_rates WHERE currency = 'EUR' AND date = 45000"), 1);
+}
+
+TEST_F(SqliteWriteTests, SeveralWritesInARowStayInStep) {
+	live->AddNewTransaction(Id(0), 46002, Id(0), -100, Id(2), "");
+	WriteThrough();
+	live->PruneLastTransactions(Id(0), 1);
+	WriteThrough();
+	SetCategoryQuery category;
+	category.SetCategoryId(Id(3));
+	live->ApplyEdit({ Id(1), 0 }, category);
+	live->AddNewTransaction(Id(1), 45001, Id(1), 500, Id(0), "");
+	WriteThrough();
+	EXPECT_EQ(Reloaded(), live->Dump());
+}
+
+TEST_F(SqliteWriteTests, WriteChangesNeedsBeginAndAnActor) {
+	live->AddNewTransaction(Id(0), 46002, Id(0), -999, Id(1), "");
+	SqliteStore store(path.string(), SqliteStore::Mode::ReadWrite);
+	EXPECT_FALSE(store.WriteChanges(*live, tracker, "viki@example.org"));
+	ASSERT_TRUE(store.Begin());
+	EXPECT_FALSE(store.WriteChanges(*live, tracker, ""));
+	store.Rollback();
+}
+
+TEST_F(SqliteWriteTests, SnapshotCopiesTheWholeDatabase) {
+	const std::filesystem::path copy = path.string() + ".snapshot";
+	std::filesystem::remove(copy);
+	{
+		SqliteStore store(path.string(), SqliteStore::Mode::ReadOnly);
+		ASSERT_TRUE(store.Snapshot(copy.string())) << store.LastError();
+		EXPECT_FALSE(store.Snapshot(copy.string())); // never overwrites
+	}
+	Manager from_copy(journal);
+	SqliteStore store(copy.string(), SqliteStore::Mode::ReadOnly);
+	ASSERT_TRUE(store.LoadAll(from_copy)) << store.LastError();
+	EXPECT_EQ(from_copy.Dump(), live->Dump());
+	std::filesystem::remove(copy);
 }

@@ -81,7 +81,9 @@ and a LAN port (shared password, session cookie) — `daemon/WebAuth.h`. Ships a
 `include/SqliteStore.h` (vendored `third_party/sqlite/`) and `bankaccount-migrate` (`.baf` →
 SQLite, verified byte for byte) exist, and the live service reads that SQLite copy
 (`~/.local/share/bankaccount/data/bankaccount.db`), refreshed from the `.baf` with
-`deploy/migrate-db.sh` until Persely can import. Design and story-by-story history:
+`deploy/migrate-db.sh` until Persely can import. The daemon can write it (`DaemonDb::Write`, one
+SQL transaction per change via the `SqliteJournal` change tracker, tailnet logins only) and takes
+daily snapshots (`daemon/Backups.h`); no web feature writes yet. Design and story-by-story history:
 [docs/linux-query-daemon-design.md](docs/linux-query-daemon-design.md); deployment/secrets:
 [docs/linux-daemon-deployment.md](docs/linux-daemon-deployment.md).
 
