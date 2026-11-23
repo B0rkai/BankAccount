@@ -58,9 +58,10 @@ public:
 	// Every date a transaction falls on: the exchange rates worth keeping.
 	std::set<uint16_t> ExchangeRateDates() const;
 	bool HasMissingExchangeRates() const;
-	// Takes the rates `fetched` holds for ExchangeRateDates() (and drops cached ones for other
-	// dates), like UpdateExchangeRates() does after a download - for a caller that downloads
-	// without holding this manager's lock. True if anything changed.
+	// Takes from `fetched` (downloaded for ExchangeRateHistory::WithLookback(ExchangeRateDates()))
+	// the rate each transaction date is converted with - Friday's for a Saturday - and drops the
+	// rest, like UpdateExchangeRates() does after a download, for a caller that downloads without
+	// holding this manager's lock. True if anything changed.
 	bool ApplyFetchedExchangeRates(const ExchangeRateHistory& fetched);
 private:
 	ManagerType<TransactionType> m_ttype_man;

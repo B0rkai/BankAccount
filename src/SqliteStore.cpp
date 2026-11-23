@@ -631,6 +631,13 @@ bool SqliteStore::WriteChanges(const AccountManager& manager, const SqliteJourna
 				&& (!Run(m_db, "DELETE FROM exchange_rates", error) || !SaveExchangeRates(m_db, manager.m_exchange_rates, error))) {
 			return false;
 		}
+		// Exchange rates alone are MNB's data, not a change of the user's: refreshing from the .baf
+		// (bankaccount-migrate --replace) may still throw them away - the daemon fetches them again.
+		SqliteJournal others = journal;
+		others.m_exchange_rates = false;
+		if (others.Empty() && journal.m_stored_sizes.size() == manager.m_accounts.size()) {
+			return true;
+		}
 		Stmt meta(m_db, "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
 		if (!meta.BindText(1, std::string("changed_at")).BindText(2, now).Run()
 				|| !meta.BindText(1, std::string("changed_by")).BindText(2, actor).Run()) {

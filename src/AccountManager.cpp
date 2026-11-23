@@ -1062,9 +1062,9 @@ void AccountManager::UpdateExchangeRates(const std::function<void(const std::str
 			wanted_dates.insert(acc->GetTransactionAt(i).GetDate());
 		}
 	}
-	size_t pruned = m_exchange_rates.PruneToDates(wanted_dates);
+	size_t pruned = m_exchange_rates.KeepRatesFor(wanted_dates);
 	if (pruned) {
-		m_logger.LogInfo() << "Exchange rates: pruned " << pruned << " cached rate(s) for dates none of our transactions fall on";
+		m_logger.LogInfo() << "Exchange rates: pruned " << pruned << " cached rate(s) no transaction is converted with";
 		Modified();
 		m_journal.AppendExchangeRates();
 	}
@@ -1073,8 +1073,11 @@ void AccountManager::UpdateExchangeRates(const std::function<void(const std::str
 		return;
 	}
 	// MNB's whole published archive covers every currency at once, so one download is enough
-	// regardless of which account(s) triggered it.
-	if (fetcher.Fetch(m_exchange_rates, report_phase, &wanted_dates, cancel_token)) {
+	// regardless of which account(s) triggered it. The days before each date come too, so a
+	// weekend or holiday keeps the last rate published before it (Friday's for a Saturday).
+	const std::set<uint16_t> fetch_dates = ExchangeRateHistory::WithLookback(wanted_dates);
+	if (fetcher.Fetch(m_exchange_rates, report_phase, &fetch_dates, cancel_token)) {
+		m_exchange_rates.KeepRatesFor(wanted_dates);
 		m_logger.LogInfo() << "Exchange rates: MNB archive downloaded and applied";
 		Modified();
 		m_journal.AppendExchangeRates();
@@ -1163,21 +1166,18 @@ std::set<uint16_t> AccountManager::ExchangeRateDates() const {
 
 bool AccountManager::ApplyFetchedExchangeRates(const ExchangeRateHistory& fetched) {
 	const std::set<uint16_t> wanted = ExchangeRateDates();
-	bool changed = m_exchange_rates.PruneToDates(wanted) > 0;
-	size_t added = 0;
+	ExchangeRateHistory updated = m_exchange_rates;
 	fetched.ForEachStoredRate([&](CurrencyType type, uint16_t date, double stored_rate) {
-		// Tolerant: the same published rate parsed from the old text format can differ in the last bit.
-		if (wanted.count(date) && (!m_exchange_rates.HasRate(type, date)
-				|| std::abs(m_exchange_rates.GetRate(type, date) - stored_rate) > 1e-9 * std::abs(stored_rate))) {
-			m_exchange_rates.SetStoredRate(type, date, stored_rate);
-			++added;
-		}
+		updated.SetStoredRate(type, date, stored_rate);
 	});
-	changed |= added > 0;
-	if (changed) {
-		m_logger.LogInfo() << "Exchange rates: " << added << " rate(s) added or updated";
-		Modified();
-		m_journal.AppendExchangeRates();
+	updated.KeepRatesFor(wanted); // e.g. Friday's rate for a Saturday
+	// Tolerant: the same published rate parsed from the old text format can differ in the last bit.
+	if (updated.SameRatesAs(m_exchange_rates)) {
+		return false;
 	}
-	return changed;
+	m_exchange_rates = updated;
+	m_logger.LogInfo() << "Exchange rates: updated from MNB";
+	Modified();
+	m_journal.AppendExchangeRates();
+	return true;
 }

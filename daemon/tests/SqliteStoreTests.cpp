@@ -348,6 +348,11 @@ TEST_F(SqliteWriteTests, ExchangeRateUpdatesAreWritten) {
 	WriteThrough();
 	EXPECT_EQ(Reloaded(), live->Dump());
 	EXPECT_EQ(Count("SELECT COUNT(*) FROM exchange_rates WHERE currency = 'EUR' AND date = 45000"), 1);
+	// MNB's rates aren't a change of the user's: refreshing from the .baf stays allowed.
+	SqliteStore store(path.string(), SqliteStore::Mode::ReadOnly);
+	bool only_migrated = false;
+	ASSERT_TRUE(store.HoldsOnlyMigratedData(only_migrated));
+	EXPECT_TRUE(only_migrated);
 }
 
 TEST_F(SqliteWriteTests, SeveralWritesInARowStayInStep) {

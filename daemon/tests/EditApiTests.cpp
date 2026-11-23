@@ -5,6 +5,7 @@
 #include "AccountManager.h"
 #include "EditApi.h"
 #include "Journal.h"
+#include "ExchangeRateHistory.h"
 #include "Transaction.h"
 
 namespace {
@@ -141,4 +142,18 @@ TEST_F(EditApiTests, RecategorizeProposesWhatTheKeywordsSayAndAppliesOnlyStillVa
 	EXPECT_EQ(CategoryAt(1), Id(1));
 	EXPECT_EQ(CategoryAt(2), Id(0));
 	EXPECT_TRUE(Body(PreviewRecategorize(mgr))["proposals"].empty());
+}
+
+TEST_F(EditApiTests, AWeekendIsConvertedWithFridaysRate) {
+	// 46000 is Tuesday 2025-12-09; a payment on Saturday 46004 too.
+	mgr.AddNewTransaction(Id(0), 46004, Id(0), -500, Id(1), "");
+	ExchangeRateHistory fetched; // what MNB published: Mon-Fri, nothing on the weekend
+	for (uint16_t day = 45999; day <= 46003; ++day) {
+		fetched.SetStoredRate(EUR, day, 4.00 + (day - 45999) / 100.0);
+	}
+	EXPECT_TRUE(mgr.ApplyFetchedExchangeRates(fetched));
+	const StringTable table = mgr.GetExchangeRateTable(EUR);
+	ASSERT_EQ(table.size(), 5u); // header + Tue, Wed, Thu (transactions) + Fri (for Saturday)
+	EXPECT_EQ(table.back()[1], "404.0000"); // Friday's
+	EXPECT_FALSE(mgr.ApplyFetchedExchangeRates(fetched)); // nothing new the second time
 }

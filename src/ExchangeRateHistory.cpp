@@ -1,3 +1,5 @@
+#include <cmath>
+#include <iterator>
 #include "ExchangeRateHistory.h"
 
 bool ExchangeRateHistory::HasRate(CurrencyType type, uint16_t date) const {
@@ -52,12 +54,19 @@ std::vector<uint16_t> ExchangeRateHistory::FindMissingDates(CurrencyType type, u
 	return missing;
 }
 
-size_t ExchangeRateHistory::PruneToDates(const std::set<uint16_t>& dates) {
+size_t ExchangeRateHistory::KeepRatesFor(const std::set<uint16_t>& dates) {
 	size_t removed = 0;
 	for (int c = 0; c < Currency_Count; ++c) {
 		std::map<uint16_t, double>& rates = m_rates[c];
+		std::set<uint16_t> used; // the cached date GetRate() picks for each of 'dates'
+		for (uint16_t date : dates) {
+			auto it = rates.upper_bound(date);
+			if (it != rates.begin()) {
+				used.insert(std::prev(it)->first);
+			}
+		}
 		for (auto it = rates.begin(); it != rates.end(); ) {
-			if (dates.count(it->first)) {
+			if (used.count(it->first)) {
 				++it;
 			} else {
 				it = rates.erase(it);
@@ -66,6 +75,32 @@ size_t ExchangeRateHistory::PruneToDates(const std::set<uint16_t>& dates) {
 		}
 	}
 	return removed;
+}
+
+std::set<uint16_t> ExchangeRateHistory::WithLookback(const std::set<uint16_t>& dates) {
+	std::set<uint16_t> out;
+	for (uint16_t date : dates) {
+		for (int back = 0; back <= LOOKBACK_DAYS && back <= date; ++back) {
+			out.insert((uint16_t)(date - back));
+		}
+	}
+	return out;
+}
+
+bool ExchangeRateHistory::SameRatesAs(const ExchangeRateHistory& other) const {
+	for (int c = 0; c < Currency_Count; ++c) {
+		const std::map<uint16_t, double>& a = m_rates[c];
+		const std::map<uint16_t, double>& b = other.m_rates[c];
+		if (a.size() != b.size()) {
+			return false;
+		}
+		for (auto ia = a.begin(), ib = b.begin(); ia != a.end(); ++ia, ++ib) {
+			if (ia->first != ib->first || std::abs(ia->second - ib->second) > 1e-9 * std::abs(ib->second)) {
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 StringTable ExchangeRateHistory::GetTable(CurrencyType type) const {

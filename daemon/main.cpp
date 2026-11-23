@@ -275,8 +275,10 @@ bool UpdateExchangeRates(DaemonDb& db, std::atomic<bool>& running, const std::st
 		message = "All exchange rates are already there";
 		return false;
 	}
+	// The days before each date too: a weekend is converted with Friday's rate.
+	const std::set<uint16_t> fetch_dates = ExchangeRateHistory::WithLookback(dates);
 	ExchangeRateHistory fetched;
-	if (!MnbExchangeRateFetcher::Instance().Fetch(fetched, nullptr, &dates, nullptr)) {
+	if (!MnbExchangeRateFetcher::Instance().Fetch(fetched, nullptr, &fetch_dates, nullptr)) {
 		message = "Downloading the rates from MNB failed";
 		return false;
 	}
@@ -647,8 +649,10 @@ int main(int argc, char** argv) {
 				backups->RunDaily(UtcToday());
 				next_backup = std::chrono::steady_clock::now() + BACKUP_CHECK_INTERVAL;
 			}
-			// Exchange rates, once a day, once editing is on (it's a write like any other).
-			if (edits_enabled && UtcToday() != rates_checked_on) {
+			// Exchange rates once a day, and again after the database was refreshed from the .baf.
+			// Even with editing off: they are MNB's data, not a change of the user's, so they
+			// don't stop the refresh (SqliteStore::WriteChanges leaves changed_at alone).
+			if (db.IsWritable() && UtcToday() != rates_checked_on) {
 				rates_checked_on = UtcToday();
 				std::string message;
 				UpdateExchangeRates(db, rates_running, "exchange-rates", message);
@@ -660,6 +664,7 @@ int main(int argc, char** argv) {
 			}
 			if (db.ReloadIfChanged()) {
 				LogInfo("DAEMON") << "Reloaded database after change on disk";
+				rates_checked_on.clear();
 			}
 		}
 	});

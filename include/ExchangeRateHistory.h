@@ -19,11 +19,18 @@ public:
 	double GetRate(CurrencyType type, uint16_t date) const;
 	void AddRate(CurrencyType type, uint16_t date, double natural_rate);
 	std::vector<uint16_t> FindMissingDates(CurrencyType type, uint16_t min_date, uint16_t max_date) const;
-	// Discards every cached rate whose date isn't in 'dates'. Safe with respect to GetRate()'s
-	// nearest-earlier-date fallback: a date that's never looked up exactly (i.e. not in 'dates')
-	// never changes what an actual lookup returns, whether or not its rate was cached, so this
-	// only removes genuinely unused entries. Returns how many rates were discarded, for logging.
-	size_t PruneToDates(const std::set<uint16_t>& dates);
+	// Keeps, per currency, only the rate each of 'dates' is looked up with - its own, or for a day
+	// MNB publishes nothing on (a weekend, a bank holiday) the latest one before it, i.e. Friday's
+	// for a Saturday - and discards the rest. Returns how many rates were discarded, for logging.
+	// What GetRate() returns for any of 'dates' is unchanged by this.
+	size_t KeepRatesFor(const std::set<uint16_t>& dates);
+	// 'dates' plus the LOOKBACK_DAYS days before each: what to take from MNB's archive so that
+	// KeepRatesFor() finds the right earlier rate for a weekend or holiday (Friday's for a
+	// Saturday, and the last one before a long Christmas break).
+	static constexpr int LOOKBACK_DAYS = 7;
+	static std::set<uint16_t> WithLookback(const std::set<uint16_t>& dates);
+	// True if both hold the same rates (stored scale, ignoring last-bit differences).
+	bool SameRatesAs(const ExchangeRateHistory& other) const;
 	StringTable GetTable(CurrencyType type) const;
 	// Storage access (SqliteStore): rates in their stored (pre-divided by 100) scale, so a
 	// save/load round trip is exact - unlike AddRate()/GetTable(), which use the natural scale.

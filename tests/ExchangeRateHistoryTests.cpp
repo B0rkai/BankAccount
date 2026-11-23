@@ -81,18 +81,31 @@ TEST(ExchangeRateHistoryTest, FindMissingDatesEmptyWhenMinAfterMax) {
     EXPECT_TRUE(hist.FindMissingDates(EUR, Date(7, 1, 2024), Date(1, 1, 2024)).empty());
 }
 
-TEST(ExchangeRateHistoryTest, PruneToDatesRemovesUnlistedRatesAndReportsCount) {
+TEST(ExchangeRateHistoryTest, KeepRatesForRemovesUnusedRatesAndReportsCount) {
     ExchangeRateHistory hist;
     uint16_t keep = Date(2, 1, 2024);
     uint16_t drop = Date(3, 1, 2024);
     hist.AddRate(EUR, keep, 400.0);
     hist.AddRate(EUR, drop, 410.0);
 
-    size_t removed = hist.PruneToDates({keep});
+    size_t removed = hist.KeepRatesFor({keep});
 
     EXPECT_EQ(removed, 1u);
     EXPECT_TRUE(hist.HasRate(EUR, keep));
     EXPECT_FALSE(hist.HasRate(EUR, drop));
+}
+
+TEST(ExchangeRateHistoryTest, KeepRatesForKeepsFridaysRateForAWeekendDate) {
+    ExchangeRateHistory hist;
+    uint16_t thursday = Date(4, 1, 2024), friday = Date(5, 1, 2024), saturday = Date(6, 1, 2024), monday = Date(8, 1, 2024);
+    hist.AddRate(EUR, thursday, 380.0);
+    hist.AddRate(EUR, friday, 390.0);
+    hist.AddRate(EUR, monday, 400.0);
+
+    EXPECT_EQ(hist.KeepRatesFor({saturday, monday}), 1u);
+    EXPECT_FALSE(hist.HasRate(EUR, thursday));
+    EXPECT_TRUE(hist.HasRate(EUR, friday));
+    EXPECT_DOUBLE_EQ(hist.GetRate(EUR, saturday), 3.90);
 }
 
 TEST(ExchangeRateHistoryTest, GetTableHasDateAndRateColumnsWithRateRightAligned) {

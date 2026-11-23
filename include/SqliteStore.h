@@ -120,7 +120,8 @@ public:
 	// Writes everything `journal` recorded, with the values `manager` holds now. New and edited
 	// transactions get `actor` (the Tailscale login) as created_by/updated_by; the meta keys
 	// changed_at/changed_by are set, which stops bankaccount-migrate --replace from ever
-	// overwriting this file again.
+	// overwriting this file again - unless only exchange rates changed (MNB's data, fetched
+	// again after a refresh).
 	bool WriteChanges(const AccountManager& manager, const SqliteJournal& journal, const std::string& actor);
 
 	// A consistent copy of the whole database at `to_path` (VACUUM INTO), safe while others read

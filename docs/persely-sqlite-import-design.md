@@ -472,8 +472,15 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
   `ca-certificates`). The download (3.6 MB, ~18 s) runs without the database lock;
   `AccountManager::ApplyFetchedExchangeRates()` then takes what the transactions need in one write,
   comparing with a tolerance (rates converted from the old text format differ in the last bit -
-  3,208 of 11,656 would otherwise "change"). Daily, with editing on. Some transactions fall on days
-  MNB publishes nothing for, so the daily check downloads every day and usually changes nothing.
+  3,208 of 11,656 would otherwise "change"). Daily, and after each refresh from the `.baf`.
+- **Weekend rates (fixed 2026-11-23)**: only rates on transaction dates used to be kept, so a
+  Saturday payment with no Friday transaction was converted with an older rate (35 weekend dates,
+  up to 6 days old). Now `ExchangeRateHistory::KeepRatesFor()` keeps the rate each date is looked
+  up with - Friday's for a weekend, the last one before a holiday - and downloads take the 7 days
+  before each date too (`WithLookback()`). The 11 weekend dates left without a Friday rate are all
+  holidays MNB published nothing on (Good Fridays, 23 Oct 2020, 1 Nov 2024, Christmas 2024). A
+  write of exchange rates alone doesn't set `changed_at` - they're MNB's data, refetched after a
+  refresh - so the daily check runs with editing off too.
 - **Core additions**: `MappedType/ManagerType/AccountManager::RemoveKeyword` (+ `IJournal::
   AppendRemoveKeyword`), `ManagerType::At`, and on `AccountManager`: `IsValidId`,
   `FindTransaction`, `GetKeywordsOf`, `GetClientAccountNumbers`, `SuggestCategory`,

@@ -79,8 +79,10 @@ echo BANKACCOUNT_EDITS=on >> ~/.config/bankaccount/web.env
 docker compose -f ~/bankaccount-live/deploy/docker-compose.yml up -d
 ```
 
-With it on, the daemon also checks MNB's exchange rates once a day (a 3.6 MB download) and keeps
-the ones the transactions need.
+Exchange rates are kept up to date either way: once a day, and after each refresh, the daemon
+downloads MNB's archive (3.6 MB) and keeps the rate each transaction date is converted with - its
+own, or for a weekend or bank holiday the last one published before it (Friday's for a Saturday).
+That doesn't count as a change made in Persely, so the refresh keeps working.
 
 Who may change data: only the Tailscale logins on the allowlist; a LAN password session stays
 read-only. Each change is one SQL transaction, recorded with the login that made it
