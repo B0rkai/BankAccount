@@ -7,7 +7,7 @@ import { ResultSection, type ChartPreference } from '../components/ResultSection
 import { SaveFavorite, useFavoritesVersion } from '../components/SaveFavorite'
 import { AccountLink, CategoryTag, ClientName, periodOf } from '../components/TopicLinks'
 import { displayName, useNameIndex } from '../drill'
-import { formatCount, formatDate, formatMoney, RELATIVE_PERIODS } from '../format'
+import { formatCount, formatDate, formatMoney, periodLabel, RELATIVE_PERIODS } from '../format'
 import { useAsync } from '../hooks'
 import { describeRange } from '../periods'
 import { linkHandler, navigate } from '../router'
@@ -70,6 +70,8 @@ export function Transactions({ params }: { params: URLSearchParams }) {
       ? { kinds: favorite.chart.kind ? [favorite.chart.kind] : undefined, side: favorite.chart.side }
       : undefined
   const [saving, setSaving] = useState(false)
+  // On a phone the filters fold into one line (wider screens ignore it).
+  const [collapsed, setCollapsed] = useState(true)
   const search = params.get('search') ?? ''
   const direction = (params.get('dir') ?? '') as Direction
   const [text, setText] = useState(search)
@@ -116,6 +118,21 @@ export function Transactions({ params }: { params: URLSearchParams }) {
   const total = page.data?.total ?? 0
   const filtered = JSON.stringify(def) !== JSON.stringify(DEFAULT) || search || direction || favName
   const rows = page.data?.transactions ?? []
+  const filterSummary = [
+    search && `"${search}"`,
+    direction === 'in' ? 'Income' : direction === 'out' ? 'Spending' : '',
+    def.relative_period ? periodLabel(def.relative_period) : def.date_from ? `${def.date_from} – ${def.date_to}` : 'All time',
+    def.accounts?.length ? (def.accounts.length === 1 ? def.accounts[0] : `${def.accounts.length} accounts`) : '',
+    def.clients?.length ? `${def.exclude_clients ? 'not ' : ''}${def.clients.length === 1 ? displayName(def.clients[0], names, 'client') : `${def.clients.length} clients`}` : '',
+    def.categories?.length
+      ? `${def.exclude_categories ? 'not ' : ''}${def.categories.length === 1 ? displayName(def.categories[0], names, 'category') : `${def.categories.length} categories`}`
+      : '',
+    def.types?.length ? `${def.types.length} type${def.types.length === 1 ? '' : 's'}` : '',
+    def.aggregate_by?.length ? `by ${GROUP_BY.find((g) => g.key === def.aggregate_by![0])?.label.toLowerCase()}` : '',
+    def.period ? OVER_TIME.find((g) => g.key === def.period)?.label.toLowerCase() : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   // A column every matching transaction has the same value in - the filter pins it to one, or
   // all of them fit on this page and agree - moves above the list, said once. A single
@@ -203,10 +220,35 @@ export function Transactions({ params }: { params: URLSearchParams }) {
         />
       )}
 
-      <section className="card filters">
+      <section className={`card filters${collapsed ? ' collapsed' : ''}`}>
+        <button type="button" className="filters-toggle" aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>
+          <span className="strong">{collapsed ? 'Filters' : 'Hide filters'}</span>
+          {collapsed && <span className="muted small clip">{filterSummary}</span>}
+          <span aria-hidden className="filters-chevron">{collapsed ? '▾' : '▴'}</span>
+        </button>
         <label className="field search-field">
           Search
-          <input type="search" value={text} placeholder="Client, note, category or an amount like 12 990" onChange={(e) => setText(e.target.value)} />
+          <input
+            type="search"
+            enterKeyHint="search"
+            value={text}
+            placeholder="Client, note, category or an amount like 12 990"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              // Searched: straight away, and on a phone the filters fold up to show the results.
+              e.currentTarget.blur()
+              if (text.trim() !== search) go(def, text.trim())
+              setCollapsed(true)
+              const card = e.currentTarget.closest('.filters')
+              // ...and the folded line comes back into view, below the sticky top bar.
+              requestAnimationFrame(() => {
+                const bar = document.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 0
+                const top = card?.getBoundingClientRect().top
+                if (top !== undefined && top < bar) window.scrollBy({ top: top - bar - 12 })
+              })
+            }}
+          />
         </label>
         <div className="field">
           <span>Show</span>
@@ -279,29 +321,29 @@ export function Transactions({ params }: { params: URLSearchParams }) {
           placeholder="Any category"
           display={(v) => displayName(v, names, 'category')}
         />
-        <label className="field">
-          Group by
-          <select value={def.aggregate_by?.[0] ?? ''} onChange={(e) => set({ aggregate_by: e.target.value ? [e.target.value] : undefined })}>
-            {GROUP_BY.map((g) => (
-              <option key={g.key} value={g.key}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Over time
-          <select value={def.period ?? ''} onChange={(e) => set({ period: e.target.value || undefined })}>
-            {OVER_TIME.map((g) => (
-              <option key={g.key} value={g.key}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <details className="more-filters" open={!!(def.types?.length || def.exclude_clients || def.exclude_categories || (def.accounts?.length ?? 0) > 1) || undefined}>
-          <summary className="small">More filters</summary>
+        <details className="more-filters" open={!!(def.aggregate_by?.length || def.period || def.types?.length || def.exclude_clients || def.exclude_categories || (def.accounts?.length ?? 0) > 1) || undefined}>
+          <summary className="small">Group, more filters</summary>
           <div className="more-filters-body">
+            <label className="field">
+              Group by
+              <select value={def.aggregate_by?.[0] ?? ''} onChange={(e) => set({ aggregate_by: e.target.value ? [e.target.value] : undefined })}>
+                {GROUP_BY.map((g) => (
+                  <option key={g.key} value={g.key}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Over time
+              <select value={def.period ?? ''} onChange={(e) => set({ period: e.target.value || undefined })}>
+                {OVER_TIME.map((g) => (
+                  <option key={g.key} value={g.key}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <fieldset className="field">
               <legend>Accounts</legend>
               <div className="check-list">
