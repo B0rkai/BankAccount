@@ -104,6 +104,27 @@ TEST(WebAuthTests, RememberedSessionLastsThirtyDays) {
 	EXPECT_FALSE(store.IsValid(token));
 }
 
+TEST(WebAuthTests, AnUnlockedSessionEditsForTwelveHoursAtMost) {
+	FakeClock clock;
+	SessionStore store(clock.Fn());
+	const std::string token = store.Create(true);
+	EXPECT_EQ(store.ElevatedLogin(token), "");
+	store.Elevate(token, "me@x");
+	EXPECT_EQ(store.ElevatedLogin(token), "me@x");
+	store.Unelevate(token); // Lock
+	EXPECT_EQ(store.ElevatedLogin(token), "");
+	EXPECT_TRUE(store.IsValid(token));
+	store.Elevate(token, "me@x");
+	clock.now += SessionStore::ELEVATED_LIFETIME + std::chrono::minutes(1);
+	EXPECT_EQ(store.ElevatedLogin(token), ""); // read-only again, still signed in
+	EXPECT_TRUE(store.IsValid(token));
+	store.Elevate("unknown", "me@x");
+	EXPECT_EQ(store.ElevatedLogin("unknown"), "");
+	store.Elevate(token, "me@x");
+	store.Revoke(token);
+	EXPECT_EQ(store.ElevatedLogin(token), "");
+}
+
 TEST(WebAuthTests, RevokedOrUnknownSessionIsInvalid) {
 	SessionStore store;
 	std::string token = store.Create(true);

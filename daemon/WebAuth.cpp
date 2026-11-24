@@ -222,7 +222,12 @@ std::string SessionStore::Create(bool remember) {
 	AuthClock::time_point now = m_now();
 	// Drop expired sessions here rather than on a timer - there are only ever a handful.
 	for (auto it = m_expiry.begin(); it != m_expiry.end();) {
-		it = (it->second <= now) ? m_expiry.erase(it) : std::next(it);
+		if (it->second <= now) {
+			m_elevated.erase(it->first);
+			it = m_expiry.erase(it);
+		} else {
+			++it;
+		}
 	}
 	m_expiry[token] = now + (remember ? std::chrono::duration_cast<AuthClock::duration>(REMEMBER_LIFETIME)
 		: std::chrono::duration_cast<AuthClock::duration>(SHORT_LIFETIME));
@@ -248,6 +253,44 @@ bool SessionStore::IsValid(const std::string& token) {
 void SessionStore::Revoke(const std::string& token) {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	m_expiry.erase(token);
+	m_elevated.erase(token);
+}
+
+void SessionStore::Elevate(const std::string& token, const std::string& login) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto it = m_expiry.find(token);
+	if (it == m_expiry.end() || login.empty()) {
+		return;
+	}
+	const AuthClock::time_point until = m_now() + std::chrono::duration_cast<AuthClock::duration>(ELEVATED_LIFETIME);
+	m_elevated[token] = { login, std::min(until, it->second) };
+}
+
+void SessionStore::Unelevate(const std::string& token) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	m_elevated.erase(token);
+}
+
+std::string SessionStore::ElevatedLogin(const std::string& token) {
+	if (!IsValid(token)) {
+		return "";
+	}
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto it = m_elevated.find(token);
+	if (it == m_elevated.end()) {
+		return "";
+	}
+	if (it->second.until <= m_now()) {
+		m_elevated.erase(it);
+		return "";
+	}
+	return it->second.login;
+}
+
+AuthClock::time_point SessionStore::ElevatedUntil(const std::string& token) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto it = m_elevated.find(token);
+	return it == m_elevated.end() ? AuthClock::time_point() : it->second.until;
 }
 
 LoginThrottle::LoginThrottle(std::function<AuthClock::time_point()> now) : m_now(std::move(now)) {}

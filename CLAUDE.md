@@ -48,7 +48,8 @@ core tests build fixture data; daemon tests mostly `StreamIn()` a small text sam
   (reads), `EditApi` (edits), `ImportApi` (imports), `FavoritesStore`/`FavoritesApi`, `WebAuth`
   (Tailscale login header or LAN password), `EnableBankingClient`/`BankApi` (bank connections),
   `AccountSettings`/`AccountApi` (account pages: owner, scheduled fetches), `Users` (admin/user roles -
-  [docs/users-and-roles.md](docs/users-and-roles.md)), `Backups` (daily snapshots), `MigrateMain`
+  [docs/users-and-roles.md](docs/users-and-roles.md)), `Passkeys` (Windows Hello unlocks editing on the
+  HTTPS LAN page), `Backups` (daily snapshots), `MigrateMain`
   (`bankaccount-migrate`, `.baf` -> SQLite).
 - `web/src/` - the web app: `api.ts` (every API call and its types), `router.ts`, `pages/`,
   `components/`, `styles.css`.

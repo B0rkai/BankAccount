@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, onDataChanged, onUnauthorized, setMe, type Me } from './api'
+import { api, ApiError, onDataChanged, onUnauthorized, passkeys, setMe, type Me } from './api'
 import { Icon, type IconName } from './components/Icons'
+import { WindowsHelloBar } from './components/WindowsHello'
 import { formatDate, formatDateTime } from './format'
 import { Account } from './pages/Account'
 import { Category } from './pages/Category'
@@ -87,7 +88,7 @@ export function App() {
             </span>
             <span className="user-chip" title={me.login || 'Signed in on the home network'}>
               <span className="avatar">{(me.name || me.login || '?').charAt(0).toUpperCase()}</span>
-              <span className="user-name">{me.via === 'tailscale' ? me.name || me.login : 'Home network'}</span>
+              <span className="user-name">{me.via === 'tailscale' ? me.name || me.login : me.login || 'Home network'}</span>
             </span>
             {me.via === 'lan' && (
               <button type="button" className="icon-button" onClick={signOut} aria-label="Sign out" title="Sign out">
@@ -97,6 +98,7 @@ export function App() {
           </div>
         </div>
       </header>
+      <WindowsHelloBar me={me} onChanged={load} onLock={() => passkeys.lock().finally(load)} />
 
       <main className="main">
         {route === 'overview' && <Overview me={me} />}

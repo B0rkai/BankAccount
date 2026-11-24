@@ -77,6 +77,13 @@ Persely's users besides the admins in `BANKACCOUNT_ALLOWED_LOGINS` (`daemon/User
 | `name` | string | Shown instead of the login. |
 | `role` | `"admin"` \| `"user"` | A user sees only the accounts they own. |
 
+## `db/passkeys.json`
+
+Windows Hello keys for editing on the HTTPS LAN page (`daemon/Passkeys.h`, mode 600), written by
+the daemon only: `{"passkeys": [{"id", "login", "name", "rp_id", "public_key" (SubjectPublicKeyInfo,
+base64url), "alg" (-7 ES256, -257 RS256), "sign_count", "created_at", "last_used_at"}]}`. Removing an
+entry (or the file) takes that key's power away at once.
+
 ## `db/account_settings.json`
 
 What Persely keeps about each account besides its transactions - the account pages

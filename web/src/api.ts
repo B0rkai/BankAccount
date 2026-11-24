@@ -13,6 +13,9 @@ export interface Me {
   last_record_date?: string
   can_edit?: boolean // editing is on on the server and this sign-in may change data (Tailscale)
   role?: 'admin' | 'user' // a user sees only the accounts they own (daemon/Users.h); the LAN reads as an admin
+  // Only on the HTTPS LAN page (daemon/Passkeys.h): keys - one was set up on this address;
+  // unlocked_until - this session may change data, as `login`, until then.
+  windows_hello?: { keys: boolean; unlocked_until: string | null }
 }
 
 // One query, as POST /api/v1/query takes it - the favorite_queries.json field set minus "name"
@@ -211,6 +214,7 @@ let currentMe: Me | undefined
 export function setMe(me: Me) {
   currentMe = me
 }
+export const getMe = () => currentMe
 export const canEdit = () => !!currentMe?.can_edit
 export const isAdmin = () => currentMe?.role !== 'user'
 // Renaming, merging, maintenance, settings, bank connections and users: an admin who may edit.
@@ -498,6 +502,29 @@ export const accounts = {
   fetch: (id: number) => post<{ results: BankFetchResult[] }>(`/api/v1/accounts/${id}/fetch`, {}).then(dataChanged),
 }
 export const accountLink = (id: number) => `/account?id=${id}`
+
+// ---- Windows Hello on the LAN page (daemon/Passkeys.h) ----
+
+export interface PasskeyInfo {
+  id: string
+  login: string
+  name: string
+  rp_id: string // the address it was set up on
+  created_at: string
+  last_used_at: string
+}
+export const passkeys = {
+  // Over Tailscale: a code to type on the LAN page, for one new key of this login's.
+  setupCode: () => post<{ code: string; expires_at: string }>('/api/v1/passkeys/setup-code', {}),
+  list: () => request<{ passkeys: PasskeyInfo[] }>('/api/v1/passkeys'),
+  remove: (id: string) => del<{ ok: boolean }>(`/api/v1/passkeys?id=${encodeURIComponent(id)}`),
+  // The HTTPS LAN page's side (windowsHello.ts drives the browser in between).
+  registerOptions: (code: string) => post<{ challenge: string; rp_id: string; user: { id: string; name: string }; exclude: string[] }>('/api/v1/passkey/register/options', { code }),
+  register: (body: Record<string, unknown>) => post<{ ok: boolean; login: string }>('/api/v1/passkey/register', body),
+  loginOptions: () => post<{ challenge: string; rp_id: string; allow: string[] }>('/api/v1/passkey/login/options', {}),
+  login: (body: Record<string, unknown>) => post<{ ok: boolean; login: string }>('/api/v1/passkey/login', body),
+  lock: () => post<{ ok: boolean }>('/api/v1/passkey/lock', {}),
+}
 
 // ---- users (daemon/Users.h) ----
 

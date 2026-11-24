@@ -39,10 +39,11 @@ COPY --from=daemon /src/build/linux/bin/daemon /usr/local/bin/bankaccount-daemon
 # .baf -> SQLite converter, run by deploy/migrate-db.sh with this same image.
 COPY --from=daemon /src/build/linux/bin/bankaccount-migrate /usr/local/bin/bankaccount-migrate
 COPY --from=web /web/dist web
-# 8300: the tailnet port, behind `tailscale serve`; 8400: the LAN port (password sign-in).
-EXPOSE 8300 8400
+# 8300: the tailnet port, behind `tailscale serve`; 8400: the LAN port (password sign-in); 8443:
+# the LAN page over HTTPS, where Windows Hello unlocks editing (only with a certificate mounted).
+EXPOSE 8300 8400 8443
 ENV BANKACCOUNT_DB=/data/bankaccount.db
 # Snapshots go here when something is mounted; set it empty to turn them off.
 ENV BANKACCOUNT_BACKUP_DIR=/backup
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["bankaccount-daemon", "--health-check", "8300"]
-CMD ["sh", "-c", "exec bankaccount-daemon --db \"$BANKACCOUNT_DB\" --host 0.0.0.0 --tailnet-port 8300 --lan-port 8400 --web-dir /app/web ${BANKACCOUNT_BACKUP_DIR:+--backup-dir \"$BANKACCOUNT_BACKUP_DIR\"}"]
+CMD ["sh", "-c", "exec bankaccount-daemon --db \"$BANKACCOUNT_DB\" --host 0.0.0.0 --tailnet-port 8300 --lan-port 8400 --lan-tls-port 8443 --web-dir /app/web ${BANKACCOUNT_BACKUP_DIR:+--backup-dir \"$BANKACCOUNT_BACKUP_DIR\"}"]

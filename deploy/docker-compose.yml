@@ -12,6 +12,8 @@ services:
     ports:
       - "127.0.0.1:${BANKACCOUNT_TAILNET_PORT:-8300}:8300"
       - "${BANKACCOUNT_LAN_ADDRESS:?}:${BANKACCOUNT_LAN_PORT:-8400}:8400"
+      # The LAN page over HTTPS (deploy/lan-tls.sh), where Windows Hello unlocks editing.
+      - "${BANKACCOUNT_LAN_ADDRESS:?}:${BANKACCOUNT_LAN_TLS_PORT:-8443}:8443"
     # BANKACCOUNT_ALLOWED_LOGINS and BANKACCOUNT_LAN_PASSWORD_HASH - written by deploy/set-secrets.sh.
     env_file: "${BANKACCOUNT_ENV_FILE:?}"
     environment:
@@ -33,4 +35,6 @@ services:
       # The Enable Banking app's config.json and private key (bank connections - see
       # docs/linux-daemon-deployment.md); an empty folder leaves them off.
       - "${BANKACCOUNT_ENABLEBANKING_DIR:?}:/app/enablebanking:ro"
+      # The HTTPS LAN page's certificate and key (deploy/lan-tls.sh); empty: no HTTPS page.
+      - "${BANKACCOUNT_LAN_TLS_DIR:?}:/app/lan-tls:ro"
     restart: unless-stopped

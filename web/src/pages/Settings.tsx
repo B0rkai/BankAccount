@@ -3,6 +3,7 @@ import { api, canAdmin, isAdmin } from '../api'
 import { BankConnections } from '../components/BankConnections'
 import { AccountList } from './Account'
 import { UserList } from '../components/UserList'
+import { WindowsHelloKeys } from '../components/WindowsHello'
 import { Maintenance } from '../components/Maintenance'
 import { NamePicker } from '../components/NamePicker'
 import { WhatsNew } from '../components/WhatsNew'
@@ -136,6 +137,7 @@ export function Settings() {
       <AccountList />
       <BankConnections />
       {isAdmin() && <UserList />}
+      <WindowsHelloKeys />
       {canAdmin() && <Maintenance />}
       <WhatsNew />
     </div>

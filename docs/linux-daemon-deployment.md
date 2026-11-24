@@ -76,7 +76,8 @@ own, or for a weekend or bank holiday the last one published before it (Friday's
 That doesn't count as a change made in Persely, so the refresh keeps working.
 
 Who may change data: only Tailscale logins of Persely's users (a user only their own accounts);
-a LAN password session stays read-only. Each change is one SQL transaction, recorded with the login that made it
+a LAN password session stays read-only - except on the HTTPS LAN page (port 8443, certificate from
+`deploy/lan-tls.sh`) once unlocked with Windows Hello ([users-and-roles.md](users-and-roles.md)). Each change is one SQL transaction, recorded with the login that made it
 (`created_by`/`updated_by` on the transaction, `changed_by` in `meta`).
 
 ## Backups

@@ -38,6 +38,7 @@
 #include "ImportSession.h"
 #include "DataImporter.h"
 #include "Logger.h"
+#include "Passkeys.h"
 #include "Query.h"
 #include "QueryApi.h"
 #include "Users.h"
@@ -64,6 +65,7 @@ struct Args {
 	std::string host;
 	int tailnet_port = 0;
 	int lan_port = 0; // 0: no LAN listener
+	int lan_tls_port = 0; // 0: no HTTPS LAN listener (Windows Hello editing - Passkeys.h)
 	std::string web_dir;
 	std::string backup_dir; // empty: no snapshots
 };
@@ -73,14 +75,15 @@ struct AuthConfig {
 	std::string lan_password_hash;
 };
 
-enum class Listener { TAILNET, LAN };
+// LAN_TLS: the LAN page over HTTPS, where a session unlocked with Windows Hello may change data.
+enum class Listener { TAILNET, LAN, LAN_TLS };
 
 constexpr const char* SESSION_COOKIE = "ba_session";
 constexpr const char* TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login";
 constexpr const char* TAILSCALE_NAME_HEADER = "Tailscale-User-Name";
 
 void PrintUsage(const char* argv0) {
-	std::cerr << "Usage: " << argv0 << " --db <path> --host <bind-host> --tailnet-port <port> [--lan-port <port>] --web-dir <dir> [--backup-dir <dir>]\n"
+	std::cerr << "Usage: " << argv0 << " --db <path> --host <bind-host> --tailnet-port <port> [--lan-port <port>] [--lan-tls-port <port>] --web-dir <dir> [--backup-dir <dir>]\n"
 		<< "       " << argv0 << " --hash-password   (reads a password from stdin, prints its hash)\n"
 		<< "       " << argv0 << " --health-check <port>\n"
 		<< "Environment: BANKACCOUNT_ALLOWED_LOGINS (comma-separated Tailscale logins),\n"
@@ -102,6 +105,8 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 			out.tailnet_port = std::atoi(next().c_str());
 		} else if (arg == "--lan-port") {
 			out.lan_port = std::atoi(next().c_str());
+		} else if (arg == "--lan-tls-port") {
+			out.lan_tls_port = std::atoi(next().c_str());
 		} else if (arg == "--web-dir") {
 			out.web_dir = next();
 		} else if (arg == "--backup-dir") {
@@ -110,7 +115,7 @@ bool ParseArgs(int argc, char** argv, Args& out) {
 			return false;
 		}
 	}
-	return !out.db_path.empty() && !out.host.empty() && out.tailnet_port > 0 && out.lan_port >= 0 && !out.web_dir.empty();
+	return !out.db_path.empty() && !out.host.empty() && out.tailnet_port > 0 && out.lan_port >= 0 && out.lan_tls_port >= 0 && !out.web_dir.empty();
 }
 
 std::string Env(const char* name) {
@@ -185,8 +190,10 @@ bool IsApiPath(const std::string& path) {
 	return path.rfind("/api/", 0) == 0;
 }
 
-std::string SessionCookie(const std::string& token, bool remember) {
-	std::string cookie = std::string(SESSION_COOKIE) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict";
+// `secure`: the HTTPS LAN page - the cookie is never sent over plain HTTP, so an unlocked session
+// can't leak to the http page (cookies don't keep ports apart).
+std::string SessionCookie(const std::string& token, bool remember, bool secure) {
+	std::string cookie = std::string(SESSION_COOKIE) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict" + (secure ? "; Secure" : "");
 	if (remember) {
 		cookie += "; Max-Age=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(SessionStore::REMEMBER_LIFETIME).count());
 	}
@@ -214,6 +221,7 @@ struct Context {
 	BankApi& bank;
 	AccountSettingsStore& account_settings;
 	UserStore& users;
+	PasskeyStore& passkeys;
 };
 
 // The whole file, or "" if it can't be read.
@@ -232,11 +240,22 @@ void WithDb(Context& ctx, httplib::Response& res, Fn&& fn) {
 	ctx.db.WithManager(fn);
 }
 
-// Who may change data: an allowlisted tailnet login (the pre-routing handler has already checked
-// the allowlist), never a LAN password session - a shared password on plain HTTP shouldn't be
-// able to change anything. Returns that login, or "" for a request that may only read.
-std::string WriterLogin(const httplib::Request& req, Listener listener) {
-	return (listener == Listener::TAILNET) ? req.get_header_value(TAILSCALE_LOGIN_HEADER) : std::string();
+// The login a LAN session was unlocked with by Windows Hello (only on the HTTPS LAN page, and only
+// while that login is still one of Persely's users), or "".
+std::string ElevatedLogin(Context& ctx, const httplib::Request& req, Listener listener) {
+	if (listener != Listener::LAN_TLS) {
+		return "";
+	}
+	const std::string login = ctx.sessions.ElevatedLogin(CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE));
+	return !login.empty() && ctx.users.Find(login) ? login : "";
+}
+
+// Who may change data: a tailnet login (the pre-routing handler has already checked it's a user),
+// or a LAN session on the HTTPS page unlocked with Windows Hello - never the LAN password alone, a
+// shared password shouldn't be able to change anything. Returns that login, or "" for a request
+// that may only read.
+std::string WriterLogin(Context& ctx, const httplib::Request& req, Listener listener) {
+	return (listener == Listener::TAILNET) ? req.get_header_value(TAILSCALE_LOGIN_HEADER) : ElevatedLogin(ctx, req, listener);
 }
 
 // Who a request is from (Users.h): a tailnet login and its role, or the LAN password - which sees
@@ -249,11 +268,12 @@ struct Caller {
 
 Caller Who(Context& ctx, const httplib::Request& req, Listener listener) {
 	Caller c;
-	if (listener == Listener::LAN) {
+	const std::string elevated = ElevatedLogin(ctx, req, listener);
+	if (listener != Listener::TAILNET && elevated.empty()) {
 		c.admin = true;
 		return c;
 	}
-	const std::optional<UserEntry> user = ctx.users.Find(req.get_header_value(TAILSCALE_LOGIN_HEADER));
+	const std::optional<UserEntry> user = ctx.users.Find(listener == Listener::TAILNET ? req.get_header_value(TAILSCALE_LOGIN_HEADER) : elevated);
 	if (user) {
 		c.login = user->login;
 		c.admin = user->role == Role::Admin;
@@ -294,7 +314,7 @@ void HandleChange(Context& ctx, const httplib::Request& req, httplib::Response& 
 		SendError(res, 403, "Editing is turned off on this server");
 		return;
 	}
-	const std::string login = WriterLogin(req, listener);
+	const std::string login = WriterLogin(ctx, req, listener);
 	if (login.empty()) {
 		SendError(res, 403, "Changes can only be made over Tailscale");
 		return;
@@ -324,7 +344,7 @@ nlohmann::json ParseBody(const httplib::Request& req) {
 // keyword removal and recategorizing are the admins' (Users.h).
 template <class Edit>
 void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Edit&& edit, bool admin_only = false) {
-	if (admin_only && !Who(ctx, req, listener).admin && !WriterLogin(req, listener).empty()) {
+	if (admin_only && !Who(ctx, req, listener).admin && !WriterLogin(ctx, req, listener).empty()) {
 		SendError(res, 403, "Only an admin can do this");
 		return;
 	}
@@ -421,7 +441,7 @@ bool UpdateExchangeRates(DaemonDb& db, std::atomic<bool>& running, const std::st
 
 // The login a bank-connection route acts for, or "" after answering 403 (as HandleChange()).
 std::string RequireWriter(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener) {
-	const std::string login = WriterLogin(req, listener);
+	const std::string login = WriterLogin(ctx, req, listener);
 	if (!ctx.edits_enabled || login.empty()) {
 		SendError(res, 403, ctx.edits_enabled ? "Changes can only be made over Tailscale" : "Editing is turned off on this server");
 		return "";
@@ -635,7 +655,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		body["version"] = APP_VERSION;
 		body["db_loaded"] = ctx.db.IsLoaded();
 		body["last_loaded"] = ctx.db.LastLoadedIso();
-		body["can_edit"] = ctx.edits_enabled && ctx.db.IsWritable() && !WriterLogin(req, listener).empty();
+		body["can_edit"] = ctx.edits_enabled && ctx.db.IsWritable() && !WriterLogin(ctx, req, listener).empty();
 		const Caller caller = Who(ctx, req, listener);
 		body["role"] = caller.admin ? "admin" : "user";
 		if (listener == Listener::TAILNET) {
@@ -644,8 +664,19 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			body["name"] = DecodeMimeWord(req.get_header_value(TAILSCALE_NAME_HEADER));
 		} else {
 			body["via"] = "lan";
-			body["login"] = "";
-			body["name"] = "Home network";
+			body["login"] = caller.login;
+			body["name"] = caller.login.empty() ? "Home network" : caller.login;
+		}
+		if (listener == Listener::LAN_TLS) {
+			// Windows Hello: whether a key was set up on this address, and until when this session is unlocked.
+			std::string host = req.get_header_value("Host");
+			if (host.rfind(':') != std::string::npos && host.find(']') == std::string::npos) {
+				host = host.substr(0, host.rfind(':'));
+			}
+			const std::string token = CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE);
+			const bool unlocked = !caller.login.empty();
+			body["windows_hello"] = { { "keys", ctx.passkeys.AnyFor(host) },
+				{ "unlocked_until", unlocked ? nlohmann::json(IsoUtc(AuthClock::to_time_t(ctx.sessions.ElevatedUntil(token)))) : nlohmann::json(nullptr) } };
 		}
 		if (ctx.db.IsLoaded()) {
 			ctx.db.WithManager([&](const AccountManager& mgr) {
@@ -673,8 +704,8 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		SendJson(res, 200, body);
 	});
 
-	if (listener == Listener::LAN) {
-		server.Post("/api/v1/login", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	if (listener != Listener::TAILNET) {
+		server.Post("/api/v1/login", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 			if (!ctx.throttle.IsAllowed(req.remote_addr)) {
 				SendError(res, 429, "Too many wrong passwords - try again in 15 minutes");
 				return;
@@ -692,17 +723,102 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			}
 			ctx.throttle.RecordSuccess(req.remote_addr);
 			bool remember = body.contains("remember") && body["remember"].is_boolean() && body["remember"].get<bool>();
-			res.set_header("Set-Cookie", SessionCookie(ctx.sessions.Create(remember), remember));
+			res.set_header("Set-Cookie", SessionCookie(ctx.sessions.Create(remember), remember, listener == Listener::LAN_TLS));
 			LogInfo("AUTH") << "LAN sign-in from " << req.remote_addr;
 			SendJson(res, 200, nlohmann::json{{"ok", true}});
 		});
 
-		server.Post("/api/v1/logout", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		server.Post("/api/v1/logout", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 			ctx.sessions.Revoke(CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE));
-			res.set_header("Set-Cookie", std::string(SESSION_COOKIE) + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+			res.set_header("Set-Cookie", std::string(SESSION_COOKIE) + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" + (listener == Listener::LAN_TLS ? "; Secure" : ""));
 			SendJson(res, 200, nlohmann::json{{"ok", true}});
 		});
 	}
+
+	// Windows Hello on the HTTPS LAN page (Passkeys.h). The passkey is made for, and checked
+	// against, the address the browser is on: rp id = the Host header's name, origin = https://Host.
+	if (listener == Listener::LAN_TLS) {
+		auto rp_id = [](const httplib::Request& req) {
+			const std::string host = req.get_header_value("Host");
+			const size_t colon = host.rfind(':');
+			return colon != std::string::npos && host.find(']') == std::string::npos ? host.substr(0, colon) : host;
+		};
+		auto origin = [](const httplib::Request& req) { return "https://" + req.get_header_value("Host"); };
+		server.Post("/api/v1/passkey/register/options", [&ctx, rp_id](const httplib::Request& req, httplib::Response& res) {
+			SendResult(res, ctx.passkeys.RegisterOptions(ParseBody(req), rp_id(req), std::time(nullptr)));
+		});
+		server.Post("/api/v1/passkey/register", [&ctx, rp_id, origin](const httplib::Request& req, httplib::Response& res) {
+			const QueryApiResult result = ctx.passkeys.Register(ParseBody(req), rp_id(req), origin(req), std::time(nullptr));
+			if (result.http_status == 200) {
+				// Made with Windows Hello just now: this session is unlocked as well.
+				ctx.sessions.Elevate(CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE), nlohmann::json::parse(result.body).value("login", std::string()));
+			}
+			SendResult(res, result);
+		});
+		server.Post("/api/v1/passkey/login/options", [&ctx, rp_id](const httplib::Request& req, httplib::Response& res) {
+			SendResult(res, ctx.passkeys.LoginOptions(rp_id(req), std::time(nullptr)));
+		});
+		server.Post("/api/v1/passkey/login", [&ctx, rp_id, origin](const httplib::Request& req, httplib::Response& res) {
+			std::string login;
+			const QueryApiResult result = ctx.passkeys.Login(ParseBody(req), rp_id(req), origin(req), std::time(nullptr), login);
+			if (result.http_status != 200) {
+				LogWarn("AUTH") << "Windows Hello unlock refused from " << req.remote_addr << ": " << result.body;
+				SendResult(res, result);
+				return;
+			}
+			if (!ctx.users.Find(login)) {
+				SendError(res, 403, login + " isn't a Persely user any more");
+				return;
+			}
+			ctx.sessions.Elevate(CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE), login);
+			LogInfo("AUTH") << "LAN editing unlocked with Windows Hello as " << login << " from " << req.remote_addr;
+			SendResult(res, result);
+		});
+		server.Post("/api/v1/passkey/lock", [&ctx](const httplib::Request& req, httplib::Response& res) {
+			ctx.sessions.Unelevate(CookieValue(req.get_header_value("Cookie"), SESSION_COOKIE));
+			SendJson(res, 200, nlohmann::json{{"ok", true}});
+		});
+	}
+
+	// The certificate authority the HTTPS LAN page's certificate comes from (deploy/lan-tls.sh), to
+	// import on the PC - a certificate, nothing secret; compare its thumbprint with the script's.
+	if (listener != Listener::TAILNET) {
+		server.Get("/persely-ca.crt", [](const httplib::Request&, httplib::Response& res) {
+			const std::string dir = Env("BANKACCOUNT_LAN_TLS_DIR").empty() ? "lan-tls" : Env("BANKACCOUNT_LAN_TLS_DIR");
+			const std::string ca = ReadTextFile(dir + "/ca.crt");
+			if (ca.empty()) {
+				res.status = 404;
+				res.set_content("No certificate set up (deploy/lan-tls.sh)", "text/plain");
+				return;
+			}
+			res.set_header("Content-Disposition", "attachment; filename=\"persely-ca.crt\"");
+			res.set_content(ca, "application/x-x509-ca-cert");
+		});
+	}
+
+	// Passkeys are set up over Tailscale: a setup code for one's own new key; the list and removal.
+	server.Post("/api/v1/passkeys/setup-code", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		if (listener != Listener::TAILNET) {
+			SendError(res, 403, "Make a setup code over Tailscale (your phone), then type it here");
+			return;
+		}
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (!login.empty()) {
+			LogInfo("PASSKEY") << login << " made a Windows Hello setup code";
+			SendResult(res, ctx.passkeys.NewSetupCode(login, std::time(nullptr)));
+		}
+	});
+	server.Get("/api/v1/passkeys", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const Caller caller = Who(ctx, req, listener);
+		SendResult(res, ctx.passkeys.List(caller.admin ? std::nullopt : std::optional<std::string>(caller.login)));
+	});
+	server.Delete("/api/v1/passkeys", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (!login.empty()) {
+			const Caller caller = Who(ctx, req, listener);
+			SendResult(res, ctx.passkeys.Remove(req.get_param_value("id"), caller.admin ? std::nullopt : std::optional<std::string>(caller.login)));
+		}
+	});
 
 	// Reads: a user sees only their own accounts (ScopeOf()).
 	server.Get("/api/v1/names", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
@@ -764,7 +880,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 	});
 	server.Post("/api/v1/entities/merge", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		// A merge is the one edit that's hard to undo by hand: snapshot first.
-		if (ctx.edits_enabled && ctx.backups && !WriterLogin(req, listener).empty() && Who(ctx, req, listener).admin) {
+		if (ctx.edits_enabled && ctx.backups && !WriterLogin(ctx, req, listener).empty() && Who(ctx, req, listener).admin) {
 			std::string error;
 			if (!ctx.backups->TakeNow("merge", error)) {
 				SendError(res, 500, "Could not take a snapshot before merging: " + error);
@@ -869,7 +985,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		});
 	});
 	server.Post(R"(/api/v1/imports/(\d+)/commit)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		const std::string login = WriterLogin(req, listener);
+		const std::string login = WriterLogin(ctx, req, listener);
 		// Saving replaces the overlapping transactions: snapshot first, as before a merge.
 		if (ctx.edits_enabled && ctx.backups && !login.empty()) {
 			std::string error;
@@ -928,7 +1044,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		}
 	});
 	server.Get("/api/v1/bank/callback", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		const std::string login = WriterLogin(req, listener);
+		const std::string login = WriterLogin(ctx, req, listener);
 		QueryApiResult result = !ctx.edits_enabled || login.empty() ? MakeErrorResult(403, "Bank connections can only be made over Tailscale")
 			: !Who(ctx, req, listener).admin ? MakeErrorResult(403, "Only an admin can connect a bank")
 			: ctx.bank.CompleteFromUrl(req.target, login, std::time(nullptr));
@@ -1294,9 +1410,10 @@ int main(int argc, char** argv) {
 	BankApi bank(bank_http.get(), "db/bank_connections.json");
 	AccountSettingsStore account_settings("db/account_settings.json");
 	UserStore users("db/users.json", auth.allowed_logins);
+	PasskeyStore passkeys("db/passkeys.json");
 
 	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
-		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank, account_settings, users};
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank, account_settings, users, passkeys};
 
 	// Scheduled bank fetches, checked every minute.
 	std::atomic<bool> stop_scheduler{false};
@@ -1328,6 +1445,30 @@ int main(int argc, char** argv) {
 		});
 	}
 
+	// The LAN page over HTTPS, for Windows Hello (deploy/lan-tls.sh makes its certificate).
+	std::unique_ptr<httplib::SSLServer> lan_tls_server;
+	std::thread lan_tls_thread;
+	if (args.lan_tls_port > 0 && args.lan_port > 0) {
+		const std::string dir = Env("BANKACCOUNT_LAN_TLS_DIR").empty() ? "lan-tls" : Env("BANKACCOUNT_LAN_TLS_DIR");
+		const std::string cert = dir + "/server.crt", key = dir + "/server.key";
+		if (std::filesystem::exists(cert) && std::filesystem::exists(key)) {
+			lan_tls_server = std::make_unique<httplib::SSLServer>(cert.c_str(), key.c_str());
+		}
+		if (lan_tls_server && lan_tls_server->is_valid()) {
+			InstallAuth(*lan_tls_server, ctx, Listener::LAN_TLS);
+			InstallRoutes(*lan_tls_server, ctx, Listener::LAN_TLS);
+			lan_tls_thread = std::thread([&] {
+				LogInfo("DAEMON") << "HTTPS LAN listener on " << args.host << ":" << args.lan_tls_port;
+				if (!lan_tls_server->listen(args.host.c_str(), args.lan_tls_port)) {
+					std::cerr << "Failed to bind " << args.host << ":" << args.lan_tls_port << "\n";
+				}
+			});
+		} else {
+			lan_tls_server.reset();
+			LogInfo("DAEMON") << "No HTTPS LAN page: no usable " << cert << " and " << key << " (deploy/lan-tls.sh)";
+		}
+	}
+
 	LogInfo("DAEMON") << "Tailnet listener on " << args.host << ":" << args.tailnet_port;
 	bool listen_ok = tailnet_server.listen(args.host.c_str(), args.tailnet_port);
 	if (!listen_ok) {
@@ -1337,6 +1478,10 @@ int main(int argc, char** argv) {
 	if (lan_server) {
 		lan_server->stop();
 		lan_thread.join();
+	}
+	if (lan_tls_server) {
+		lan_tls_server->stop();
+		lan_tls_thread.join();
 	}
 	stop_watcher = true;
 	watcher.join();

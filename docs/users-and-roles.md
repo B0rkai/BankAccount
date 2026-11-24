@@ -15,7 +15,8 @@ Decided 2026-11-24. Persely has two roles:
   are always admins and can't be removed or demoted in Persely, so nobody gets locked out. Admins
   add everyone else in Settings → Users, kept in `db/users.json`
   ([json-file-schemas.md](json-file-schemas.md)). A login that is neither is refused, as before.
-- **The LAN password** sees everything, like an admin, and still changes nothing.
+- **The LAN password** sees everything, like an admin, and still changes nothing - unless the
+  session is unlocked with Windows Hello (below).
 - **Ownership** is each account's `owner` (`db/account_settings.json`), set by an admin on the
   account's page. One owner per account; an account nobody owns is seen by admins only.
 - **Enforcement is on the server** (`daemon/main.cpp`: `Who()`, `ScopeOf()`, `RequireAdmin()`):
@@ -28,3 +29,26 @@ Decided 2026-11-24. Persely has two roles:
   running one as a user shows only their accounts.
 - A scheduled fetch runs in the name of whoever set it, and stops (each run fails, saying why) if
   that person is no longer an admin or the account's owner.
+
+## Editing on the LAN page: Windows Hello
+
+Decided 2026-11-24: the desk PC has no Tailscale and shouldn't need it. The LAN page is also
+served over HTTPS (`--lan-tls-port`, 8443), and there a signed-in session can be unlocked with a
+Windows Hello passkey (`daemon/Passkeys.h`): it then changes data as the passkey's login, with that
+login's role, for 12 hours (or until Lock). The plain HTTP page (8400) stays read-only; the session
+cookie on the HTTPS page is `Secure`, so it never travels over HTTP.
+
+- **Certificate**: `deploy/lan-tls.sh` makes a small certificate authority of the server's own,
+  limited (name constraints) to the server's names and LAN address, and a certificate for
+  `borkai-server`, `borkai-server.local` and the address (`~/.config/bankaccount/lan-tls`, mounted
+  read-only). The PC imports `ca.crt` once - downloadable from `http://<server>:8400/persely-ca.crt`;
+  compare the thumbprint the script printed.
+- **Setting up a key** needs a code made over Tailscale (Settings → Windows Hello, any user for
+  their own login; one key per code, 15 minutes), typed on the HTTPS LAN page - so the LAN password
+  alone can never add one. Keys are kept in `db/passkeys.json` (mode 600: public keys only, but
+  kept private anyway); Settings lists and removes them.
+- **Checks** (`Passkeys.cpp`): the challenge (single use, 5 minutes), origin `https://<Host>`, rp id
+  = the host name (passkeys can't be bound to an IP address, so the PC uses the server's name),
+  user present and verified (PIN/fingerprint), an ES256 or RS256 signature with the stored key, and
+  the signature counter. Verified end to end with Chromium's virtual authenticator on
+  `https://borkai-server:8443`.

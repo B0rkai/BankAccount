@@ -511,3 +511,12 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .user-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
 .user-add label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 160px; min-width: 0; }
 .user-add input, .user-add select { width: 100%; }
+.hello-bar { max-width: 1200px; margin: 12px auto 0; padding: 10px 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; background: var(--surface-2); border-radius: 10px; font-size: 14px; }
+.hello-bar.unlocked { background: var(--accent-soft); }
+.hello-bar .alert { flex-basis: 100%; margin: 0; }
+.hello-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.hello-setup { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; width: 100%; }
+.hello-setup label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px; min-width: 0; }
+.hello-setup input { width: 100%; text-transform: uppercase; letter-spacing: 0.08em; }
+.hello-code strong { font-size: 22px; letter-spacing: 0.12em; }
+@media (max-width: 1232px) { .hello-bar { margin-left: 16px; margin-right: 16px; } }

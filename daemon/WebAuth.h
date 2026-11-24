@@ -64,10 +64,26 @@ public:
 	bool IsValid(const std::string& token);
 	void Revoke(const std::string& token);
 
+	// Windows Hello on the LAN page (Passkeys.h): the session may change data as `login` until
+	// ELEVATED_LIFETIME from now (never beyond the session itself).
+	static constexpr auto ELEVATED_LIFETIME = std::chrono::hours(12);
+	void Elevate(const std::string& token, const std::string& login);
+	// Back to read-only (the session itself stays).
+	void Unelevate(const std::string& token);
+	// The login a valid session was elevated to and still is, or "".
+	std::string ElevatedLogin(const std::string& token);
+	// When that ends (only meaningful while ElevatedLogin() isn't "").
+	AuthClock::time_point ElevatedUntil(const std::string& token);
+
 private:
+	struct Elevation {
+		std::string login;
+		AuthClock::time_point until;
+	};
 	std::function<AuthClock::time_point()> m_now;
 	std::mutex m_mutex;
 	std::map<std::string, AuthClock::time_point> m_expiry;
+	std::map<std::string, Elevation> m_elevated;
 };
 
 // Slows down password guessing on the LAN listener: after MAX_FAILURES wrong passwords from one
