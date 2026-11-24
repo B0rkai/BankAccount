@@ -443,7 +443,6 @@ function Movers({ title, rows, link }: { title: string; rows: TrendRow[]; link: 
   )
 }
 
-// Imports in progress, for a sign-in that can continue them.
 // A bank connection running out: fetching stops then, so say it early (never silently).
 function BankExpiryBanner() {
   const status = useAsync(() => bank.status(), 'bank')
@@ -467,19 +466,24 @@ function BankExpiryBanner() {
   )
 }
 
+// Imports waiting to be checked - a scheduled fetch whose rows didn't all sort themselves leaves
+// one. Shown to every sign-in; only one that may edit can continue it.
 function ImportBanner() {
-  const open = useAsync(() => (canEdit() ? imports.list() : Promise.resolve([])), 'imports')
+  const open = useAsync(() => imports.list(), 'imports')
   if (!open.data?.length) return null
   return (
     <div className="overview-imports">
       {open.data.map((s) => (
         <div key={s.id} className="notice import-banner" role="status">
           <span>
-            <strong>{shortAccount(s.account)}</strong>: {s.open ? `${formatCount(s.open)} to categorize` : 'ready to save'}
+            <strong>{shortAccount(s.account)}</strong>
+            {s.source_format === 'ENABLE_BANKING' ? ' (from the bank)' : ''}: {s.open ? `${formatCount(s.open)} to categorize` : `${formatCount(s.rows)} ready to save`}
           </span>
-          <a href={importLink(s.id)} onClick={linkHandler(importLink(s.id))}>
-            {s.open ? 'Continue' : 'Review'}
-          </a>
+          {canEdit() && (
+            <a href={importLink(s.id)} onClick={linkHandler(importLink(s.id))}>
+              {s.open ? 'Continue' : 'Review'}
+            </a>
+          )}
         </div>
       ))}
     </div>

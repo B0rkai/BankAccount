@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 // carries a page's state (so a query in Explore can be bookmarked), and navigate() pushes history
 // entries.
 
-export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year' | 'category' | 'settings' | 'imports' | 'import'
+export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year' | 'category' | 'settings' | 'imports' | 'import' | 'account'
 
 // `short`: the phone tab bar's label, where six tabs share the width.
 export const ROUTES: { route: Route; path: string; label: string; short?: string }[] = [
@@ -22,6 +22,7 @@ export const SUB_ROUTES: { route: Route; path: string; parent: Route }[] = [
   { route: 'year', path: '/year', parent: 'reports' },
   { route: 'category', path: '/category', parent: 'overview' },
   { route: 'import', path: '/import', parent: 'imports' },
+  { route: 'account', path: '/account', parent: 'settings' },
 ]
 
 export const menuRoute = (route: Route): Route => SUB_ROUTES.find((r) => r.route === route)?.parent ?? route

@@ -18,6 +18,9 @@
 #include <unistd.h>
 #include <nlohmann/json.hpp>
 #include "httplib.h"
+#include "Account.h"
+#include "AccountApi.h"
+#include "AccountSettings.h"
 #include "Backups.h"
 #include "BankApi.h"
 #include "BrowseApi.h"
@@ -208,6 +211,7 @@ struct Context {
 	Backups* backups; // null: no snapshots
 	std::atomic<bool>& rates_running;
 	BankApi& bank;
+	AccountSettingsStore& account_settings;
 };
 
 // The whole file, or "" if it can't be read.
@@ -375,13 +379,14 @@ std::string BankCallbackUrl(const httplib::Request& req, Listener listener) {
 	return std::string(listener == Listener::TAILNET ? "https://" : "http://") + req.get_header_value("Host") + "/api/v1/bank/callback";
 }
 
-// Downloads a connection's new transactions without holding the database lock, then opens their
-// import sessions in one write.
-void FetchFromBank(Context& ctx, const std::string& connection_id, const std::string& login, httplib::Response& res) {
+// Downloads a connection's new transactions - every account's, or only `only_account`'s - without
+// holding the database lock, then opens (or brings up to date) their imports in one write and
+// records each account's fetch. `scheduled`: an account's schedule, in its setter's name - an
+// import whose rows all sorted themselves is saved straight away, after a snapshot.
+QueryApiResult FetchFromBank(Context& ctx, const std::string& connection_id, const std::string& only_account, const std::string& login, bool scheduled) {
 	const std::vector<BankAccountLink> accounts = ctx.bank.Accounts(connection_id);
 	if (accounts.empty()) {
-		SendError(res, 404, "No such bank connection");
-		return;
+		return MakeErrorResult(404, "No such bank connection");
 	}
 	std::map<std::string, uint16_t> last_dates;
 	ctx.db.WithManager([&](const AccountManager& mgr) {
@@ -394,20 +399,113 @@ void FetchFromBank(Context& ctx, const std::string& connection_id, const std::st
 	const std::time_t now = std::time(nullptr);
 	std::vector<BankPull> pulled;
 	QueryApiResult result{0, ""};
-	if (!ctx.bank.Pull(connection_id, last_dates, now, pulled, result)) {
-		SendResult(res, result);
-		return;
+	if (!ctx.bank.Pull(connection_id, last_dates, now, pulled, result, only_account)) {
+		return result;
+	}
+	if (pulled.empty()) {
+		return MakeErrorResult(404, "That account isn't read through this bank connection");
+	}
+	BankImportOptions options;
+	options.save_when_sorted = scheduled;
+	if (scheduled && ctx.backups) {
+		std::string error;
+		if (!ctx.backups->TakeNow("bank-fetch", error)) {
+			options.save_when_sorted = false; // still fetched, but left for a look
+		}
 	}
 	std::string error;
 	const bool written = ctx.db.WriteImports(login, [&](AccountManager& mgr, DaemonDb::Imports& imports) {
-		result = StartBankImports(pulled, mgr, imports, login, now);
+		result = StartBankImports(pulled, mgr, imports, login, now, options);
 		return true;
 	}, error);
 	if (!written) {
-		SendError(res, 409, error);
+		return MakeErrorResult(409, error);
+	}
+	bool saved = false;
+	const nlohmann::json body = nlohmann::json::parse(result.body, nullptr, false);
+	for (const nlohmann::json& r : body.value("results", nlohmann::json::array())) {
+		BankRun run;
+		run.at = IsoUtc(now);
+		run.by = login;
+		run.scheduled = scheduled;
+		run.session_id = r.value("session_id", (int64_t)0);
+		run.rows = r.value("rows", (size_t)0);
+		run.open = r.value("open", (size_t)0);
+		if (r.contains("error")) {
+			run.outcome = "error";
+			run.message = r["error"].get<std::string>();
+		} else if (r.value("nothing_new", false)) {
+			run.outcome = "nothing_new";
+		} else if (r.value("in_progress", false)) {
+			run.outcome = "in_progress";
+		} else if (r.contains("saved")) {
+			run.outcome = "saved";
+			run.rows = r["saved"].get<size_t>();
+			saved = true;
+		} else {
+			run.outcome = "waiting";
+		}
+		ctx.account_settings.Record(r.value("account_number", std::string()), run);
+	}
+	if (saved) {
+		std::thread([&ctx, login]() {
+			std::string message;
+			UpdateExchangeRates(ctx.db, ctx.rates_running, login, message);
+			LogInfo("RATES") << "After a scheduled bank fetch: " << message;
+		}).detach();
+	}
+	return result;
+}
+
+// The scheduled fetches that are due (AccountSettings.h): one fetch per account, in the name of
+// whoever set its schedule.
+void RunDueBankSchedules(Context& ctx) {
+	if (!ctx.bank.Configured() || !ctx.edits_enabled || !ctx.db.IsLoaded()) {
 		return;
 	}
-	SendResult(res, result);
+	const std::time_t now = std::time(nullptr);
+	for (const auto& [key, settings] : ctx.account_settings.All()) {
+		if (!ScheduledRunDue(settings, now)) {
+			continue;
+		}
+		String number;
+		ctx.db.WithManager([&](const AccountManager& mgr) {
+			for (Id::Type id = 0; id < mgr.CountAccounts(); ++id) {
+				if (AccountKey(std::string(mgr.FindAccount(Id(id))->GetAccNumber().utf8_str())) == key) {
+					number = mgr.FindAccount(Id(id))->GetAccNumber();
+				}
+			}
+		});
+		const std::vector<BankConnection> connections = ctx.bank.Connections();
+		const BankConnection* conn = number.empty() ? nullptr : ConnectionOf(connections, number);
+		QueryApiResult result = conn ? FetchFromBank(ctx, conn->id, std::string(number.utf8_str()), settings.schedule->set_by, true)
+			: MakeErrorResult(409, number.empty() ? "Persely has no such account" : "The account's bank isn't connected");
+		LogInfo("BANK") << "Scheduled fetch of " << key << ": " << (result.http_status == 200 ? "done" : result.body);
+		if (result.http_status != 200) {
+			BankRun run;
+			run.at = IsoUtc(now);
+			run.by = settings.schedule->set_by;
+			run.scheduled = true;
+			run.outcome = "error";
+			const nlohmann::json body = nlohmann::json::parse(result.body, nullptr, false);
+			run.message = body.is_object() && body.contains("error") ? body["error"].get<std::string>() : result.body;
+			ctx.account_settings.Record(key, run);
+		}
+	}
+}
+
+// The facts an account route needs, read under the database lock.
+template <class Fn>
+void WithAccounts(Context& ctx, httplib::Response& res, Fn&& fn) {
+	if (!ctx.db.IsLoaded()) {
+		SendError(res, 503, "Database not loaded");
+		return;
+	}
+	const std::map<std::string, AccountSettings> settings = ctx.account_settings.All();
+	const std::vector<BankConnection> connections = ctx.bank.Connections();
+	ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
+		fn(AccountContext{ mgr, imports, settings, connections, ctx.auth.allowed_logins, std::time(nullptr) });
+	});
 }
 
 void InstallAuth(httplib::Server& server, Context& ctx, Listener listener) {
@@ -707,7 +805,52 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		}
 		const nlohmann::json body = ParseBody(req);
 		const std::string id = body.is_object() && body.contains("connection_id") && body["connection_id"].is_string() ? body["connection_id"].get<std::string>() : "";
-		FetchFromBank(ctx, id, login, res);
+		SendResult(res, FetchFromBank(ctx, id, "", login, false));
+	});
+
+	// Account pages (AccountApi.h): owner and schedule live in db/account_settings.json.
+	server.Get("/api/v1/accounts", [&ctx](const httplib::Request&, httplib::Response& res) {
+		WithAccounts(ctx, res, [&](const AccountContext& a) {
+			SendResult(res, ListAccounts(a));
+		});
+	});
+	server.Get(R"(/api/v1/accounts/(\d+))", [&ctx](const httplib::Request& req, httplib::Response& res) {
+		WithAccounts(ctx, res, [&](const AccountContext& a) {
+			SendResult(res, AccountDetails(a, std::stoll(req.matches[1])));
+		});
+	});
+	server.Patch(R"(/api/v1/accounts/(\d+))", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (login.empty()) {
+			return;
+		}
+		const nlohmann::json body = ParseBody(req);
+		WithAccounts(ctx, res, [&](const AccountContext& a) {
+			SendResult(res, UpdateAccountSettings(a, std::stoll(req.matches[1]), body, ctx.account_settings, login));
+		});
+	});
+	server.Post(R"(/api/v1/accounts/(\d+)/fetch)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireWriter(ctx, req, res, listener);
+		if (login.empty()) {
+			return;
+		}
+		if (!ctx.db.IsLoaded()) {
+			SendError(res, 503, "Database not loaded");
+			return;
+		}
+		std::string connection_id, number;
+		WithAccounts(ctx, res, [&](const AccountContext& a) {
+			const Account* acc = a.mgr.FindAccount(Id((Id::Type)std::min<long long>(std::stoll(req.matches[1]), INVALID_ID)));
+			if (const BankConnection* conn = acc ? ConnectionOf(a.connections, acc->GetAccNumber()) : nullptr) {
+				connection_id = conn->id;
+				number = std::string(acc->GetAccNumber().utf8_str());
+			}
+		});
+		if (connection_id.empty()) {
+			SendError(res, 404, "This account isn't read through a bank connection");
+			return;
+		}
+		SendResult(res, FetchFromBank(ctx, connection_id, number, login, false));
 	});
 
 	server.Get("/api/v1/entity", [&ctx](const httplib::Request& req, httplib::Response& res) {
@@ -951,9 +1094,21 @@ int main(int argc, char** argv) {
 		}
 	}
 	BankApi bank(bank_http.get(), "db/bank_connections.json");
+	AccountSettingsStore account_settings("db/account_settings.json");
 
 	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
-		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank};
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank, account_settings};
+
+	// Scheduled bank fetches, checked every minute.
+	std::atomic<bool> stop_scheduler{false};
+	std::thread scheduler([&] {
+		while (!stop_scheduler.load()) {
+			RunDueBankSchedules(ctx);
+			for (int i = 0; i < 12 && !stop_scheduler.load(); ++i) {
+				std::this_thread::sleep_for(std::chrono::seconds(5));
+			}
+		}
+	});
 
 	httplib::Server tailnet_server;
 	InstallAuth(tailnet_server, ctx, Listener::TAILNET);
@@ -986,5 +1141,7 @@ int main(int argc, char** argv) {
 	}
 	stop_watcher = true;
 	watcher.join();
+	stop_scheduler = true;
+	scheduler.join();
 	return listen_ok ? 0 : 1;
 }

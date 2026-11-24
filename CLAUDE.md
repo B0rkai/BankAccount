@@ -46,7 +46,8 @@ core tests build fixture data; daemon tests mostly `StreamIn()` a small text sam
 - `daemon/` - the HTTP server (vendored cpp-httplib, `include/httplib.h`): `main.cpp` (routes,
   auth wiring), `DaemonDb` (the loaded AccountManager, writes, reloads), `QueryApi`/`BrowseApi`
   (reads), `EditApi` (edits), `ImportApi` (imports), `FavoritesStore`/`FavoritesApi`, `WebAuth`
-  (Tailscale login header or LAN password), `EnableBankingClient`/`BankApi` (bank connections), `Backups` (daily snapshots), `MigrateMain`
+  (Tailscale login header or LAN password), `EnableBankingClient`/`BankApi` (bank connections),
+  `AccountSettings`/`AccountApi` (account pages: owner, scheduled fetches), `Backups` (daily snapshots), `MigrateMain`
   (`bankaccount-migrate`, `.baf` -> SQLite).
 - `web/src/` - the web app: `api.ts` (every API call and its types), `router.ts`, `pages/`,
   `components/`, `styles.css`.
@@ -107,7 +108,9 @@ core tests build fixture data; daemon tests mostly `StreamIn()` a small text sam
   account's API answers into the same `RawImportData`, `ImportEngine::AlignToKeywords()` undoes the
   API's text differences (cut types, squeezed spaces), `daemon/EnableBankingClient.h` makes the
   RS256-signed calls and `daemon/BankApi.h` holds the connections (`db/bank_connections.json`) and
-  turns a fetch into import sessions. Never commit `scripts/enablebanking/config*.json`, `*.pem`
+  turns a fetch into import sessions (a scheduled one saves only when every row sorted itself;
+  `daemon/AccountSettings.h`). A fetched row that is a stored transaction keeps what it was saved
+  with (`ImportEngine::Recall()`). Never commit `scripts/enablebanking/config*.json`, `*.pem`
   or `out/`.
 
 ## Data storage

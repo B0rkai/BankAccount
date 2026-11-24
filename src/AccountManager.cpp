@@ -835,6 +835,10 @@ const Transaction* AccountManager::FindTransaction(const TransactionIdentity& id
 	return (identity.position < acc->Size()) ? &acc->GetTransactionAt(identity.position) : nullptr;
 }
 
+const Account* AccountManager::FindAccount(Id id) const {
+	return IsValidId(QueryTopic::ACCOUNT, id) ? m_accounts[id] : nullptr;
+}
+
 std::vector<std::pair<String, bool>> AccountManager::GetKeywordsOf(const QueryTopic topic, const Id id) const {
 	if (!IsValidId(topic, id)) {
 		return {};

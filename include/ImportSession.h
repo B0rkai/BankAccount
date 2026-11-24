@@ -26,7 +26,7 @@ struct ImportRow {
 	Id category_id = Id(INVALID_ID);
 	String description;
 	// How each topic (type, client, category) was resolved: 'a' by a keyword, 'm' by an answer,
-	// 'r' recalled from the transaction this row replaces, '-' not yet.
+	// 'r' kept from the stored transaction this row replaces, '-' not yet.
 	std::string how = "---";
 
 	bool Resolved() const;
@@ -152,21 +152,31 @@ public:
 	// Call before Start().
 	static void AlignToKeywords(const AccountManager& manager, RawImportData& data);
 
+	// A bank fetch again while its import is still open: `fresh` (just Start()ed, the same
+	// account) takes over the answers and hand edits of `old`'s rows that are in it too (same
+	// date, amount and texts), then Resolve()s. The id, "Stop here" and who started it stay.
+	static void CarryOver(const AccountManager& manager, const ImportSession& old, ImportSession& fresh);
+
 	// Follows AccountManager::Merge()'s renumbering: merged ids become the target, later ids shift
 	// down. `to` is the target's id before the merge.
 	static void RemapAfterMerge(ImportSession& session, QueryTopic topic, const IdSet& from, Id to);
 	static Id MergedId(Id id, const IdSet& from, Id to);
 
 private:
-	// A stored transaction this import replaces, whose category a matching row reuses.
+	// A stored transaction this import replaces. A row that is the same transaction (same date
+	// and amount) keeps what it was stored with - type, client, category, description - so
+	// fetching days again never undoes a change made since they were saved.
 	struct Recallable {
 		uint16_t date;
 		int32_t amount;
+		Id type;
 		Id client;
 		Id category;
+		String description;
 	};
+	static bool Recall(const AccountManager& manager, ImportRow& row, std::vector<Recallable>& recallable);
 	static std::vector<Recallable> Replaced(const AccountManager& manager, const ImportSession& session);
-	static bool TryAuto(const AccountManager& manager, ImportRow& row, QueryTopic topic, std::vector<Recallable>& recallable);
+	static bool TryAuto(const AccountManager& manager, ImportRow& row, QueryTopic topic);
 	static ImportQuestion Ask(const AccountManager& manager, const ImportSession& session, size_t row, QueryTopic topic);
 	static void UpdateProgress(ImportSession& session);
 };

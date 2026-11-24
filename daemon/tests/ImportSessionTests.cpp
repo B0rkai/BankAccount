@@ -207,6 +207,15 @@ const char* const DESKTOP_EXISTING_ASKED = R"(1 client [2] 2 ''
 7 client [] - 'SHOP X'
 7 category [] 0 ''
 )";
+// Persely differs from the desktop in one way on purpose: a row that is a stored transaction
+// again (46001, on a day the import overlaps) keeps what it was stored with instead of being
+// worked out - and asked about - again. So 46001 stays without a client, and isn't asked.
+std::string PerselyExisting(std::string text, const std::string& desktop, const std::string& persely) {
+	const size_t at = text.find(desktop);
+	return at == std::string::npos ? "missing: " + desktop : text.replace(at, desktop.size(), persely);
+}
+const std::string EXISTING_DB = PerselyExisting(DESKTOP_EXISTING_DB, "-4590,46001,2,0,1,VASARLAS LIDL,", "-4590,46001,2,0,0,VASARLAS LIDL,");
+const std::string EXISTING_ASKED = PerselyExisting(DESKTOP_EXISTING_ASKED, "1 client [2] 2 ''\n", "");
 const char* const DESKTOP_NEW_DB = R"(3
 1,1,Groceries,1,LIDL
 2,1,Eating out,0
@@ -322,7 +331,7 @@ protected:
 
 // Imports FILE_ROWS for `account` through the bank-file reader, answering with Decide(), and
 // expects what the desktop's import did with the same answers.
-void ExpectDesktopResult(Manager& mgr, const std::string& account, const String& new_account_name, const char* desktop_asked, const char* desktop_db,
+void ExpectDesktopResult(Manager& mgr, const std::string& account, const String& new_account_name, const std::string& desktop_asked, const std::string& desktop_db,
 		const std::function<std::string(ImportSession&)>& answer_all) {
 	const std::filesystem::path xml = std::filesystem::temp_directory_path() / ("import-" + std::to_string(::getpid()) + ".xml");
 	WriteGranitXml(xml, account);
@@ -343,7 +352,7 @@ void ExpectDesktopResult(Manager& mgr, const std::string& account, const String&
 }
 
 TEST_F(ImportSessionTests, ScriptedAnswersGiveTheAccountTheDesktopGave) {
-	ExpectDesktopResult(mgr, ACCOUNT, "", DESKTOP_EXISTING_ASKED, DESKTOP_EXISTING_DB, [&](ImportSession& s) { return AnswerAll(s); });
+	ExpectDesktopResult(mgr, ACCOUNT, "", EXISTING_ASKED, EXISTING_DB, [&](ImportSession& s) { return AnswerAll(s); });
 	EXPECT_EQ(Stored(), 1 + FILE_SIZE - 1); // 46000 kept, the file from 46001 on
 }
 
@@ -368,17 +377,73 @@ TEST_F(ImportSessionTests, TheOverlapIsDecidedAtUploadAndReplacedOnlyOnCommit) {
 	EXPECT_EQ(Stored(), 1 + session.rows.size());
 	EXPECT_EQ(At(0)->GetAmount(), -12340);    // before the overlap: untouched
 	EXPECT_EQ(At(1)->GetDate(), 46001);
-	EXPECT_EQ(At(1)->GetCategoryId(), Id(1)); // LIDL: Groceries by keyword
+	EXPECT_EQ(At(1)->GetCategoryId(), Id(0)); // stored uncategorized: kept so, though LIDL is a keyword
+	EXPECT_EQ(At(3)->GetMemo(), "rent");       // the new days added
 	EXPECT_NE(mgr.Dump(), before);
 }
 
-TEST_F(ImportSessionTests, ACategoryPickedByHandIsRecalledForTheSameTransaction) {
-	ImportSession session = Start();
-	AnswerAll(session);
-	const ImportRow& tesco = session.rows[1]; // 46002 -990 TESCO
-	EXPECT_EQ(tesco.client_id, Id(1));
-	EXPECT_EQ(tesco.category_id, Id(2));      // the stored one's Eating out, not asked again
-	EXPECT_EQ(tesco.how, "aar");
+TEST_F(ImportSessionTests, AStoredTransactionFetchedAgainKeepsWhatItWasSavedWith) {
+	// Changed by hand since it was saved: another client, a description.
+	ASSERT_TRUE(mgr.FindTransaction({ Id(0), 2 }));
+	Manager edited(journal);
+	std::string sample = SAMPLE;
+	sample.replace(sample.find("-990,46002,1,0,2,,"), 18, "-990,46002,2,0,2,,coffee");
+	edited.Load(sample);
+	ImportSession session;
+	std::string error;
+	ASSERT_TRUE(ImportEngine::Start(edited, RawFile(), "export.xml", "GRANIT_XML", session, error)) << error;
+	const ImportRow& tesco = session.rows[1]; // 46002 -990 TESCO again
+	EXPECT_EQ(tesco.how, "rrr");
+	EXPECT_EQ(tesco.client_id, Id(2));        // not Tesco, though TESCO is its keyword
+	EXPECT_EQ(tesco.category_id, Id(2));
+	EXPECT_EQ(tesco.description, "coffee");
+	EXPECT_EQ(ImportEngine::OpenRows(session).front(), 2u); // the first new day is the first question
+}
+
+TEST_F(ImportSessionTests, SameDayTwinsAreToldApartByTheirKeywords) {
+	Manager twins(journal);
+	std::string sample = SAMPLE;
+	// 46002: two -990s, Lidl (by hand: Groceries) then Tesco (Eating out).
+	sample.replace(sample.find("Main HUF,HUF,1,3"), 16, "Main HUF,HUF,1,4");
+	sample.replace(sample.find("-990,46002,1,0,2,,"), 18, "-990,46002,2,0,1,,\n-990,46002,1,0,2,,");
+	twins.Load(sample);
+	RawImportData data = RawFile();
+	RawTransactionData twin = data.data[2]; // TESCO -990 on 46002 - the file has it first
+	twin.client = "LIDL KISPEST";
+	data.data.insert(data.data.begin() + 3, twin);
+	ImportSession session;
+	std::string error;
+	ASSERT_TRUE(ImportEngine::Start(twins, data, "export.xml", "GRANIT_XML", session, error)) << error;
+	EXPECT_EQ(session.rows[1].client_id, Id(1)); // TESCO: the stored Tesco one
+	EXPECT_EQ(session.rows[1].category_id, Id(2));
+	EXPECT_EQ(session.rows[2].client_id, Id(2)); // the other: the stored Lidl one
+	EXPECT_EQ(session.rows[2].category_id, Id(1));
+}
+
+TEST_F(ImportSessionTests, CarryOverKeepsTheAnswersOfAnImportFetchedAgain) {
+	ImportSession old = Start();
+	old.id = 7;
+	old.created_by = "a@x";
+	AnswerAll(old, 4); // the rent transfer and the first BISTRO answered
+	ASSERT_EQ(old.rows[2].how.substr(0, 2), "mm");
+	RawImportData data = RawFile();
+	RawTransactionData& later = data.data.emplace_back(); // a week on: one more
+	later.amount = Money(HUF, -500);
+	later.date = 46010;
+	later.type = "CARD";
+	later.client = "TESCO";
+	ImportSession fresh;
+	std::string error;
+	ASSERT_TRUE(ImportEngine::Start(mgr, data, "fetch", "ENABLE_BANKING", fresh, error)) << error;
+	ImportEngine::CarryOver(mgr, old, fresh);
+	EXPECT_EQ(fresh.id, 7);
+	EXPECT_EQ(fresh.created_by, "a@x");
+	EXPECT_EQ(fresh.rows.size(), old.rows.size() + 1);
+	EXPECT_EQ(fresh.rows[2].how, old.rows[2].how);
+	EXPECT_EQ(fresh.rows[2].client_id, old.rows[2].client_id);
+	EXPECT_EQ(fresh.rows[2].description, old.rows[2].description);
+	EXPECT_EQ(fresh.cursor, old.cursor);
+	EXPECT_EQ(fresh.rows.back().how, "aa-"); // Tesco by keyword; its category is new
 }
 
 TEST_F(ImportSessionTests, StopHereDropsTheRowAndTheRestButNeverTheOverlap) {
@@ -420,7 +485,7 @@ TEST_F(ImportSessionTests, EveryRowIsTriedUpFront) {
 	EXPECT_LT(open.front(), session.rows.size() - 1);
 	EXPECT_EQ(session.rows.back().how, "aaa");          // settled though earlier rows are open
 	EXPECT_EQ(session.rows.back().category_id, Id(1));  // Groceries, by the LIDL keyword
-	EXPECT_EQ(session.rows[0].how, "aaa");              // LIDL BUDAPEST too
+	EXPECT_EQ(session.rows[0].how, "rrr");              // LIDL BUDAPEST: stored, kept as saved
 	EXPECT_EQ(Stored(), 3u);                            // nothing saved
 }
 
@@ -656,14 +721,14 @@ TEST_F(ImportDaemonTests, ASessionIsSavedWithTheDatabaseAndContinuesAfterARestar
 TEST_F(ImportDaemonTests, AKeywordAddedElsewhereSettlesRowsOfAnOpenImport) {
 	const json details = Upload();
 	const size_t open_before = details["open"];
-	ASSERT_EQ(Sessions()[0].rows[0].client_id, Id(INVALID_ID)); // LIDL BUDAPEST: no keyword
+	ASSERT_EQ(Sessions()[0].rows[3].client_id, Id(INVALID_ID)); // BISTRO: no keyword
 	std::string error;
 	ASSERT_TRUE(db->Write("a@x", [&](AccountManager& mgr) {
-		return AddKeyword(json{{"topic", "client"}, {"id", 2}, {"keyword", "LIDL"}}, mgr).http_status == 200;
+		return AddKeyword(json{{"topic", "client"}, {"id", 2}, {"keyword", "BISTRO"}}, mgr).http_status == 200;
 	}, error)) << error;
-	EXPECT_EQ(Sessions()[0].rows[0].client_id, Id(2));
+	EXPECT_EQ(Sessions()[0].rows[3].client_id, Id(2));
 	Reopen(); // and it was saved with the keyword
-	EXPECT_EQ(Sessions()[0].rows[0].client_id, Id(2));
+	EXPECT_EQ(Sessions()[0].rows[3].client_id, Id(2));
 	EXPECT_LT(ImportEngine::OpenRows(Sessions()[0]).size(), open_before);
 }
 

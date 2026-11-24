@@ -177,6 +177,30 @@ Decided 2026-11-23:
 - Session ids are saved server-side the moment a consent completes (the test pull's session id
   was only printed, so that consent can't be reused).
 
+Decided 2026-11-24 (7e-7g):
+
+- **A fetched row that is a stored transaction keeps what it was saved with.** The overlap an
+  import replaces used to be worked out again (only a category was recalled, and only when the
+  client came out the same), so a client changed by hand or a description since the save was
+  lost. Now a row with the date and amount of a replaced stored transaction takes its type,
+  client, category and description (`ImportEngine::Recall()`, `how` = `"rrr"`); same-day twins
+  are told apart by what the keywords give them. This applies to file imports too.
+- **Account pages** (`/account?id=`, listed in Settings): number, bank, currency, active/closed,
+  owner, transaction count and range, the bank connection, Fetch now (this account only), the
+  schedule and the last fetches. Owner and schedule live in `db/account_settings.json`
+  ([json-file-schemas.md](json-file-schemas.md)), not the database: the owner is one of
+  `BANKACCOUNT_ALLOWED_LOGINS`, groundwork for per-person access later.
+- **A fetch while the account's earlier fetch is still open brings that import up to date**
+  (`ImportEngine::CarryOver()`): the same import id, new days added, answers and hand edits kept.
+  It leaves a file's import alone, and one someone answered in during the last 10 minutes.
+- **Scheduled fetches** (weekly on a weekday, or monthly on a day - the month's last day in a
+  shorter one) run at 6:00 Budapest time (`TZ` in the compose file), checked every minute, in the
+  name of whoever set the schedule. **Uncategorized data never enters the accounts**: the import is
+  saved by itself only when every row sorted itself (and the account already exists), after a
+  snapshot; otherwise it stays open - on the overview for every sign-in, and on the account page -
+  and the next run adds to it. A failed run is tried again 6 hours later (banks allow 4 unattended
+  reads a day); an expired consent makes each try fail without calling the bank until renewed.
+
 The proposal below is the starting point for 7b-7d.
 
 - **Where the pull runs**: in the daemon (C++; cpp-httplib + OpenSSL already linked for JWT RS256

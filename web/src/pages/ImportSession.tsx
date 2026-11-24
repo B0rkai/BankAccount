@@ -629,7 +629,7 @@ function Review({
                             {shortCategory(r.category ?? '')}
                           </span>
                         )}
-                        {r.how.category === 'recalled' && <span className="muted small" title="Kept from the stored transaction this row replaces"> · kept</span>}
+                        {r.how.category === 'recalled' && <span className="muted small" title="Already saved: keeps its client, category and description"> · already saved</span>}
                       </td>
                       <td className="muted hide-narrow">{r.type ?? r.raw.type}</td>
                       <td className={`num strong nowrap${r.amount > 0 ? ' pos' : ''}`}>{formatMoney(r.amount, r.currency, { sign: true })}</td>

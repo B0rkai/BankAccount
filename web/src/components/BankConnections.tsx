@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { bank, canEdit, type BankConnection, type BankStatus } from '../api'
-import { formatDate, formatDateTime } from '../format'
+import { accountLink, bank, canEdit, type BankConnection, type BankFetchResult, type BankStatus } from '../api'
+import { formatCount, formatDate, formatDateTime } from '../format'
 import { useAsync } from '../hooks'
-import { navigate } from '../router'
-import { shortAccount } from '../pages/ImportSession'
+import { linkHandler, navigate } from '../router'
+import { importLink, shortAccount } from '../pages/ImportSession'
 
 // Renewing is offered this many days before a connection runs out (the overview warns too).
 export const RENEW_DAYS = 14
@@ -105,7 +105,13 @@ export function BankConnections() {
           <ul className="bank-accounts">
             {c.accounts.map((a) => (
               <li key={a.uid}>
-                <span>{a.account_name ? shortAccount(a.account_name) : a.name}</span>
+                {a.account_id !== null ? (
+                  <a href={accountLink(a.account_id)} onClick={linkHandler(accountLink(a.account_id))}>
+                    {a.account_name ? shortAccount(a.account_name) : a.name}
+                  </a>
+                ) : (
+                  <span>{a.name}</span>
+                )}
                 <span className="muted small">
                   {a.account_number} · {a.currency}
                   {a.account_id === null ? ' · not in Persely yet' : a.last_date ? ` · newest ${formatDate(a.last_date, { year: true })}` : ''}
@@ -119,6 +125,43 @@ export function BankConnections() {
       {s.configured && canEdit() && !paste && <ConnectForm status={s} onConnect={connect} />}
       {s.configured && !canEdit() && <p className="muted small">Connecting a bank needs a sign-in that may change data (over Tailscale).</p>}
     </section>
+  )
+}
+
+// What a fetch did, account by account.
+export function BankFetchResults({ list }: { list: BankFetchResult[] }) {
+  const link = (r: BankFetchResult, text: string) => (
+    <a href={importLink(r.session_id!)} onClick={linkHandler(importLink(r.session_id!))}>
+      {text}
+    </a>
+  )
+  return (
+    <ul className="bank-results">
+      {list.map((r) => (
+        <li key={r.account_number}>
+          <strong>{shortAccount(r.account_name)}</strong>{' '}
+          {r.error ? (
+            <span className="alert-text">{r.error}</span>
+          ) : r.nothing_new ? (
+            <span className="muted">nothing new</span>
+          ) : r.in_progress ? (
+            <>
+              <span className="muted">another import of this account is open - finish or discard it first</span> · {link(r, 'Open it')}
+            </>
+          ) : r.saved !== undefined ? (
+            <span className="muted">{formatCount(r.saved)} transactions saved - every one sorted itself</span>
+          ) : (
+            <>
+              <span className="muted">
+                {r.updated ? `its open import brought up to date (${formatCount(r.new_rows ?? 0)} new)` : `${formatCount(r.rows ?? 0)} rows`}
+                {r.open ? `, ${formatCount(r.open)} to categorize` : ', all sorted'}
+              </span>{' '}
+              · {link(r, r.open ? 'Continue' : 'Review')}
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 

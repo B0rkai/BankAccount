@@ -16,6 +16,8 @@ services:
     env_file: "${BANKACCOUNT_ENV_FILE:?}"
     environment:
       BANKACCOUNT_DB: "/data/${BANKACCOUNT_DB_FILE:?}"
+      # Scheduled bank fetches run at 6:00 local time (daemon/AccountSettings.h).
+      TZ: Europe/Budapest
     volumes:
       # Persely's SQLite database (deploy/migrate-db.sh), written as changes are made in Persely.
       # A whole folder: SQLite keeps a short-lived -journal file next to the database during a

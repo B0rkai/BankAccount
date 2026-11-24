@@ -218,7 +218,8 @@ void StopHere();                // stop_at = current row; state -> review
 
 - **Overlap** (today's `PrepareImport`): decided at upload without touching the account — rows
   dated before `last stored date − 1` are skipped; the account's stored transactions on/after
-  the overlap day are only *read* to build the recall list (date + amount + client → category).
+  the overlap day are only *read* to build the recall list (date + amount → the stored type,
+  client, category and description - since 2026-11-24, see enable-banking-import-design.md).
   They're actually replaced at commit.
 - **New clients/categories/types and keywords** created while answering are written to the live
   db right away (they're needed for auto-resolving the following rows, and an unused new client
@@ -528,8 +529,9 @@ behaves as before and `deploy/migrate-db.sh` keeps working.
 - **Overlap** as `Account::PrepareImport()`: rows dated before the day before the last stored
   day are skipped; the stored transactions from the first kept row's day on (`replace_from`,
   `replaced_count`) are replaced only on Save. A file starting after the last stored day is
-  refused at upload. **Recall** reads those stored transactions (categorized ones, newest first,
-  each used once) instead of a stash. **Stop here** can't drop rows dated up to the last stored
+  refused at upload. **Recall** reads those stored transactions (oldest first, each used once; a
+  row with the same date and amount keeps all of the stored one - since 2026-11-24) instead of a
+  stash. **Stop here** can't drop rows dated up to the last stored
   day - that would lose the transactions they replace (`FirstStoppableRow()`); Discard instead.
   **Save** refuses if the account's last day or the number of rows to replace changed since the
   upload, takes a snapshot first (`-import`), and starts an exchange-rate update in the background.

@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "AccountManager.h"
 #include "BankApi.h"
+#include "ImportApi.h"
 #include "ImportSession.h"
 #include "Journal.h"
 
@@ -249,7 +250,7 @@ TEST_F(BankApiTest, FetchOpensAnImportFromTheDayBeforeTheLastStoredOne) {
 	ASSERT_EQ(results.size(), 2u);
 	EXPECT_EQ(results[0]["account_name"], "Main HUF");
 	EXPECT_EQ(results[0]["rows"], 2);  // the overlap row and the new one; the pending one waits
-	EXPECT_EQ(results[0]["open"], 2); // type and client by keyword; no category keywords, so asked
+	EXPECT_EQ(results[0]["open"], 1); // the overlap row is the stored one; the new one's category is asked
 	EXPECT_TRUE(results[1]["nothing_new"]);
 	ASSERT_EQ(imports.All().size(), 1u);
 	const ImportSession& session = imports.All()[0];
@@ -259,12 +260,76 @@ TEST_F(BankApiTest, FetchOpensAnImportFromTheDayBeforeTheLastStoredOne) {
 	EXPECT_EQ(session.rows[1].amount, -2500);
 	EXPECT_EQ(session.rows[1].memo, "memo");
 
-	// Again while that import is open: pointed at it.
+	// Answered, then fetched again a few days on: the same import, brought up to date.
+	const int64_t session_id = session.id;
+	ImportAnswer answer;
+	answer.row = 1;
+	answer.topic = QueryTopic::CATEGORY;
+	answer.kind = ImportAnswer::Kind::Default;
+	answer.description = String("new shoes");
+	std::string error;
+	ASSERT_TRUE(ImportEngine::Answer(mgr, *imports.Find(session_id), answer, error)) << error;
+	http.answers["GET /accounts/uid-huf/transactions"]["transactions"].push_back(Transaction("2025-12-12", "300.00000", "DBIT", "SHOP"));
 	std::vector<BankPull> again;
-	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46000 } }, NOW, again, failure));
-	const json second = Body(StartBankImports(again, mgr, imports, "a@x", NOW))["results"];
-	EXPECT_TRUE(second[0]["in_progress"]);
-	EXPECT_EQ(second[0]["session_id"], session.id);
+	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46000 } }, NOW, again, failure, "12100011-12345678-00000000"));
+	ASSERT_EQ(again.size(), 1u); // only the account asked for
+	const json second = Body(StartBankImports(again, mgr, imports, "b@x", NOW + 3600))["results"];
+	EXPECT_TRUE(second[0]["updated"]) << second.dump();
+	EXPECT_EQ(second[0]["session_id"], session_id);
+	EXPECT_EQ(second[0]["new_rows"], 1);
+	ASSERT_EQ(imports.All().size(), 1u);
+	const ImportSession& updated = imports.All()[0];
+	ASSERT_EQ(updated.rows.size(), 3u);
+	EXPECT_EQ(updated.rows[1].how[2], 'm');           // the answer stays
+	EXPECT_EQ(updated.rows[1].description, "new shoes");
+	EXPECT_EQ(updated.created_by, "a@x");
+	EXPECT_EQ(second[0]["open"], 1);                  // only the new row asks
+}
+
+TEST_F(BankApiTest, AFetchLeavesAFilesImportAlone) {
+	const std::string id = Connect();
+	http.answers["GET /accounts/uid-huf/transactions"] = { { "transactions", { Transaction("2025-12-10", "2500.00000", "DBIT", "SHOP") } } };
+	http.answers["GET /accounts/uid-eur/transactions"] = { { "transactions", json::array() } };
+	std::vector<BankPull> pulled;
+	QueryApiResult failure{ 0, "" };
+	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46000 } }, NOW, pulled, failure));
+	RawImportData file = *pulled[0].data;
+	ImportUpload upload;
+	upload.file_name = "export.xml";
+	ASSERT_EQ(StartImport(file, upload, mgr, imports, "a@x", NOW).http_status, 200);
+	const json results = Body(StartBankImports(pulled, mgr, imports, "a@x", NOW))["results"];
+	EXPECT_TRUE(results[0]["in_progress"]);
+	EXPECT_EQ(imports.All()[0].source_format, "GRANIT_XML");
+}
+
+TEST_F(BankApiTest, AScheduledFetchSavesWhatSortsItselfAndKeepsTheRestOpen) {
+	const Id shopping = mgr.CreateId(QueryTopic::CATEGORY, "Shopping");
+	mgr.AddKeyword(QueryTopic::CATEGORY, shopping, "SHOP");
+	const std::string id = Connect();
+	http.answers["GET /accounts/uid-huf/transactions"] = { { "transactions", {
+		Transaction("2025-12-08", "100.00000", "DBIT", "SHOP"), // the stored 46000
+		Transaction("2025-12-10", "2500.00000", "DBIT", "SHOP"),
+	} } };
+	http.answers["GET /accounts/uid-eur/transactions"] = { { "transactions", json::array() } };
+	std::vector<BankPull> pulled;
+	QueryApiResult failure{ 0, "" };
+	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46000 } }, NOW, pulled, failure));
+	BankImportOptions scheduled;
+	scheduled.save_when_sorted = true;
+	const json results = Body(StartBankImports(pulled, mgr, imports, "a@x", NOW, scheduled))["results"];
+	EXPECT_EQ(results[0]["saved"], 2) << results.dump();
+	EXPECT_EQ(mgr.CountTransactions(), 2u);
+	EXPECT_EQ(imports.All()[0].state, ImportSession::State::Committed);
+
+	// A week on: a row nothing sorts - left open for an answer, nothing saved.
+	http.answers["GET /accounts/uid-huf/transactions"]["transactions"].push_back(Transaction("2025-12-15", "50.00000", "DBIT", "SOMEONE NEW"));
+	std::vector<BankPull> next;
+	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46002 } }, NOW, next, failure));
+	DaemonDb::Imports later;
+	const json second = Body(StartBankImports(next, mgr, later, "a@x", NOW, scheduled))["results"];
+	EXPECT_FALSE(second[0].contains("saved")) << second.dump();
+	EXPECT_EQ(second[0]["open"], 1);
+	EXPECT_EQ(mgr.CountTransactions(), 2u);
 }
 
 TEST_F(BankApiTest, FetchWithNothingOnTheLastStoredDaysStillImports) {

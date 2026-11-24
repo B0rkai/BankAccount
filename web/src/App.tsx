@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, onDataChanged, onUnauthorized, setMe, type Me } from './api'
 import { Icon, type IconName } from './components/Icons'
 import { formatDate, formatDateTime } from './format'
+import { Account } from './pages/Account'
 import { Category } from './pages/Category'
 import { Client } from './pages/Client'
 import { Explore } from './pages/Explore'
@@ -108,6 +109,7 @@ export function App() {
         {route === 'settings' && <Settings />}
         {route === 'imports' && <Imports />}
         {route === 'import' && <ImportPage params={params} />}
+        {route === 'account' && <Account params={params} />}
         <footer className="footer muted small">
           Persely · BankAccount {me.version} · {me.can_edit ? 'changes are saved as you make them' : 'read-only (favorites and settings can be saved)'}
         </footer>

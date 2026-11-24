@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { ApiError, bank, canEdit, imports, type BankConnection, type BankFetchResult, type ImportDetected, type ImportSummary } from '../api'
-import { daysLeftText } from '../components/BankConnections'
+import { BankFetchResults, daysLeftText } from '../components/BankConnections'
 import { Icon } from '../components/Icons'
 import { formatCount, formatDate, formatDateTime } from '../format'
 import { useAsync } from '../hooks'
@@ -270,37 +270,7 @@ function FromTheBank({ onFetched }: { onFetched: () => void }) {
                 </button>
               )}
             </div>
-            {results?.connection === c.id && (
-              <ul className="bank-results">
-                {results.list.map((r) => (
-                  <li key={r.account_number}>
-                    <strong>{shortAccount(r.account_name)}</strong>{' '}
-                    {r.error ? (
-                      <span className="alert-text">{r.error}</span>
-                    ) : r.nothing_new ? (
-                      <span className="muted">nothing new</span>
-                    ) : r.in_progress ? (
-                      <>
-                        <span className="muted">already has an import in progress</span> ·{' '}
-                        <a href={importLink(r.session_id!)} onClick={linkHandler(importLink(r.session_id!))}>
-                          Continue
-                        </a>
-                      </>
-                    ) : (
-                      <>
-                        <span className="muted">
-                          {formatCount(r.rows ?? 0)} rows{r.open ? `, ${formatCount(r.open)} to categorize` : ', all sorted'}
-                        </span>{' '}
-                        ·{' '}
-                        <a href={importLink(r.session_id!)} onClick={linkHandler(importLink(r.session_id!))}>
-                          {r.open ? 'Continue' : 'Review'}
-                        </a>
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {results?.connection === c.id && <BankFetchResults list={results.list} />}
           </div>
         )
       })}

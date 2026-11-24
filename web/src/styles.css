@@ -494,3 +494,15 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .bank-paste code { overflow-wrap: anywhere; }
 .bank-fetch { display: flex; flex-direction: column; gap: 14px; }
 .bank-fetch-row + .bank-fetch-row { border-top: 1px solid var(--border); padding-top: 14px; }
+.account-title { display: flex; align-items: center; gap: 4px; }
+.account-rename { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
+.account-rename input { flex: 1 1 200px; min-width: 0; font-size: 18px; }
+.account-page .import-banner { margin-bottom: 16px; }
+.account-bank h3 { font-size: 15px; margin: 18px 0 8px; }
+.account-schedule { border-top: 1px solid var(--border); margin-top: 16px; }
+.account-schedule-fields { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.account-schedule-fields select { flex: 1 1 160px; min-width: 0; }
+.account-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.account-runs li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; overflow-wrap: anywhere; }
+.account-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.account-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }

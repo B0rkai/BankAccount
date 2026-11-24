@@ -61,6 +61,37 @@ drop it.
 | `excluded_categories` | `number[]` \| `null` | Categories left out of the overview's and year in review's totals. Missing: none (a browser that still has the old per-browser list moves it here on first load). |
 | `other_income_categories` | `number[]` \| `null` | Money in under these isn't counted as income; it shows as "other money in". Missing or empty: all money in is income. |
 
+## `db/account_settings.json`
+
+What Persely keeps about each account besides its transactions - the account pages
+(`daemon/AccountSettings.h`, `daemon/AccountApi.h`): its owner, its scheduled bank fetch and its
+last 20 fetches. Keyed by the account number's letters and digits, upper case. Written by the
+daemon (`PATCH /api/v1/accounts/{id}`, and every fetch); a missing file means none set.
+
+```json
+{
+  "accounts": {
+    "121000111234567800000000": {
+      "owner": "someone@example.com",
+      "schedule": { "every": "week", "day": 1, "since": "2026-11-24T10:00:00Z", "set_by": "someone@example.com" },
+      "runs": [
+        { "at": "2026-11-30T05:00:12Z", "by": "someone@example.com", "scheduled": true, "outcome": "waiting",
+          "message": "", "session_id": 12, "rows": 9, "open": 2 }
+      ]
+    }
+  }
+}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `owner` | string | A login from `BANKACCOUNT_ALLOWED_LOGINS`; `""` not set. |
+| `schedule` | object, optional | `every`: `"week"` (`day` 1 Monday ... 7 Sunday) or `"month"` (`day` 1-31, the month's last day in a shorter one); runs at 6:00 local time. `since`: when it was set; `set_by`: whose name its imports are made in. An invalid one is ignored. |
+| `runs` | array | Newest last. `outcome`: `"saved"`, `"waiting"` (an import with questions is open), `"nothing_new"`, `"in_progress"` (another import of the account was open), `"error"` (`message` says why). |
+
+`db/bank_connections.json` (the bank consents, mode 600 - their session ids are secret) is written
+by `daemon/BankApi.h` only and isn't meant to be edited by hand.
+
 ## `db/favorite_queries.json`
 
 Saved queries, listed in Explore and runnable by name. Persely adds, replaces and deletes entries

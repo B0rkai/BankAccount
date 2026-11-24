@@ -50,6 +50,8 @@ public:
 	bool IsValidId(QueryTopic topic, Id id) const;
 	// nullptr if the account or position doesn't exist.
 	const Transaction* FindTransaction(const TransactionIdentity& identity) const;
+	// nullptr if there's no such account (the account pages, daemon/AccountApi.h).
+	const Account* FindAccount(Id id) const;
 	// A CLIENT/CATEGORY/TYPE's keywords, bare, with their tier (true = definitive).
 	std::vector<std::pair<String, bool>> GetKeywordsOf(QueryTopic topic, Id id) const;
 	StringVector GetClientAccountNumbers(Id client_id) const;

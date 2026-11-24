@@ -79,12 +79,16 @@ public:
 	QueryApiResult Disconnect(const std::string& id);
 
 	// The download half of POST /api/v1/bank/fetch - no database lock held. Every account of the
-	// connection, from the day before `last_dates[account_number]` (an Excel date; missing or 0:
-	// the last 89 days). False with `error` (404) for an unknown connection.
-	bool Pull(const std::string& connection_id, const std::map<std::string, uint16_t>& last_dates, std::time_t now, std::vector<BankPull>& pulled, QueryApiResult& error);
+	// connection (or only `only_account`, an account number), from the day before
+	// `last_dates[account_number]` (an Excel date; missing or 0: the last 89 days). False with
+	// `error` (404) for an unknown connection.
+	bool Pull(const std::string& connection_id, const std::map<std::string, uint16_t>& last_dates, std::time_t now, std::vector<BankPull>& pulled, QueryApiResult& error,
+		const std::string& only_account = "");
 
 	// The connection's accounts, for the caller to look up their last dates.
 	std::vector<BankAccountLink> Accounts(const std::string& connection_id);
+	// Every connection - with its session id, so never for the browser as it is.
+	std::vector<BankConnection> Connections();
 
 private:
 	struct Pending {
@@ -102,8 +106,20 @@ private:
 	std::map<std::string, Pending> m_pending; // by state
 };
 
+// Whole days until the connection's consent ends (-1: it has ended); nullopt if it doesn't say.
+std::optional<long> BankDaysLeft(const BankConnection& connection, std::time_t now);
+
+struct BankImportOptions {
+	// Save an import whose rows all sorted themselves straight away (a scheduled fetch) - never
+	// one that would create a new account.
+	bool save_when_sorted = false;
+};
+
 // The database half of a fetch, inside DaemonDb::WriteImports(): each downloaded account becomes
-// an import session unless it has nothing new or already has one open. Always 200: {"results":
-// [{account_number, account_name, session_id?, rows?, open?, nothing_new?, in_progress?,
-// error?}]}.
-QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+// an import session unless it has nothing new. An account whose earlier fetch is still open has
+// that import brought up to date instead (ImportEngine::CarryOver() - its answers stay), unless
+// someone is working on it right now or it's a file's import. Always 200: {"results":
+// [{account_number, account_name, session_id?, rows?, open?, new_rows?, updated?, saved?,
+// nothing_new?, in_progress?, error?}]}.
+QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now,
+	const BankImportOptions& options = {});

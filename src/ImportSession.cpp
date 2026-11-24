@@ -223,8 +223,8 @@ bool ImportEngine::Start(const AccountManager& manager, const RawImportData& dat
 }
 
 std::vector<ImportEngine::Recallable> ImportEngine::Replaced(const AccountManager& manager, const ImportSession& session) {
-	// The stored transactions this import replaces, categorized ones only, newest first (the
-	// desktop's order, so duplicates are recalled the same way).
+	// The stored transactions this import replaces, oldest first - the file's order, so same-day
+	// twins are matched in turn.
 	std::vector<Recallable> stored;
 	if ((Id::Type)session.account_id >= manager.m_accounts.size() || !session.replaced_count) {
 		return stored;
@@ -233,13 +233,48 @@ std::vector<ImportEngine::Recallable> ImportEngine::Replaced(const AccountManage
 	if (account.Size() < session.replaced_count) {
 		return stored;
 	}
-	for (size_t i = account.Size(); i-- > account.Size() - session.replaced_count;) {
+	for (size_t i = account.Size() - session.replaced_count; i < account.Size(); ++i) {
 		const Transaction& tr = account.GetTransactionAt(i);
-		if (tr.GetCategoryId() != Id(UNCATEGORIZED)) {
-			stored.push_back({ tr.GetDate(), tr.GetAmount(), tr.GetClientId(), tr.GetCategoryId() });
-		}
+		stored.push_back({ tr.GetDate(), tr.GetAmount(), tr.GetTypeId(), tr.GetClientId(), tr.GetCategoryId(), tr.GetDescription() });
 	}
 	return stored;
+}
+
+bool ImportEngine::Recall(const AccountManager& manager, ImportRow& row, std::vector<Recallable>& recallable) {
+	std::vector<std::vector<Recallable>::iterator> same;
+	for (auto it = recallable.begin(); it != recallable.end(); ++it) {
+		if (it->date == row.date && it->amount == row.amount) {
+			same.push_back(it);
+		}
+	}
+	if (same.empty()) {
+		return false;
+	}
+	auto match = same.front();
+	if (same.size() > 1) {
+		// Twins on one day: the one the keywords point to, if they tell them apart.
+		const IdSet types = manager.SearchIds(QueryTopic::TYPE, row.type, false);
+		const IdSet clients = manager.SearchIds(QueryTopic::CLIENT, row.client, false);
+		auto fits = std::find_if(same.begin(), same.end(), [&](auto it) {
+			return (types.size() != 1 || *types.begin() == it->type) && (clients.size() != 1 || *clients.begin() == it->client);
+		});
+		if (fits != same.end()) {
+			match = *fits;
+		}
+	}
+	const Id stored[] = { match->type, match->client, match->category };
+	for (QueryTopic topic : TOPICS) {
+		const size_t h = ImportRow::HowIndex(topic);
+		if (row.how[h] != 'm') {
+			TopicId(row, topic) = stored[h];
+			row.how[h] = 'r';
+		}
+	}
+	if (row.description.empty()) {
+		row.description = match->description;
+	}
+	recallable.erase(match);
+	return true;
 }
 
 bool ImportEngine::Resolve(const AccountManager& manager, ImportSession& session) {
@@ -248,8 +283,8 @@ bool ImportEngine::Resolve(const AccountManager& manager, ImportSession& session
 	}
 	const ImportSession before = session;
 	std::vector<Recallable> recallable = Replaced(manager, session);
-	// In file order: a row's category reuses a replaced transaction only
-	// once, and topics are tried type, client, category - each needs the one before.
+	// In file order: a row that is a stored transaction keeps what that was saved with (each
+	// stored one once); the others are tried type, client, category - each needs the one before.
 	for (ImportRow& row : session.rows) {
 		for (QueryTopic topic : TOPICS) {
 			const size_t h = ImportRow::HowIndex(topic);
@@ -258,8 +293,11 @@ bool ImportEngine::Resolve(const AccountManager& manager, ImportSession& session
 				row.how[h] = '-';
 			}
 		}
+		if (Recall(manager, row, recallable)) {
+			continue;
+		}
 		for (QueryTopic topic : TOPICS) {
-			if (row.how[ImportRow::HowIndex(topic)] != 'm' && !TryAuto(manager, row, topic, recallable)) {
+			if (row.how[ImportRow::HowIndex(topic)] != 'm' && !TryAuto(manager, row, topic)) {
 				break;
 			}
 		}
@@ -309,7 +347,7 @@ std::optional<ImportQuestion> ImportEngine::Question(const AccountManager& manag
 	return Ask(manager, session, index, *topic);
 }
 
-bool ImportEngine::TryAuto(const AccountManager& manager, ImportRow& row, QueryTopic topic, std::vector<Recallable>& recallable) {
+bool ImportEngine::TryAuto(const AccountManager& manager, ImportRow& row, QueryTopic topic) {
 	if (topic == QueryTopic::TYPE || topic == QueryTopic::CLIENT) {
 		// Only a single definitive keyword match resolves by itself.
 		IdSet ids = manager.SearchIds(topic, topic == QueryTopic::TYPE ? row.type : row.client, false);
@@ -320,20 +358,11 @@ bool ImportEngine::TryAuto(const AccountManager& manager, ImportRow& row, QueryT
 		row.how[ImportRow::HowIndex(topic)] = 'a';
 		return true;
 	}
-	// CATEGORY, in this order: the file's own category, the category of the
-	// stored transaction this row replaces, keywords on the raw texts, keywords on the names.
+	// CATEGORY, in this order: the file's own category, keywords on the raw texts, keywords on
+	// the names.
 	if (!row.cat.empty()) {
 		row.category_id = manager.m_category_system.GetId(row.cat);
 		row.how[2] = 'a';
-		return true;
-	}
-	auto recalled = std::find_if(recallable.begin(), recallable.end(), [&](const Recallable& r) {
-		return r.date == row.date && r.amount == row.amount && r.client == row.client_id;
-	});
-	if (recalled != recallable.end()) {
-		row.category_id = recalled->category;
-		row.how[2] = 'r';
-		recallable.erase(recalled);
 		return true;
 	}
 	// Categorize() only reads (and logs); it just isn't declared const in its interface.
@@ -575,6 +604,45 @@ bool ImportEngine::Commit(AccountManager& manager, ImportSession& session, std::
 	manager.Modified();
 	session.state = ImportSession::State::Committed;
 	return true;
+}
+
+void ImportEngine::CarryOver(const AccountManager& manager, const ImportSession& old, ImportSession& fresh) {
+	fresh.id = old.id;
+	fresh.created_at = old.created_at;
+	fresh.created_by = old.created_by;
+	std::vector<bool> taken(old.rows.size(), false);
+	for (ImportRow& row : fresh.rows) {
+		for (size_t i = 0; i < old.rows.size(); ++i) {
+			const ImportRow& before = old.rows[i];
+			if (taken[i] || before.date != row.date || before.amount != row.amount || before.type != row.type
+					|| before.client != row.client || before.memo != row.memo) {
+				continue;
+			}
+			taken[i] = true;
+			for (QueryTopic topic : TOPICS) {
+				const size_t h = ImportRow::HowIndex(topic);
+				if (before.how[h] == 'm') {
+					TopicId(row, topic) = TopicId(before, topic);
+					row.how[h] = 'm';
+				}
+			}
+			if (!before.description.empty()) {
+				row.description = before.description;
+			}
+			break;
+		}
+	}
+	if (old.stop_at && *old.stop_at < old.rows.size()) {
+		// Cut at the same transaction, if it's still there and may be cut at.
+		const ImportRow& cut = old.rows[*old.stop_at];
+		for (size_t i = fresh.FirstStoppableRow(); i < fresh.rows.size(); ++i) {
+			if (fresh.rows[i].date == cut.date && fresh.rows[i].amount == cut.amount && fresh.rows[i].memo == cut.memo) {
+				fresh.stop_at = i;
+				break;
+			}
+		}
+	}
+	Resolve(manager, fresh);
 }
 
 Id ImportEngine::MergedId(Id id, const IdSet& from, Id to) {

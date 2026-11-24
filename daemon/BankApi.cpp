@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include "AccountSettings.h"
 #include "EnableBankingImport.h"
 #include "FavoritesStore.h"
 #include "ImportApi.h"
@@ -87,8 +88,8 @@ json ConnectionToFile(const BankConnection& c) {
 json ConnectionToJson(const BankConnection& c, std::time_t now) {
 	json j = ConnectionToFile(c);
 	j.erase("session_id");
-	const std::time_t until = ParseTimestamp(c.valid_until);
-	j["days_left"] = until ? json(until > now ? (until - now) / 86400 : -1) : json(nullptr);
+	const std::optional<long> days = BankDaysLeft(c, now);
+	j["days_left"] = days ? json(*days) : json(nullptr);
 	return j;
 }
 
@@ -389,6 +390,19 @@ QueryApiResult BankApi::Disconnect(const std::string& id) {
 	return Ok(json{ { "ok", true } });
 }
 
+std::vector<BankConnection> BankApi::Connections() {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	return LoadLocked();
+}
+
+std::optional<long> BankDaysLeft(const BankConnection& connection, std::time_t now) {
+	const std::time_t until = ParseTimestamp(connection.valid_until);
+	if (!until) {
+		return std::nullopt;
+	}
+	return until > now ? (long)((until - now) / 86400) : -1L;
+}
+
 std::vector<BankAccountLink> BankApi::Accounts(const std::string& connection_id) {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	for (const BankConnection& c : LoadLocked()) {
@@ -399,7 +413,8 @@ std::vector<BankAccountLink> BankApi::Accounts(const std::string& connection_id)
 	return {};
 }
 
-bool BankApi::Pull(const std::string& connection_id, const std::map<std::string, uint16_t>& last_dates, std::time_t now, std::vector<BankPull>& pulled, QueryApiResult& failure) {
+bool BankApi::Pull(const std::string& connection_id, const std::map<std::string, uint16_t>& last_dates, std::time_t now, std::vector<BankPull>& pulled, QueryApiResult& failure,
+		const std::string& only_account) {
 	if (!m_http) {
 		failure = MakeErrorResult(503, "Bank connections aren't set up on this server");
 		return false;
@@ -421,6 +436,9 @@ bool BankApi::Pull(const std::string& connection_id, const std::map<std::string,
 	const int shift = EnableBanking::DayShift(bank);
 	const std::time_t until = ParseTimestamp(conn->valid_until);
 	for (const BankAccountLink& account : conn->accounts) {
+		if (!only_account.empty() && AccountKey(account.account_number) != AccountKey(only_account)) {
+			continue;
+		}
 		BankPull& pull = pulled.emplace_back();
 		pull.account = account;
 		pull.bank = conn->bank;
@@ -451,7 +469,8 @@ bool BankApi::Pull(const std::string& connection_id, const std::map<std::string,
 	return true;
 }
 
-QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now) {
+QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now,
+		const BankImportOptions& options) {
 	json results = json::array();
 	for (BankPull& pull : pulled) {
 		json r = { { "account_number", pull.account.account_number }, { "bank", pull.bank } };
@@ -476,19 +495,63 @@ QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& m
 		upload.file_name = pull.bank + " (Enable Banking)";
 		upload.source_format = SOURCE_FORMAT;
 		upload.account_name = String::FromUTF8(pull.account.name.c_str());
-		const QueryApiResult started = StartImport(data, upload, mgr, imports, actor, now);
-		const json answer = json::parse(started.body, nullptr, false);
-		if (started.http_status == 409 && answer.contains("session_id")) {
-			r["in_progress"] = true;
-			r["session_id"] = answer["session_id"];
-		} else if (started.http_status != 200) {
-			r["error"] = Str(answer, "error");
+
+		ImportSession* session = nullptr;
+		if (const ImportSession* open = imports.FindByAccountNumber(number)) {
+			// Its earlier fetch is still open: bring it up to date - unless it's a file's, or
+			// someone answered in it just now (they'd see their questions move under them).
+			const std::time_t touched = ParseIsoUtc(open->updated_at);
+			const bool busy = open->updated_by != actor && touched && now - touched < IMPORT_EDITOR_MINUTES * 60;
+			if (std::string(open->source_format.utf8_str()) != SOURCE_FORMAT || busy) {
+				r["in_progress"] = true;
+				r["session_id"] = open->id;
+				r["open"] = ImportEngine::OpenRows(*open).size();
+				results.push_back(r);
+				continue;
+			}
+			ImportSession fresh;
+			std::string error;
+			if (!ImportEngine::Start(mgr, data, open->source_name, open->source_format, fresh, error)) {
+				r["error"] = error;
+				results.push_back(r);
+				continue;
+			}
+			fresh.account_name = open->account_name;
+			fresh.updated_at = open->updated_at; // not a change of anyone's: the soft lock stays as it was
+			fresh.updated_by = open->updated_by;
+			ImportEngine::CarryOver(mgr, *open, fresh);
+			const size_t before = open->rows.size();
+			session = imports.Find(open->id);
+			*session = std::move(fresh);
+			imports.Changed(session->id);
+			r["updated"] = true;
+			r["new_rows"] = session->rows.size() > before ? session->rows.size() - before : 0;
 		} else {
-			r["session_id"] = answer["id"];
-			r["rows"] = answer["rows"];
-			r["open"] = answer["open"];
-			LogInfo("BANK") << actor << " fetched " << pull.bank << " " << pull.account.account_number << ": import " << answer["id"].dump();
+			const QueryApiResult started = StartImport(data, upload, mgr, imports, actor, now);
+			const json answer = json::parse(started.body, nullptr, false);
+			if (started.http_status != 200) {
+				r["error"] = Str(answer, "error");
+				results.push_back(r);
+				continue;
+			}
+			session = imports.Find(answer["id"].get<int64_t>());
+			r["new_rows"] = session->rows.size() - session->FirstStoppableRow();
 		}
+		r["session_id"] = session->id;
+		r["rows"] = session->rows.size();
+		r["open"] = ImportEngine::OpenRows(*session).size();
+		if (options.save_when_sorted && session->state == ImportSession::State::Review && session->account_id != Id(INVALID_ID)) {
+			std::string error;
+			const size_t saving = session->End();
+			if (ImportEngine::Commit(mgr, *session, error)) {
+				imports.Changed(session->id);
+				r["saved"] = saving;
+			} else {
+				r["error"] = error;
+			}
+		}
+		LogInfo("BANK") << actor << " fetched " << pull.bank << " " << pull.account.account_number << ": import " << session->id
+			<< (r.contains("saved") ? " saved" : r.value("updated", false) ? " updated" : " opened");
 		results.push_back(r);
 	}
 	return Ok(json{ { "results", results } });

@@ -149,6 +149,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const post = <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) })
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' })
 const put = <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) })
+const patch = <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
 
 // The web app's settings, kept by the daemon so every browser shares them. Category ids.
 export interface WebSettings {
@@ -422,11 +423,14 @@ export interface BankFetchResult {
   account_number: string
   account_name: string
   bank: string
-  session_id?: number // the import it opened (or the one already in progress)
+  session_id?: number // the import it opened, brought up to date, or found in progress
   rows?: number
   open?: number
+  new_rows?: number // rows this fetch added (an import brought up to date: since its last fetch)
+  updated?: boolean // the account's open import from an earlier fetch, brought up to date
+  saved?: number // a scheduled fetch whose rows all sorted themselves: saved straight away
   nothing_new?: boolean
-  in_progress?: boolean
+  in_progress?: boolean // another import of the account is open (a file's, or being answered)
   error?: string
 }
 
@@ -439,6 +443,57 @@ export const bank = {
   // Opens an import per account with something new: the import list and banners reload.
   fetch: (connectionId: string) => post<{ results: BankFetchResult[] }>('/api/v1/bank/fetch', { connection_id: connectionId }).then(dataChanged),
 }
+
+// ---- accounts (daemon/AccountApi.h) ----
+
+export interface BankSchedule {
+  every: 'week' | 'month'
+  day: number // week: 1 Monday ... 7 Sunday; month: 1-31 (the last day in a shorter month)
+  since: string
+  set_by: string // scheduled imports are made in their name
+  next: string | null // the next run, ISO UTC
+}
+export interface BankRun {
+  at: string
+  by: string
+  scheduled: boolean
+  outcome: 'saved' | 'waiting' | 'nothing_new' | 'in_progress' | 'error'
+  message: string
+  session_id: number
+  rows: number
+  open: number
+}
+export interface AccountInfo {
+  id: number
+  name: string
+  full_name: string // "Bank::Name", what an accounts filter takes
+  number: string
+  bank: string
+  currency: string
+  open: boolean // false: closed
+  owner: string // a login, "" when not set
+  transactions: number
+  first_date: string | null
+  last_date: string | null
+  connection: { id: string; bank: string; valid_until: string; days_left: number | null } | null
+  schedule: BankSchedule | null
+  last_run: BankRun | null
+  import: { id: number; state: 'categorizing' | 'review'; open: number; rows: number; from_bank: boolean } | null
+}
+export interface AccountDetails extends AccountInfo {
+  runs: BankRun[] // newest first
+  owners: string[] // who may own an account: the logins allowed to use Persely
+}
+
+export const accounts = {
+  list: () => request<{ accounts: AccountInfo[]; owners: string[] }>('/api/v1/accounts'),
+  get: (id: number) => request<AccountDetails>(`/api/v1/accounts/${id}`),
+  update: (id: number, change: { owner?: string; schedule?: { every: 'week' | 'month'; day: number } | null }) =>
+    patch<{ ok: boolean }>(`/api/v1/accounts/${id}`, change).then(dataChanged),
+  // This account only; opens or brings up to date its import.
+  fetch: (id: number) => post<{ results: BankFetchResult[] }>(`/api/v1/accounts/${id}/fetch`, {}).then(dataChanged),
+}
+export const accountLink = (id: number) => `/account?id=${id}`
 
 // Names change with an edit or import here (dataChanged clears this).
 const nameCache = new Map<string, Promise<NameList>>()
