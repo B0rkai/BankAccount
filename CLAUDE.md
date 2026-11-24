@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 **Persely** - a home-finance web app. Bank exports (MBH Bank CSV, Gránit Bank XML) are uploaded
-and categorized in the browser, from any device, then queried: overview, explore (ad-hoc queries
-with charts), transactions, client/category/year pages, favorite queries and downloadable HTML
+and categorized in the browser, from any device, then queried: overview, transactions (filtered, and
+grouped/over time into charts - what was Explore), accounts, client/category/year pages, favorite queries and downloadable HTML
 reports. A C++17 daemon (`daemon/`) holds the data in memory over a SQLite database and serves a
 JSON API under `/api/v1` plus the React + TypeScript + Vite web app (`web/`). It ships as one
 Docker image and runs on borkai-server.

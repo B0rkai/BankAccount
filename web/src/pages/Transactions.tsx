@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { api, cachedNames, canEdit, type QueryDef, type TransactionRow } from '../api'
+import { api, cachedNames, canEdit, type FavoriteQuery, type QueryDef, type Section, type TransactionRow } from '../api'
 import { EditTransaction } from '../components/EditTransaction'
 import { Icon } from '../components/Icons'
 import { NamePicker } from '../components/NamePicker'
+import { ResultSection, type ChartPreference } from '../components/ResultSection'
+import { SaveFavorite, useFavoritesVersion } from '../components/SaveFavorite'
 import { AccountLink, CategoryTag, ClientName, periodOf } from '../components/TopicLinks'
 import { displayName, useNameIndex } from '../drill'
 import { formatCount, formatDate, formatMoney, RELATIVE_PERIODS } from '../format'
@@ -15,6 +17,29 @@ const PAGE = 50
 const DEFAULT: QueryDef = { relative_period: 'last_30_days' }
 type Direction = '' | 'in' | 'out'
 
+const GROUP_BY = [
+  { key: '', label: 'Nothing' },
+  { key: 'category', label: 'Category' },
+  { key: 'client', label: 'Client' },
+  { key: 'type', label: 'Transaction type' },
+  { key: 'account', label: 'Account' },
+]
+
+const OVER_TIME = [
+  { key: '', label: 'No - one total' },
+  { key: 'yearly', label: 'Yearly' },
+  { key: 'half_yearly', label: 'Half-yearly' },
+  { key: 'quarterly', label: 'Quarterly' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'daily', label: 'Daily' },
+]
+
+// Just the query fields of a favorite (no name or chart preference).
+function queryOf(fav: FavoriteQuery): QueryDef {
+  const { name: _name, chart: _chart, ...def } = fav
+  return def
+}
+
 function readDef(params: URLSearchParams): QueryDef {
   try {
     const q = params.get('q')
@@ -24,10 +49,27 @@ function readDef(params: URLSearchParams): QueryDef {
   }
 }
 
-// Everything the page shows is in the address (?q=<query>&search=&dir=), so a drill-down from a
-// chart lands here already filtered, and any view can be bookmarked or shared.
+// Transactions, and what Explore used to be: the same filters list the matching transactions and,
+// grouped (by category, client, ...) and/or over time, total them up in charts and tables above the
+// list. Everything is in the address (?q=<query>&search=&dir=, or ?fav=/?report= for a saved
+// one), so a drill-down from a chart lands here already filtered, and any view can be bookmarked.
+// The search and Spending/Income only narrow the list.
 export function Transactions({ params }: { params: URLSearchParams }) {
-  const def = readDef(params)
+  const version = useFavoritesVersion()
+  const favorites = useAsync(() => api.favoriteQueries(), `favorites:${version}`)
+  const reportName = params.get('report')
+  const reports = useAsync(() => (reportName ? api.favoriteReports() : Promise.resolve([])), `reports:${reportName}:${version}`)
+  const report = reports.data?.find((r) => r.name === reportName)
+  const favName = params.get('fav') ?? report?.favorite_query ?? null
+  const favorite = favName ? favorites.data?.find((f) => f.name === favName) : undefined
+  const waiting = (!!favName && !favorites.data) || (!!reportName && !reports.data)
+  const def = favorite ? queryOf(favorite) : readDef(params)
+  const pref: ChartPreference | undefined = report
+    ? { kinds: report.chart_kinds, side: report.chart_sides?.[0] }
+    : favorite?.chart
+      ? { kinds: favorite.chart.kind ? [favorite.chart.kind] : undefined, side: favorite.chart.side }
+      : undefined
+  const [saving, setSaving] = useState(false)
   const search = params.get('search') ?? ''
   const direction = (params.get('dir') ?? '') as Direction
   const [text, setText] = useState(search)
@@ -60,11 +102,19 @@ export function Transactions({ params }: { params: URLSearchParams }) {
   const [paging, setPaging] = useState({ key, offset: 0 })
   const offset = paging.key === key ? paging.offset : 0
   const setOffset = (o: number) => setPaging({ key, offset: o })
-  const page = useAsync(() => api.transactions({ ...def, search: search || undefined, direction: direction || undefined, limit: PAGE, offset }), `${key}:${offset}`)
+  const page = useAsync(
+    () => (waiting ? new Promise<never>(() => {}) : api.transactions({ ...def, search: search || undefined, direction: direction || undefined, limit: PAGE, offset })),
+    `${waiting}:${key}:${offset}`,
+  )
+
+  // Grouped and/or over time: the totals, charts and tables (the list is the page's own).
+  const analysed = !waiting && (!!def.aggregate_by?.length || !!def.period)
+  const analysisKey = analysed ? JSON.stringify({ ...def, show_list: undefined }) : ''
+  const analysis = useAsync<Section[] | null>(() => (analysed ? api.query({ ...def, show_list: undefined }) : Promise.resolve(null)), analysisKey)
 
   const dateMode = def.relative_period ? def.relative_period : def.date_from ? 'custom' : ''
   const total = page.data?.total ?? 0
-  const filtered = JSON.stringify(def) !== JSON.stringify(DEFAULT) || search || direction
+  const filtered = JSON.stringify(def) !== JSON.stringify(DEFAULT) || search || direction || favName
   const rows = page.data?.transactions ?? []
 
   // A column every matching transaction has the same value in - the filter pins it to one, or
@@ -104,18 +154,54 @@ export function Transactions({ params }: { params: URLSearchParams }) {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Transactions</h1>
+          <h1>{report?.name ?? favorite?.name ?? 'Transactions'}</h1>
           <p className="muted">
             {page.data ? `${formatCount(total)} matching, newest first` : 'Loading…'}
             {def.date_from && def.date_to ? ` · ${describeRange({ from: def.date_from, to: def.date_to })}` : ''}
           </p>
         </div>
-        {filtered && (
-          <a className="button secondary small" href="/transactions" onClick={linkHandler('/transactions')}>
-            Clear filters
-          </a>
-        )}
+        <div className="toolbar">
+          <select
+            aria-label="Load a favorite"
+            value={favName ?? ''}
+            onChange={(e) => e.target.value && navigate(`/transactions?fav=${encodeURIComponent(e.target.value)}`)}
+          >
+            <option value="">Favorites…</option>
+            {favorites.data?.map((f) => (
+              <option key={f.name} value={f.name}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+          {!waiting && (
+            <button type="button" className="button secondary small" onClick={() => setSaving(true)}>
+              {favorite ? 'Save as…' : 'Save as favorite'}
+            </button>
+          )}
+          {report && (
+            <a className="button secondary small" href={api.reportHtmlUrl(report.name)} download>
+              HTML report
+            </a>
+          )}
+          {filtered && (
+            <a className="button secondary small" href="/transactions" onClick={linkHandler('/transactions')}>
+              Clear filters
+            </a>
+          )}
+        </div>
       </div>
+      {saving && (
+        <SaveFavorite
+          query={def}
+          initialName={favorite?.name ?? ''}
+          initialChart={favorite?.chart}
+          onClose={() => setSaving(false)}
+          onSaved={(name, asReport) => {
+            setSaving(false)
+            navigate(asReport ? `/transactions?report=${encodeURIComponent(name)}` : `/transactions?fav=${encodeURIComponent(name)}`)
+          }}
+        />
+      )}
 
       <section className="card filters">
         <label className="field search-field">
@@ -193,7 +279,85 @@ export function Transactions({ params }: { params: URLSearchParams }) {
           placeholder="Any category"
           display={(v) => displayName(v, names, 'category')}
         />
+        <label className="field">
+          Group by
+          <select value={def.aggregate_by?.[0] ?? ''} onChange={(e) => set({ aggregate_by: e.target.value ? [e.target.value] : undefined })}>
+            {GROUP_BY.map((g) => (
+              <option key={g.key} value={g.key}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          Over time
+          <select value={def.period ?? ''} onChange={(e) => set({ period: e.target.value || undefined })}>
+            {OVER_TIME.map((g) => (
+              <option key={g.key} value={g.key}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <details className="more-filters" open={!!(def.types?.length || def.exclude_clients || def.exclude_categories || (def.accounts?.length ?? 0) > 1) || undefined}>
+          <summary className="small">More filters</summary>
+          <div className="more-filters-body">
+            <fieldset className="field">
+              <legend>Accounts</legend>
+              <div className="check-list">
+                {accounts.data?.map((a) => (
+                  <label key={a} className="check">
+                    <input
+                      type="checkbox"
+                      checked={!def.accounts?.length || def.accounts.includes(a)}
+                      onChange={(e) => {
+                        const all = accounts.data ?? []
+                        const current = def.accounts?.length ? def.accounts : all
+                        const next = e.target.checked ? [...current, a] : current.filter((x) => x !== a)
+                        set({ accounts: next.length === all.length || !next.length ? undefined : next })
+                      }}
+                    />
+                    {a}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <NamePicker
+              label={def.exclude_types ? 'Transaction types (left out)' : 'Transaction types'}
+              values={def.types ?? []}
+              options={[]}
+              onChange={(v) => set({ types: v.length ? v : undefined, exclude_types: v.length ? def.exclude_types : undefined })}
+              placeholder="Any type"
+            />
+            {(
+              [
+                ['clients', 'exclude_clients', 'the clients'],
+                ['categories', 'exclude_categories', 'the categories'],
+                ['types', 'exclude_types', 'the types'],
+              ] as const
+            ).map(
+              ([list, flag, what]) =>
+                !!def[list]?.length && (
+                  <label key={flag} className="check">
+                    <input type="checkbox" checked={!!def[flag]} onChange={(e) => set({ [flag]: e.target.checked || undefined })} />
+                    Leave {what} out instead
+                  </label>
+                ),
+            )}
+          </div>
+        </details>
       </section>
+
+      {analysis.error && <div className="alert">{analysis.error}</div>}
+      {analysed && analysis.loading && (
+        <section className="card">
+          <Skeleton rows={6} />
+        </section>
+      )}
+      {analysed && !analysis.loading && (search || direction) && analysis.data && (
+        <p className="muted small">The totals count the filters, not the search or Spending/Income - those narrow the list below.</p>
+      )}
+      {analysed && !analysis.loading && analysis.data?.map((section, i) => <ResultSection key={`${analysisKey}:${i}`} section={section} pref={pref} def={def} />)}
 
       {page.error && <div className="alert">{page.error}</div>}
       {editing && <EditTransaction key={`${editing.account_id}:${editing.seq}`} transaction={editing} onClose={() => setEditing(undefined)} />}

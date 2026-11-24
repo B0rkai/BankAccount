@@ -7,7 +7,6 @@ import { Account } from './pages/Account'
 import { Accounts } from './pages/Accounts'
 import { Category } from './pages/Category'
 import { Client } from './pages/Client'
-import { Explore } from './pages/Explore'
 import { ImportPage } from './pages/ImportSession'
 import { Login } from './pages/Login'
 import { daysSince, Overview, STALE_DAYS } from './pages/Overview'
@@ -101,7 +100,6 @@ export function App() {
 
       <main className="main">
         {route === 'overview' && <Overview me={me} />}
-        {route === 'explore' && <Explore params={params} />}
         {route === 'transactions' && <Transactions params={params} />}
         {route === 'reports' && <Reports />}
         {route === 'client' && <Client params={params} />}

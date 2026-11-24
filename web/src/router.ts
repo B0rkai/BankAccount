@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react'
 
 // A handful of pages don't need a routing library: the path picks the page, the query string
-// carries a page's state (so a query in Explore can be bookmarked), and navigate() pushes history
+// carries a page's state (so a query on Transactions can be bookmarked), and navigate() pushes history
 // entries.
 
-export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year' | 'category' | 'settings' | 'accounts' | 'import' | 'account'
+export type Route = 'overview' | 'transactions' | 'reports' | 'client' | 'year' | 'category' | 'settings' | 'accounts' | 'import' | 'account'
 
 // `short`: the phone tab bar's label, where six tabs share the width.
 export const ROUTES: { route: Route; path: string; label: string; short?: string }[] = [
   { route: 'overview', path: '/', label: 'Overview' },
-  { route: 'explore', path: '/explore', label: 'Explore' },
-  { route: 'transactions', path: '/transactions', label: 'Transactions', short: 'Activity' },
+  { route: 'transactions', path: '/transactions', label: 'Transactions', short: 'Activity' }, // with what Explore was
   { route: 'reports', path: '/reports', label: 'Reports' },
   { route: 'accounts', path: '/accounts', label: 'Accounts' }, // with importing and the bank connections
   { route: 'settings', path: '/settings', label: 'Settings' },
@@ -24,6 +23,7 @@ export const SUB_ROUTES: { route: Route; path: string; parent: Route }[] = [
   { route: 'import', path: '/import', parent: 'accounts' },
   { route: 'account', path: '/account', parent: 'accounts' },
   { route: 'accounts', path: '/imports', parent: 'accounts' }, // the old Import tab's address
+  { route: 'transactions', path: '/explore', parent: 'transactions' }, // the old Explore tab's
 ]
 
 export const menuRoute = (route: Route): Route => SUB_ROUTES.find((r) => r.route === route)?.parent ?? route

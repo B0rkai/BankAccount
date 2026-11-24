@@ -4,7 +4,7 @@ import { Icon } from '../components/Icons'
 import { KIND_LABELS } from '../charts'
 import { useAsync } from '../hooks'
 import { linkHandler } from '../router'
-import { useFavoritesVersion } from './Explore'
+import { useFavoritesVersion } from '../components/SaveFavorite'
 import { Skeleton } from './Overview'
 
 export function Reports() {
@@ -61,7 +61,7 @@ export function Reports() {
       <div className="report-grid">
         {reports.data?.map((r) => {
           const broken = queries.data && !known.has(r.favorite_query)
-          const view = `/explore?report=${encodeURIComponent(r.name)}`
+          const view = `/transactions?report=${encodeURIComponent(r.name)}`
           return (
             <section key={r.name} className="card report-card">
               <div className="report-title">
@@ -89,13 +89,13 @@ export function Reports() {
             </section>
           )
         })}
-        {reports.data?.length === 0 && <p className="muted">No favorite reports yet — run a query in Explore and save it as a report.</p>}
+        {reports.data?.length === 0 && <p className="muted">No favorite reports yet — group transactions on the Transactions page and save it as a report.</p>}
       </div>
 
       <h2 className="section-title">Favorite queries</h2>
       <div className="report-grid">
         {queries.data?.map((q) => {
-          const view = `/explore?fav=${encodeURIComponent(q.name)}`
+          const view = `/transactions?fav=${encodeURIComponent(q.name)}`
           return (
             <div key={q.name} className="card fav-card">
               <a href={view} onClick={linkHandler(view)}>
@@ -108,7 +108,7 @@ export function Reports() {
             </div>
           )
         })}
-        {queries.data?.length === 0 && <p className="muted">No favorite queries yet — run a query in Explore and save it.</p>}
+        {queries.data?.length === 0 && <p className="muted">No favorite queries yet — filter or group transactions on the Transactions page and save it.</p>}
       </div>
     </div>
   )

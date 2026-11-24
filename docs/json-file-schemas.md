@@ -117,7 +117,7 @@ by `daemon/BankApi.h` only and isn't meant to be edited by hand.
 
 ## `db/favorite_queries.json`
 
-Saved queries, listed in Explore and runnable by name. Persely adds, replaces and deletes entries
+Saved queries, loaded on the Transactions page (Favorites…) and runnable by name. Persely adds, replaces and deletes entries
 (`daemon/FavoritesStore.h`), keeping every other entry exactly as written and never touching a
 file that isn't a JSON array; it can also be hand-edited. Parsed by `ParseFavoriteQueries()`
 ([include/FavoriteQuery.h](../include/FavoriteQuery.h)/

@@ -124,7 +124,7 @@ export function Overview({ me }: { me: Me }) {
     [byCategory.data, names, periodDef],
   )
 
-  const exploreLink = `/explore?q=${encodeURIComponent(JSON.stringify({ ...periodDef, aggregate_by: ['category'] }))}`
+  const breakdownLink = `/transactions?q=${encodeURIComponent(JSON.stringify({ ...periodDef, aggregate_by: ['category'] }))}`
   const error = totals.error ?? byCategory.error ?? trend.error
   const stale = daysSince(me.last_record_date)
   const monthTarget = (i: number) => drillLink({ ...base, relative_period: 'last_12_months' }, { period: months.labels[i] }, names)
@@ -224,8 +224,8 @@ export function Overview({ me }: { me: Me }) {
         <section className="card grow-1">
           <div className="card-head">
             <h2>Where the money went</h2>
-            <a href={exploreLink} onClick={linkHandler(exploreLink)}>
-              Open in Explore
+            <a href={breakdownLink} onClick={linkHandler(breakdownLink)}>
+              Break it down
             </a>
           </div>
           {byCategory.loading && !categoryBars.length ? <Skeleton rows={6} /> : categoryBars.length ? <BarList rows={categoryBars} /> : <p className="muted">No spending in this period.</p>}
@@ -303,9 +303,9 @@ export function Overview({ me }: { me: Me }) {
 
         <section className="card grow-1 favorites">
           <h2>Favorites</h2>
-          <p className="muted small">Saved from Explore</p>
+          <p className="muted small">Saved from Transactions</p>
           {favorites.data?.map((f) => (
-            <a key={f.name} className="fav-link" href={`/explore?fav=${encodeURIComponent(f.name)}`} onClick={linkHandler(`/explore?fav=${encodeURIComponent(f.name)}`)}>
+            <a key={f.name} className="fav-link" href={`/transactions?fav=${encodeURIComponent(f.name)}`} onClick={linkHandler(`/transactions?fav=${encodeURIComponent(f.name)}`)}>
               <span>
                 <span className="strong">{f.name}</span>
                 <span className="muted small">{[f.relative_period?.replace(/_/g, ' '), f.period, f.aggregate_by?.join(', ')].filter(Boolean).join(' · ')}</span>
