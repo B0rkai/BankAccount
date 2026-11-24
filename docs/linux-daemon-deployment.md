@@ -155,6 +155,19 @@ folder and the file names are an interface - keep them:
   new folder for one release, then goes. `LAN_TLS_DIR` (or `BANKACCOUNT_LAN_TLS_DIR`) points the
   scripts elsewhere.
 
+## Firewall (ufw)
+
+`sudo deploy/firewall.sh` adds Persely's rules: 8400 and 8443 from the home LAN
+(`192.168.1.0/24`), and 443 in on `tailscale0` (svc:persely, `tailscale serve` → `127.0.0.1:8300`,
+which nothing else can reach). The rest of the server - SSH, Samba, torrent-box's apps - gets its
+rules from torrent-box's `setup.sh`; check `sudo ufw show added` lists SSH before `sudo ufw enable`
+(the script warns if not).
+
+Docker-published ports (8400, 8443) skip ufw: Docker's own iptables rules let them in first. They
+stay on the LAN because `docker-compose.yml` binds them to the LAN address only; the ufw rules say
+the same in `sudo ufw status`. Tailnet traffic is also let in by Tailscale's own rules
+(`ts-input`) ahead of ufw; who may reach Persely there is the tailnet policy's business.
+
 ## First-time setup (done once)
 
 1. Build the image once (the next step hashes the password with it):
