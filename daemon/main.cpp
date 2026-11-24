@@ -44,6 +44,7 @@
 #include "Users.h"
 #include "Version.h"
 #include "WebAuth.h"
+#include "WebPush.h"
 
 // Daemon entry point - see docs/linux-query-daemon-design.md, "Revision (2026-11-20): web app,
 // Docker, two-listener auth". Serves the built web app (web/, a React SPA) and its JSON API under
@@ -222,6 +223,7 @@ struct Context {
 	AccountSettingsStore& account_settings;
 	UserStore& users;
 	PasskeyStore& passkeys;
+	PushStore& push;
 };
 
 // The whole file, or "" if it can't be read.
@@ -478,6 +480,95 @@ PsuHeaders PsuOf(const httplib::Request& req) {
 	return { { "Psu-Ip-Address", ip }, { "Psu-User-Agent", req.get_header_value("User-Agent") }, { "Psu-Accept-Language", req.get_header_value("Accept-Language") } };
 }
 
+// An account's name and id by its AccountKey() - the number itself and -1 if Persely has no such account.
+std::pair<std::string, int64_t> AccountNameOf(Context& ctx, const std::string& account_number) {
+	std::pair<std::string, int64_t> found{ account_number, -1 };
+	const std::string key = AccountKey(account_number);
+	ctx.db.WithManager([&](const AccountManager& mgr) {
+		for (Id::Type id = 0; id < mgr.CountAccounts(); ++id) {
+			const Account* acc = mgr.FindAccount(Id(id));
+			if (AccountKey(std::string(acc->GetAccNumber().utf8_str())) == key) {
+				found = { std::string(acc->GetName().utf8_str()), id };
+			}
+		}
+	});
+	return found;
+}
+
+// Who hears about an account (WebPush.h): its owners and `also` - or, for an account nobody owns, the admins.
+std::set<std::string> AccountAudience(Context& ctx, const AccountSettings& settings, const std::string& also) {
+	std::set<std::string> logins = ParseLoginList(settings.owner);
+	if (logins.empty()) {
+		for (const UserEntry& u : ctx.users.All()) {
+			if (u.role == Role::Admin) {
+				logins.insert(u.login);
+			}
+		}
+	}
+	if (!also.empty()) {
+		logins.insert(also);
+	}
+	return logins;
+}
+
+// A push notification about a scheduled fetch of an account: rows to sort, rows saved, or a
+// failure - only the first in a row, as a failed one is tried again every SCHEDULE_RETRY_SECONDS.
+// Call before Record()ing the run.
+void NotifyScheduledRun(Context& ctx, const std::string& account_number, const BankRun& run) {
+	if (run.outcome != "waiting" && run.outcome != "saved" && run.outcome != "error") {
+		return;
+	}
+	const AccountSettings settings = ctx.account_settings.Get(account_number);
+	if (run.outcome == "error") {
+		const auto last = std::find_if(settings.runs.rbegin(), settings.runs.rend(), [](const BankRun& r) { return r.scheduled; });
+		if (last != settings.runs.rend() && last->outcome == "error") {
+			return;
+		}
+	}
+	const auto [name, id] = AccountNameOf(ctx, account_number);
+	const std::string account_page = id >= 0 ? "/account?id=" + std::to_string(id) : "/accounts";
+	PushMessage message;
+	message.kind = run.outcome == "error" ? "failed" : run.outcome;
+	if (run.outcome == "waiting") {
+		message.title = "New transactions to sort";
+		message.body = name + ": " + std::to_string(run.rows) + " new, " + std::to_string(run.open) + (run.open == 1 ? " needs" : " need") + " an answer.";
+		message.url = "/import?id=" + std::to_string(run.session_id);
+		message.tag = "import-" + std::to_string(run.session_id);
+	} else if (run.outcome == "saved") {
+		message.title = "New transactions saved";
+		message.body = name + ": " + std::to_string(run.rows) + " new transaction" + (run.rows == 1 ? "" : "s") + " sorted themselves and were saved.";
+		message.url = account_page;
+		message.tag = "account-" + std::to_string(id);
+	} else {
+		message.title = "Bank fetch failed";
+		message.body = name + ": " + run.message + " - Persely tries again in " + std::to_string(SCHEDULE_RETRY_SECONDS / 3600) + " hours.";
+		message.url = account_page;
+		message.tag = "account-" + std::to_string(id);
+	}
+	ctx.push.Notify(AccountAudience(ctx, settings, run.by), message, std::time(nullptr));
+}
+
+// A week and a day before a bank connection's consent runs out: a push notification to the
+// admins and whoever connected it, once each.
+void RemindExpiringConsents(Context& ctx) {
+	if (!ctx.bank.Configured()) {
+		return;
+	}
+	const std::time_t now = std::time(nullptr);
+	for (const BankConnection& conn : ctx.bank.Connections()) {
+		const std::optional<long> days = BankDaysLeft(conn, now);
+		if (!days || *days < 0 || *days > 7 || !ctx.push.TakeReminder(conn.id, conn.valid_until, *days <= 1 ? 1 : 7)) {
+			continue;
+		}
+		std::set<std::string> logins = AccountAudience(ctx, AccountSettings(), conn.created_by);
+		PushMessage message{ "consent", "Bank connection runs out soon",
+			conn.bank + ": " + (*days == 0 ? std::string("today") : *days == 1 ? std::string("tomorrow") : "in " + std::to_string(*days) + " days")
+				+ ". Connect it again under Accounts to keep fetching.",
+			"/accounts", "consent-" + conn.id };
+		ctx.push.Notify(logins, message, now);
+	}
+}
+
 // Downloads a connection's new transactions - every account's, or only `only_account`'s - without
 // holding the database lock, then opens (or brings up to date) their imports in one write and
 // records each account's fetch. `scheduled`: an account's schedule, in its setter's name - an
@@ -545,6 +636,9 @@ QueryApiResult FetchFromBank(Context& ctx, const std::string& connection_id, con
 		} else {
 			run.outcome = "waiting";
 		}
+		if (scheduled) {
+			NotifyScheduledRun(ctx, r.value("account_number", std::string()), run);
+		}
 		ctx.account_settings.Record(r.value("account_number", std::string()), run);
 	}
 	if (saved) {
@@ -593,6 +687,7 @@ void RunDueBankSchedules(Context& ctx) {
 			run.outcome = "error";
 			const nlohmann::json body = nlohmann::json::parse(result.body, nullptr, false);
 			run.message = body.is_object() && body.contains("error") ? body["error"].get<std::string>() : result.body;
+			NotifyScheduledRun(ctx, number.empty() ? key : std::string(number.utf8_str()), run);
 			ctx.account_settings.Record(key, run);
 		}
 	}
@@ -841,6 +936,46 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		if (!login.empty()) {
 			const Caller caller = Who(ctx, req, listener);
 			SendResult(res, ctx.passkeys.Remove(req.get_param_value("id"), caller.admin ? std::nullopt : std::optional<std::string>(caller.login)));
+		}
+	});
+
+	// Push notifications (WebPush.h): each signed-in user's own devices and which kinds they want.
+	// Not a change of data, so editing needn't be on - but a login is: the LAN password has none.
+	auto push_login = [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = Who(ctx, req, listener).login;
+		if (login.empty()) {
+			SendError(res, 403, "Notifications are for a signed-in user - open Persely over Tailscale");
+		}
+		return login;
+	};
+	server.Get("/api/v1/push", [&ctx, push_login](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = push_login(req, res);
+		if (!login.empty()) {
+			SendResult(res, ctx.push.Status(login));
+		}
+	});
+	server.Post("/api/v1/push/subscriptions", [&ctx, push_login](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = push_login(req, res);
+		if (!login.empty()) {
+			SendResult(res, ctx.push.Subscribe(login, ParseBody(req), std::time(nullptr)));
+		}
+	});
+	server.Delete("/api/v1/push/subscriptions", [&ctx, push_login](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = push_login(req, res);
+		if (!login.empty()) {
+			SendResult(res, ctx.push.Unsubscribe(login, req.get_param_value("id"), req.get_param_value("endpoint")));
+		}
+	});
+	server.Put("/api/v1/push/kinds", [&ctx, push_login](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = push_login(req, res);
+		if (!login.empty()) {
+			SendResult(res, ctx.push.SetKinds(login, ParseBody(req)));
+		}
+	});
+	server.Post("/api/v1/push/test", [&ctx, push_login](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = push_login(req, res);
+		if (!login.empty()) {
+			SendResult(res, ctx.push.SendTest(login, std::time(nullptr)));
 		}
 	});
 
@@ -1441,15 +1576,25 @@ int main(int argc, char** argv) {
 	AccountSettingsStore account_settings("db/account_settings.json");
 	UserStore users("db/users.json", auth.allowed_logins);
 	PasskeyStore passkeys("db/passkeys.json");
+	// Push notifications: the push services are given a contact (VAPID's "sub") -
+	// BANKACCOUNT_PUSH_CONTACT, else the first server admin's login if it's an e-mail address.
+	HttpsPushSender push_sender;
+	std::string push_contact = Env("BANKACCOUNT_PUSH_CONTACT");
+	if (push_contact.empty()) {
+		const std::string& first = *auth.allowed_logins.begin();
+		push_contact = "mailto:" + (first.find('@') != std::string::npos && first.find("@github") == std::string::npos ? first : std::string("persely@localhost"));
+	}
+	PushStore push("db/push_subscriptions.json", "db/push_vapid.pem", push_sender, push_contact);
 
 	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
-		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank, account_settings, users, passkeys};
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank, account_settings, users, passkeys, push};
 
-	// Scheduled bank fetches, checked every minute.
+	// Scheduled bank fetches and consent reminders, checked every minute.
 	std::atomic<bool> stop_scheduler{false};
 	std::thread scheduler([&] {
 		while (!stop_scheduler.load()) {
 			RunDueBankSchedules(ctx);
+			RemindExpiringConsents(ctx);
 			for (int i = 0; i < 12 && !stop_scheduler.load(); ++i) {
 				std::this_thread::sleep_for(std::chrono::seconds(5));
 			}

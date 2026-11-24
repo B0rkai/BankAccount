@@ -536,6 +536,30 @@ export const passkeys = {
   lock: () => post<{ ok: boolean }>('/api/v1/passkey/lock', {}),
 }
 
+// ---- push notifications (daemon/WebPush.h; push.ts drives the browser) ----
+
+export type PushKind = 'waiting' | 'saved' | 'failed' | 'consent'
+export interface PushDevice {
+  id: string
+  device: string
+  endpoint: string
+  created_at: string
+  last_sent_at: string
+}
+export interface PushStatus {
+  public_key: string // the server's VAPID key, base64url
+  kinds: Record<PushKind, boolean> // which notifications this login wants, on every device
+  devices: PushDevice[] // this login's
+}
+export const push = {
+  status: () => request<PushStatus>('/api/v1/push'),
+  subscribe: (subscription: PushSubscriptionJSON, device: string) => post<{ ok: boolean; id: string }>('/api/v1/push/subscriptions', { subscription, device }),
+  unsubscribe: (by: { id?: string; endpoint?: string }) =>
+    del<{ ok: boolean }>(`/api/v1/push/subscriptions?${by.id ? `id=${encodeURIComponent(by.id)}` : `endpoint=${encodeURIComponent(by.endpoint ?? '')}`}`),
+  setKinds: (kinds: Partial<Record<PushKind, boolean>>) => put<{ ok: boolean }>('/api/v1/push/kinds', kinds),
+  test: () => post<{ ok: boolean; sent: number }>('/api/v1/push/test', {}),
+}
+
 // ---- users (daemon/Users.h) ----
 
 export interface UserInfo {

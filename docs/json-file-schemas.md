@@ -84,6 +84,28 @@ the daemon only: `{"passkeys": [{"id", "login", "name", "rp_id", "public_key" (S
 base64url), "alg" (-7 ES256, -257 RS256), "sign_count", "created_at", "last_used_at"}]}`. Removing an
 entry (or the file) takes that key's power away at once.
 
+## `db/push_subscriptions.json` and `db/push_vapid.pem`
+
+Push notifications (`daemon/WebPush.h`, both mode 600, written by the daemon only).
+`push_vapid.pem` is the server's own P-256 key that signs every message (made on first use;
+replacing it means every device has to turn notifications on again). `push_subscriptions.json`:
+
+```json
+{
+  "subscriptions": [
+    { "id": "3f2a9c01d4e5b6a7", "login": "someone@example.com", "endpoint": "https://fcm.googleapis.com/fcm/send/...",
+      "p256dh": "<the browser's key, base64url>", "auth": "<its secret, base64url>", "device": "Chrome on Android",
+      "created_at": "2026-11-24T10:00:00Z", "last_sent_at": "" }
+  ],
+  "kinds": { "someone@example.com": { "saved": false } },
+  "reminded": { "<bank connection id>": "<its valid_until>@7" }
+}
+```
+
+`kinds`: the notifications a login turned off (`waiting`, `saved`, `failed`, `consent`; missing is
+on). `reminded`: the last "runs out soon" reminder sent for a connection's consent (7 or 1 days
+before). A subscription whose push service answers 404/410 is dropped.
+
 ## `db/account_settings.json`
 
 What Persely keeps about each account besides its transactions - the account pages
