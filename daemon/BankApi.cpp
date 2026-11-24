@@ -466,7 +466,7 @@ bool BankApi::Pull(const std::string& connection_id, const std::map<std::string,
 		pull.account = account;
 		pull.bank = conn->bank;
 		if (until && until <= now) {
-			pull.error = "The bank connection has expired - renew it in Settings";
+			pull.error = "The bank connection has expired - renew it under Accounts → Bank connections";
 			continue;
 		}
 		// From the day before the last stored day (the overlap an import replaces), in the bank's

@@ -140,7 +140,7 @@ export function Overview({ me }: { me: Me }) {
           <strong>The newest transaction is {stale} days old</strong> ({formatDate(me.last_record_date!.replace(/\./g, '-'), { year: true })}).{' '}
           {canEdit() ? (
             <>
-              <a href="/imports" onClick={linkHandler('/imports')}>
+              <a href="/accounts" onClick={linkHandler('/accounts')}>
                 Import
               </a>{' '}
               the latest bank exports to see recent spending.
@@ -456,7 +456,7 @@ function BankExpiryBanner() {
             <strong>{c.bank}</strong>: the bank connection {c.days_left! < 0 ? 'has expired' : c.days_left === 0 ? 'runs out today' : `runs out in ${c.days_left} day${c.days_left === 1 ? '' : 's'}`}
           </span>{' '}
           {canEdit() && (
-            <a href="/settings" onClick={linkHandler('/settings')}>
+            <a href="/accounts#bank-connections" onClick={linkHandler('/accounts#bank-connections')}>
               Renew
             </a>
           )}

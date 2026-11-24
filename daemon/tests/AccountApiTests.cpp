@@ -69,13 +69,19 @@ struct AccountApiTest : ::testing::Test {
 } // namespace
 
 TEST_F(AccountApiTest, AccountsAreListedWithTheirBankConnection) {
-	const json body = json::parse(ListAccounts(Context()).body);
+	settings[AccountKey("12100011-12345678")].owner = "V@x";
+	const std::map<std::string, std::string> names{ { "v@x", "Viki" } };
+	AccountContext ctx = Context();
+	ctx.names = &names;
+	const json body = json::parse(ListAccounts(ctx).body);
 	ASSERT_EQ(body["accounts"].size(), 2u);
 	const json& huf = body["accounts"][0];
 	EXPECT_EQ(huf["name"], "Main HUF");
 	EXPECT_EQ(huf["full_name"], "Gránit::Main HUF");
 	EXPECT_EQ(huf["bank"], "Gránit");
 	EXPECT_EQ(huf["transactions"], 2);
+	EXPECT_EQ(huf["uncategorized"], 2);
+	EXPECT_EQ(huf["owner_name"], "Viki");
 	EXPECT_EQ(huf["last_date"], "2025-12-10");
 	EXPECT_EQ(huf["connection"]["id"], "c1");
 	EXPECT_EQ(huf["connection"]["days_left"], 180);
@@ -84,6 +90,7 @@ TEST_F(AccountApiTest, AccountsAreListedWithTheirBankConnection) {
 	EXPECT_FALSE(eur["open"]);
 	EXPECT_TRUE(eur["connection"].is_null());
 	EXPECT_TRUE(eur["first_date"].is_null());
+	EXPECT_EQ(eur["owner_name"], "");
 	EXPECT_EQ(body["owners"], json({ "a@x", "v@x" }));
 	EXPECT_EQ(AccountDetails(Context(), 5).http_status, 404);
 }

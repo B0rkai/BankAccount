@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { accountLink, accounts, api, canAdmin, canEdit, type AccountDetails, type AccountInfo, type BankFetchResult, type BankRun, type BankSchedule } from '../api'
+import { accounts, api, canAdmin, canEdit, type AccountDetails, type AccountInfo, type BankFetchResult, type BankRun, type BankSchedule } from '../api'
 import { BankFetchResults, RENEW_DAYS } from '../components/BankConnections'
 import { Icon } from '../components/Icons'
 import { transactionsLink } from '../drill'
@@ -54,8 +54,8 @@ export function Account({ params }: { params: URLSearchParams }) {
       <div className="page-head">
         <div>
           <p className="muted small">
-            <a href="/settings" onClick={linkHandler('/settings')}>
-              Settings
+            <a href="/accounts" onClick={linkHandler('/accounts')}>
+              Accounts
             </a>{' '}
             · {a.bank}
           </p>
@@ -190,9 +190,9 @@ function FromTheBank({ account, onChanged }: { account: AccountDetails; onChange
       <section className="card">
         <h2>From the bank</h2>
         <p className="muted small">
-          Not connected: its transactions come from uploaded bank files. Connecting its bank in{' '}
-          <a href="/settings" onClick={linkHandler('/settings')}>
-            Settings
+          Not connected: its transactions come from uploaded bank files. Connecting its bank under{' '}
+          <a href="/accounts#bank-connections" onClick={linkHandler('/accounts#bank-connections')}>
+            Accounts → Bank connections
           </a>{' '}
           lets Persely fetch them - by hand or every week or month.
         </p>
@@ -219,7 +219,7 @@ function FromTheBank({ account, onChanged }: { account: AccountDetails; onChange
           <h2>From the bank</h2>
           <p className={`small ${c.days_left !== null && c.days_left <= RENEW_DAYS ? 'warning-text' : 'muted'}`}>
             Connected to {c.bank} ·{' '}
-            {expired ? 'the connection has expired - renew it in Settings' : c.days_left !== null ? `${c.days_left} days left` : 'connected'}
+            {expired ? 'the connection has expired - renew it under Accounts → Bank connections' : c.days_left !== null ? `${c.days_left} days left` : 'connected'}
           </p>
         </div>
         {canEdit() && !expired && (
@@ -346,36 +346,5 @@ function ScheduleForm({ account, expired, onSaved }: { account: AccountDetails; 
       {explain}
       {error && <p className="alert">{error}</p>}
     </form>
-  )
-}
-
-// Settings → Accounts: every account, linking to its page.
-export function AccountList() {
-  const list = useAsync(() => accounts.list(), 'accounts-list')
-  if (list.error) return null
-  return (
-    <section className="card">
-      <h2>Accounts</h2>
-      {!list.data ? (
-        <Skeleton rows={3} />
-      ) : (
-        <ul className="account-list">
-          {list.data.accounts.map((a) => (
-            <li key={a.id}>
-              <a href={accountLink(a.id)} onClick={linkHandler(accountLink(a.id))}>
-                {a.name}
-              </a>
-              {!a.open && <span className="tag">closed</span>}
-              <span className="muted small">
-                {a.bank} · {a.currency}
-                {a.owner && ` · ${a.owner}`}
-                {a.connection ? (a.schedule ? ` · fetched ${scheduleText(a.schedule)}` : ' · connected') : ''}
-                {a.import && ` · import waiting`}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   )
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 // carries a page's state (so a query in Explore can be bookmarked), and navigate() pushes history
 // entries.
 
-export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year' | 'category' | 'settings' | 'imports' | 'import' | 'account'
+export type Route = 'overview' | 'explore' | 'transactions' | 'reports' | 'client' | 'year' | 'category' | 'settings' | 'accounts' | 'import' | 'account'
 
 // `short`: the phone tab bar's label, where six tabs share the width.
 export const ROUTES: { route: Route; path: string; label: string; short?: string }[] = [
@@ -12,7 +12,7 @@ export const ROUTES: { route: Route; path: string; label: string; short?: string
   { route: 'explore', path: '/explore', label: 'Explore' },
   { route: 'transactions', path: '/transactions', label: 'Transactions', short: 'Activity' },
   { route: 'reports', path: '/reports', label: 'Reports' },
-  { route: 'imports', path: '/imports', label: 'Import' }, // only for a sign-in that may edit
+  { route: 'accounts', path: '/accounts', label: 'Accounts' }, // with importing and the bank connections
   { route: 'settings', path: '/settings', label: 'Settings' },
 ]
 
@@ -21,8 +21,9 @@ export const SUB_ROUTES: { route: Route; path: string; parent: Route }[] = [
   { route: 'client', path: '/client', parent: 'transactions' },
   { route: 'year', path: '/year', parent: 'reports' },
   { route: 'category', path: '/category', parent: 'overview' },
-  { route: 'import', path: '/import', parent: 'imports' },
-  { route: 'account', path: '/account', parent: 'settings' },
+  { route: 'import', path: '/import', parent: 'accounts' },
+  { route: 'account', path: '/account', parent: 'accounts' },
+  { route: 'accounts', path: '/imports', parent: 'accounts' }, // the old Import tab's address
 ]
 
 export const menuRoute = (route: Route): Route => SUB_ROUTES.find((r) => r.route === route)?.parent ?? route

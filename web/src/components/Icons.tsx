@@ -12,6 +12,7 @@ const paths = {
   settings: 'M4 6h9M17 6h3M15 4v4M4 12h3M11 12h9M9 10v4M4 18h11M19 18h1M17 16v4',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   imports: 'M12 16V4M7 9l5-5 5 5M5 20h14',
+  accounts: 'M3 8h18v12H3zM3 12h18M7 16h4M6 8V5h12v3',
   edit: 'M4 20h4L19 9l-4-4L4 16v4M14 6l4 4',
 } as const
 

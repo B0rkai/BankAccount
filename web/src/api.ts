@@ -480,7 +480,9 @@ export interface AccountInfo {
   currency: string
   open: boolean // false: closed
   owner: string // a login, "" when not set
+  owner_name: string // the owner's name from Settings → Users, "" if none
   transactions: number
+  uncategorized: number // how many have no category
   first_date: string | null
   last_date: string | null
   connection: { id: string; bank: string; valid_until: string; days_left: number | null } | null

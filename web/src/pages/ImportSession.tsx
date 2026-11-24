@@ -123,7 +123,7 @@ export function ImportPage({ params }: { params: URLSearchParams }) {
             <a className="button primary" href={saved.href} onClick={linkHandler(saved.href)}>
               See them
             </a>{' '}
-            <a className="button secondary" href="/imports" onClick={linkHandler('/imports')}>
+            <a className="button secondary" href="/accounts" onClick={linkHandler('/accounts')}>
               Import another
             </a>
           </p>
@@ -137,7 +137,7 @@ export function ImportPage({ params }: { params: URLSearchParams }) {
           <h1>This import isn't open any more</h1>
           <p className="muted">It was saved or discarded, perhaps on another device.</p>
           <p>
-            <a href="/imports" onClick={linkHandler('/imports')}>
+            <a href="/accounts" onClick={linkHandler('/accounts')}>
               Imports
             </a>
           </p>
@@ -157,7 +157,7 @@ export function ImportPage({ params }: { params: URLSearchParams }) {
     <div className="page import-page">
       <div className="page-head">
         <div className="grow-1">
-          <a className="back-link small" href="/imports" onClick={linkHandler('/imports')}>
+          <a className="back-link small" href="/accounts" onClick={linkHandler('/accounts')}>
             ← Imports
           </a>
           <h1>
@@ -188,7 +188,7 @@ export function ImportPage({ params }: { params: URLSearchParams }) {
             const account = shortAccount(details.account)
             setSaved({ count, account, href: details.new_account ? '/transactions' : transactionsLink({ def: { accounts: [details.account] } }) })
           }}
-          onDiscarded={() => navigate('/imports')}
+          onDiscarded={() => navigate('/accounts')}
         />
       ) : (
         <>

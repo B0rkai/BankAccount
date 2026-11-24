@@ -505,8 +505,12 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .account-schedule-fields select { flex: 1 1 160px; min-width: 0; }
 .account-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .account-runs li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; overflow-wrap: anywhere; }
-.account-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.account-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.account-table td .tag { margin-left: 6px; }
+.account-table tr.closed-row td { color: var(--muted); }
+.import-section { display: flex; flex-direction: column; gap: 14px; }
+.import-section .section-head h2 { margin: 0 0 4px; }
+.import-section .section-head p { margin: 0; }
+.import-list > h3 { margin: 4px 0 0; font-size: 15px; }
 .user-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .user-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; overflow-wrap: anywhere; }
 .user-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }

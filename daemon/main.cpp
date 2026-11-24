@@ -593,10 +593,17 @@ void WithAccounts(Context& ctx, httplib::Response& res, const Caller& caller, Fn
 	}
 	const std::map<std::string, AccountSettings> settings = ctx.account_settings.All();
 	const std::vector<BankConnection> connections = ctx.bank.Connections();
-	const std::set<std::string> logins = ctx.users.Logins();
+	std::set<std::string> logins;
+	std::map<std::string, std::string> names;
+	for (const UserEntry& u : ctx.users.All()) {
+		logins.insert(u.login);
+		if (!u.name.empty()) {
+			names[u.login] = u.name;
+		}
+	}
 	ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
 		const std::optional<std::vector<int>> scope = caller.admin ? std::nullopt : std::optional<std::vector<int>>(OwnedAccounts(mgr, settings, caller.login));
-		fn(AccountContext{ mgr, imports, settings, connections, logins, std::time(nullptr), scope ? &*scope : nullptr });
+		fn(AccountContext{ mgr, imports, settings, connections, logins, std::time(nullptr), scope ? &*scope : nullptr, &names });
 	});
 }
 
@@ -1056,7 +1063,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			const nlohmann::json body = nlohmann::json::parse(result.body, nullptr, false);
 			error = body.is_object() && body.contains("error") ? body["error"].get<std::string>() : "The bank connection failed";
 		}
-		res.set_redirect(error.empty() ? "/settings?bank=connected" : "/settings?bank_error=" + EnableBanking::UrlEncode(error));
+		res.set_redirect(error.empty() ? "/accounts?bank=connected" : "/accounts?bank_error=" + EnableBanking::UrlEncode(error));
 	});
 	server.Post("/api/v1/bank/complete", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		const std::string login = RequireAdmin(ctx, req, res, listener);

@@ -113,14 +113,14 @@ deploy/deploy.sh   # or restart the container: the files are read at startup
 the key path relative to that folder. Without it the logs say "Bank connections are off" and
 Persely shows nothing about banks.
 
-- **Connecting** (Settings → Bank connections → Connect, over Tailscale): the bank login comes back
+- **Connecting** (Accounts → Bank connections → Connect, over Tailscale): the bank login comes back
   to `https://<persely host>/api/v1/bank/callback` if that address is one of the app's redirect
   URLs (Enable Banking Control Panel → the app → Redirect URLs). Otherwise it ends on the app's
   first redirect URL and Persely asks for that page's address to be pasted.
 - **Consents** last up to 180 days (MBH ex-Budapest Bank: 90); Settings and the overview warn 14
   days ahead, and Renew logs in again. They're kept in `db/bank_connections.json` (mode 600 - it
   holds Enable Banking's session ids, usable only with the app's key).
-- **Fetching** (Import → Fetch from the bank) opens an ordinary import per account with something
+- **Fetching** (Accounts → Import → Fetch from the bank) opens an ordinary import per account with something
   new, from the day before its newest stored day.
 
 ## First-time setup (done once)

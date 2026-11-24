@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import { api, canAdmin, isAdmin } from '../api'
-import { BankConnections } from '../components/BankConnections'
-import { AccountList } from './Account'
 import { UserList } from '../components/UserList'
 import { WindowsHelloKeys } from '../components/WindowsHello'
 import { Maintenance } from '../components/Maintenance'
@@ -78,7 +76,7 @@ export function Settings() {
         <div>
           <h1>Settings</h1>
           <p className="muted">
-            {isAdmin() ? 'How the overview and the year in review count your money. Shared by every device you sign in on.' : 'Your accounts, and what changed in Persely.'}
+            {isAdmin() ? 'How the overview and the year in review count your money. Shared by every device you sign in on.' : 'Windows Hello, and what changed in Persely.'}
           </p>
         </div>
         <div className="toolbar" aria-live="polite">
@@ -134,8 +132,6 @@ export function Settings() {
           </section>
         </>
       )}
-      <AccountList />
-      <BankConnections />
       {isAdmin() && <UserList />}
       <WindowsHelloKeys />
       {canAdmin() && <Maintenance />}

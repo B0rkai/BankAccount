@@ -4,11 +4,11 @@ import { Icon, type IconName } from './components/Icons'
 import { WindowsHelloBar } from './components/WindowsHello'
 import { formatDate, formatDateTime } from './format'
 import { Account } from './pages/Account'
+import { Accounts } from './pages/Accounts'
 import { Category } from './pages/Category'
 import { Client } from './pages/Client'
 import { Explore } from './pages/Explore'
 import { ImportPage } from './pages/ImportSession'
-import { Imports } from './pages/Imports'
 import { Login } from './pages/Login'
 import { daysSince, Overview, STALE_DAYS } from './pages/Overview'
 import { Reports } from './pages/Reports'
@@ -60,7 +60,6 @@ export function App() {
   const { me } = session
   const stale = (daysSince(me.last_record_date) ?? 0) > STALE_DAYS
   const menu = menuRoute(route)
-  const routes = ROUTES.filter((r) => r.route !== 'imports' || me.can_edit)
   const signOut = async () => {
     await api.logout().catch(() => {})
     setSession({ state: 'signed-out' })
@@ -75,7 +74,7 @@ export function App() {
             Persely
           </a>
           <nav aria-label="Main" className="nav">
-            {routes.map((r) => (
+            {ROUTES.map((r) => (
               <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === menu ? 'page' : undefined}>
                 {r.label}
               </a>
@@ -109,7 +108,7 @@ export function App() {
         {route === 'year' && <Year params={params} />}
         {route === 'category' && <Category params={params} />}
         {route === 'settings' && <Settings />}
-        {route === 'imports' && <Imports />}
+        {route === 'accounts' && <Accounts />}
         {route === 'import' && <ImportPage params={params} />}
         {route === 'account' && <Account params={params} />}
         <footer className="footer muted small">
@@ -118,7 +117,7 @@ export function App() {
       </main>
 
       <nav aria-label="Main" className="tabbar">
-        {routes.map((r) => (
+        {ROUTES.map((r) => (
           <a key={r.route} href={r.path} onClick={linkHandler(r.path)} aria-current={r.route === menu ? 'page' : undefined}>
             <Icon name={r.route as IconName} size={22} />
             <span className="tab-label">{r.short ?? r.label}</span>

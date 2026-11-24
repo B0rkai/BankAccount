@@ -16,7 +16,7 @@ Steps:
   and `/api/v1/bank/...`; the app's id and key in `~/.config/bankaccount/enablebanking/`
   (read-only mount), the connections in `db/bank_connections.json` (mode 600; a JSON file next to
   the settings rather than a SQLite table - they aren't part of the money data, and need no schema
-  change). Settings → Bank connections connects, renews and disconnects; Import → Fetch from the
+  change). Accounts → Bank connections connects, renews and disconnects; Accounts → Import → Fetch from the
   bank opens an import per account; the overview warns 14 days before a connection runs out.
   Setup: [linux-daemon-deployment.md](linux-daemon-deployment.md#bank-connections-enable-banking).
 - **7e (later)** - a scheduled fetch that only opens the session; Viki's MBH account.
@@ -224,7 +224,7 @@ The proposal below is the starting point for 7b-7d.
   bank consent: `session_id`, account `uid`s ↔ db account, `valid_until`. Suggested table:
   `bank_links(person, aspsp, app_id, session_id, valid_until, account_uid, account_id)`; key files
   under the daemon's data dir, mode 600.
-- **Consent flow in Persely** (Settings → Bank connections): "Connect" calls `POST /auth`, opens the
+- **Consent flow in Persely** (Accounts → Bank connections): "Connect" calls `POST /auth`, opens the
   bank URL; the app's redirect URL points back at Persely (`/api/v1/bank/callback?code=…`), which
   exchanges the code. That replaces the copy-paste-the-redirect-URL step of the test script.
   Redirect URL must be registered on the app (tailnet hostname).

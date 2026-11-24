@@ -7,7 +7,8 @@
         "Users and roles: admins add users by their Tailscale login in Settings → Users; a user sees only the accounts they own (queries, transactions, reports, imports, bank fetches) and can import into and categorize them, while renaming, merging, settings, bank connections and users stay with admins",
         "Editing on the home network page from a PC: the LAN page is also served over HTTPS (port 8443), where Windows Hello unlocks editing for 12 hours; a key is set up with a code made in Settings over Tailscale",
         "Users: every user can be given a name, the server's own admins too; the top bar shows it",
-        "Bank connections: one per bank login, so a second person's account at the same bank connects beside the first; an account stored as an IBAN matches the bank's number; a fetch that can't reach back to the last stored day fails instead of leaving a gap"
+        "Bank connections: one per bank login, so a second person's account at the same bank connects beside the first; an account stored as an IBAN matches the bank's number; a fetch that can't reach back to the last stored day fails instead of leaving a gap",
+        "A new Accounts tab: every account in a table (bank, owner, first and last entry, up to date or not, how it's fetched, entries and how many are categorized), with Import and Bank connections under it - the Import tab and Settings' account list are gone"
     ],
     "released": [
         {

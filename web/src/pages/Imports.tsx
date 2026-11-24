@@ -10,11 +10,11 @@ import { importLink, Progress, shortAccount, withTakeOver } from './ImportSessio
 
 const FORMATS: Record<string, string> = { MBH_CSV: 'MBH Bank CSV', GRANIT_XML: 'Gránit Bank XML', ENABLE_BANKING: 'from the bank' }
 
-// Imports in progress, and uploading a bank export to start one: Persely first says what it found
-// in the file (which account, which days, how many rows are new and how many will need an
-// answer), then the rows are categorized on the import's own page - from any device, in any
-// number of sittings - and only reach the transactions when saved there.
-export function Imports() {
+// The Accounts tab's Import section: imports in progress, and uploading a bank export to start one.
+// Persely first says what it found in the file (which account, which days, how many rows are new
+// and how many will need an answer), then the rows are categorized on the import's own page - from
+// any device, in any number of sittings - and only reach the transactions when saved there.
+export function ImportSection() {
   const [version, setVersion] = useState(0)
   const list = useAsync(() => imports.list(), `imports:${version}`)
   const [error, setError] = useState<string>()
@@ -32,20 +32,18 @@ export function Imports() {
 
   if (!canEdit())
     return (
-      <div className="page">
-        <h1>Import</h1>
-        <p className="notice">Importing bank files needs a sign-in that may change data (over Tailscale).</p>
-      </div>
+      <section className="card" id="import">
+        <h2>Import</h2>
+        <p className="muted small">Importing bank files needs a sign-in that may change data (over Tailscale, or Windows Hello on the PC).</p>
+      </section>
     )
 
   const open = list.data ?? []
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Import</h1>
-          <p className="muted">Straight from the bank, or MBH Bank CSV and Gránit Bank XML exports. Nothing reaches the transactions until you save.</p>
-        </div>
+    <div className="import-section" id="import">
+      <div className="section-head">
+        <h2>Import</h2>
+        <p className="muted small">Straight from the bank, or MBH Bank CSV and Gránit Bank XML exports. Nothing reaches the transactions until you save.</p>
       </div>
       {isAdmin() && <FromTheBank onFetched={() => setVersion((v) => v + 1)} />}
       <Upload onStarted={(id) => navigate(importLink(id))} />
@@ -57,7 +55,7 @@ export function Imports() {
       ) : (
         open.length > 0 && (
           <section className="import-list">
-            <h2>In progress</h2>
+            <h3>In progress</h3>
             {open.map((s) => (
               <article key={s.id} className="card import-card">
                 <div className="import-card-head">
@@ -212,7 +210,7 @@ function Upload({ onStarted }: { onStarted: (id: number) => void }) {
   )
 }
 
-// Fetch: every account of a bank connection (Settings → Bank connections) from its newest stored
+// Fetch: every account of a bank connection (Accounts → Bank connections) from its newest stored
 // day on. Each account with something new becomes an import like an uploaded file's.
 function FromTheBank({ onFetched }: { onFetched: () => void }) {
   const status = useAsync(() => bank.status(), 'bank')
@@ -240,11 +238,8 @@ function FromTheBank({ onFetched }: { onFetched: () => void }) {
   if (!s.connections.length)
     return (
       <p className="muted small">
-        Connect a bank in{' '}
-        <a href="/settings" onClick={linkHandler('/settings')}>
-          Settings
-        </a>{' '}
-        to fetch transactions without downloading files.
+        Connect a bank under{' '}
+        <a href="#bank-connections">Bank connections</a> below to fetch transactions without downloading files.
       </p>
     )
   return (
@@ -261,8 +256,8 @@ function FromTheBank({ onFetched }: { onFetched: () => void }) {
                 </p>
               </div>
               {expired ? (
-                <a className="button secondary small" href="/settings" onClick={linkHandler('/settings')}>
-                  Renew in Settings
+                <a className="button secondary small" href="#bank-connections">
+                  Renew below
                 </a>
               ) : (
                 <button type="button" className="button primary" disabled={!!busy} onClick={() => fetch(c)}>

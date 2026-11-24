@@ -15,7 +15,8 @@
 // scheduled fetches. httplib-free, so daemon/tests/AccountApiTests.cpp calls it directly.
 //
 // An account, as listed: {"id", "name", "full_name" ("Bank::Name", what a query's accounts filter
-// takes), "number", "bank", "currency", "open", "owner", "transactions", "first_date",
+// takes), "number", "bank", "currency", "open", "owner", "owner_name" (from Settings → Users, ""
+// if none), "transactions", "uncategorized" (how many have no category), "first_date",
 // "last_date", "connection": {id, bank, valid_until, days_left} | null, "schedule": {every, day,
 // since, set_by, next} | null, "last_run": run | null, "import": {id, state, open, rows,
 // from_bank} | null - its open import}.
@@ -27,6 +28,7 @@ struct AccountContext {
 	const std::set<std::string>& logins; // who may be an owner: Persely's users (Users.h)
 	std::time_t now;
 	const std::vector<int>* only_accounts = nullptr; // a user's own accounts: the only ones shown
+	const std::map<std::string, std::string>* names = nullptr; // users' names by login
 };
 
 // The accounts `login` owns, by id (owners compare without case).

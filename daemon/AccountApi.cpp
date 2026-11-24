@@ -41,6 +41,22 @@ json Owners(const AccountContext& ctx) {
 	return owners;
 }
 
+std::string OwnerName(const AccountContext& ctx, const std::string& owner) {
+	if (!ctx.names) {
+		return "";
+	}
+	auto it = ctx.names->find(Lower(owner));
+	return it == ctx.names->end() ? "" : it->second;
+}
+
+size_t Uncategorized(const Account& acc) {
+	size_t count = 0;
+	for (size_t i = 0; i < acc.Size(); ++i) {
+		count += acc.GetTransactionAt(i).GetCategoryId() == Id(0);
+	}
+	return count;
+}
+
 json AccountToJson(const AccountContext& ctx, Id::Type id) {
 	const Account& acc = *ctx.mgr.FindAccount(Id(id));
 	const std::string number = Utf8(acc.GetAccNumber());
@@ -56,7 +72,9 @@ json AccountToJson(const AccountContext& ctx, Id::Type id) {
 		{ "currency", acc.GetCurrency()->GetShortName() },
 		{ "open", acc.IsOpen() },
 		{ "owner", settings.owner },
+		{ "owner_name", OwnerName(ctx, settings.owner) },
 		{ "transactions", acc.Size() },
+		{ "uncategorized", Uncategorized(acc) },
 		{ "first_date", acc.Size() ? json(IsoDate(acc.GetFirstRecord()->GetDate())) : json(nullptr) },
 		{ "last_date", acc.Size() ? json(IsoDate(acc.GetLastRecord()->GetDate())) : json(nullptr) },
 		{ "schedule", ScheduleToJson(settings.schedule, settings.runs) },
@@ -161,7 +179,7 @@ QueryApiResult UpdateAccountSettings(const AccountContext& ctx, int64_t id, cons
 				return MakeErrorResult(400, "A schedule is {\"every\": \"week\", \"day\": 1-7} or {\"every\": \"month\", \"day\": 1-31}");
 			}
 			if (!ConnectionOf(ctx.connections, acc->GetAccNumber())) {
-				return MakeErrorResult(409, "Connect the account's bank first (Settings → Bank connections)");
+				return MakeErrorResult(409, "Connect the account's bank first (Accounts → Bank connections)");
 			}
 			schedule = BankSchedule{ every, day, IsoUtc(ctx.now), actor };
 		}

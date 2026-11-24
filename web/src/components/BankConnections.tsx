@@ -74,7 +74,7 @@ export function BankConnections() {
     ) : null
   }
   return (
-    <section className="card bank-connections">
+    <section className="card bank-connections" id="bank-connections">
       <h2>Bank connections</h2>
       <p className="muted small">
         Persely can read your accounts straight from the bank instead of an exported file. You log in to the bank once; it lets Persely read for up to 180 days (MBH ex-Budapest
