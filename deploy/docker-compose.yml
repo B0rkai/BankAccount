@@ -35,6 +35,11 @@ services:
       # The Enable Banking app's config.json and private key (bank connections - see
       # docs/linux-daemon-deployment.md); an empty folder leaves them off.
       - "${BANKACCOUNT_ENABLEBANKING_DIR:?}:/app/enablebanking:ro"
-      # The HTTPS LAN page's certificate and key (deploy/lan-tls.sh); empty: no HTTPS page.
-      - "${BANKACCOUNT_LAN_TLS_DIR:?}:/app/lan-tls:ro"
+      # The HTTPS LAN page's certificate and key, and the authority's certificate for
+      # /persely-ca.crt - from the server's shared ~/.config/lan-tls (deploy/lan-tls.sh), one file at
+      # a time so the authority's key stays out; /dev/null: no HTTPS page. The daemon reads them
+      # when it starts, so a renewed certificate needs a restart (deploy.sh).
+      - "${BANKACCOUNT_LAN_TLS_CA:?}:/app/lan-tls/ca.crt:ro"
+      - "${BANKACCOUNT_LAN_TLS_CERT:?}:/app/lan-tls/server.crt:ro"
+      - "${BANKACCOUNT_LAN_TLS_KEY:?}:/app/lan-tls/server.key:ro"
     restart: unless-stopped

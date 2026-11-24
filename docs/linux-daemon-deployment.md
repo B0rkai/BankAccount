@@ -76,8 +76,8 @@ own, or for a weekend or bank holiday the last one published before it (Friday's
 That doesn't count as a change made in Persely, so the refresh keeps working.
 
 Who may change data: only Tailscale logins of Persely's users (a user only their own accounts);
-a LAN password session stays read-only - except on the HTTPS LAN page (port 8443, certificate from
-`deploy/lan-tls.sh`) once unlocked with Windows Hello ([users-and-roles.md](users-and-roles.md)). Each change is one SQL transaction, recorded with the login that made it
+a LAN password session stays read-only - except on the HTTPS LAN page (port 8443, the
+[shared LAN certificate](#shared-lan-certificate)) once unlocked with Windows Hello ([users-and-roles.md](users-and-roles.md)). Each change is one SQL transaction, recorded with the login that made it
 (`created_by`/`updated_by` on the transaction, `changed_by` in `meta`).
 
 ## Backups
@@ -122,6 +122,38 @@ Persely shows nothing about banks.
   holds Enable Banking's session ids, usable only with the app's key).
 - **Fetching** (Accounts → Import → Fetch from the bank) opens an ordinary import per account with something
   new, from the day before its newest stored day.
+
+## Shared LAN certificate
+
+The server has one certificate for its LAN names (`borkai-server`, `borkai-server.local`,
+`192.168.1.100`), signed by a small authority of its own that the PC trusts ("Persely on
+borkai-server (home)", limited to those names). Persely's HTTPS LAN page uses it, and other
+services on this server (torrent-box) may too. It lives in `~/.config/lan-tls/` (mode 700); the
+folder and the file names are an interface - keep them:
+
+| File | Mode | |
+|---|---|---|
+| `ca.crt` | 644 | the authority's certificate - what the PC imports |
+| `ca.key` | 600 | the authority's key - never leaves the folder, never mounted anywhere |
+| `ca.srl` | 600 | the authority's last serial number |
+| `server.crt` | 644 | the server's certificate |
+| `server.key` | 600 | its key |
+
+- Other services on this server may **read** `ca.crt`, `server.crt` and `server.key`. The key is
+  600, readable only by this user, so only this user's services (containers running as it, mounting
+  the file read-only) can use it. Mount single files, not the folder, so `ca.key` stays out.
+- Nobody but `deploy/lan-tls.sh` **writes** there.
+- **Renewing**: `deploy/lan-tls.sh` (the server certificate is valid 825 days; the authority, 10
+  years, is kept - its thumbprint, which the script prints, stays the same). It writes the new
+  `server.key`, then `server.crt`, each to a temporary file in the folder renamed over the old one,
+  so a reader never finds half a file; a service that watches the folder should reload on
+  `server.crt`. The other services read the files again on their own; Persely reads them when it
+  starts, and `deploy/deploy.sh` restarts it if `server.crt` is newer than the running container.
+- **Checking**: `deploy/lan-tls-check.sh` (the files, their modes, the pair matches the authority);
+  `deploy/lan-tls-check.sh --renewal` tries a renewal in a scratch folder.
+- It used to be `~/.config/bankaccount/lan-tls/` (until 2026-11-24); that path is a symlink to the
+  new folder for one release, then goes. `LAN_TLS_DIR` (or `BANKACCOUNT_LAN_TLS_DIR`) points the
+  scripts elsewhere.
 
 ## First-time setup (done once)
 

@@ -40,8 +40,9 @@ cookie on the HTTPS page is `Secure`, so it never travels over HTTP.
 
 - **Certificate**: `deploy/lan-tls.sh` makes a small certificate authority of the server's own,
   limited (name constraints) to the server's names and LAN address, and a certificate for
-  `borkai-server`, `borkai-server.local` and the address (`~/.config/bankaccount/lan-tls`, mounted
-  read-only). The PC imports `ca.crt` once - downloadable from `http://<server>:8400/persely-ca.crt`;
+  `borkai-server`, `borkai-server.local` and the address (`~/.config/lan-tls`, the server's shared
+  LAN certificate - [linux-daemon-deployment.md](linux-daemon-deployment.md); only `ca.crt`,
+  `server.crt` and `server.key` are mounted, read-only). The PC imports `ca.crt` once - downloadable from `http://<server>:8400/persely-ca.crt`;
   compare the thumbprint the script printed.
 - **Setting up a key** needs a code made over Tailscale (Settings → Windows Hello, any user for
   their own login; one key per code, 15 minutes), typed on the HTTPS LAN page - so the LAN password

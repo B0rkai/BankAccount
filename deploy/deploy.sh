@@ -24,8 +24,16 @@ export BANKACCOUNT_FAVORITES_DIR=${BANKACCOUNT_FAVORITES_DIR:-${XDG_DATA_HOME:-$
 export BANKACCOUNT_ENV_FILE=${BANKACCOUNT_ENV_FILE:-$HOME/.config/bankaccount/web.env}
 # The Enable Banking app's config.json + private key (chmod 600), for bank connections - optional.
 export BANKACCOUNT_ENABLEBANKING_DIR=${BANKACCOUNT_ENABLEBANKING_DIR:-$HOME/.config/bankaccount/enablebanking}
-# The HTTPS LAN page's certificate (deploy/lan-tls.sh) - optional; without it there's no HTTPS page.
-export BANKACCOUNT_LAN_TLS_DIR=${BANKACCOUNT_LAN_TLS_DIR:-$HOME/.config/bankaccount/lan-tls}
+# The server's shared LAN certificate (deploy/lan-tls.sh), which the HTTPS LAN page uses - optional;
+# without it there's no HTTPS page. Only ca.crt, server.crt and server.key go into the container,
+# never ca.key; /dev/null stands in for a missing one.
+export BANKACCOUNT_LAN_TLS_DIR=${BANKACCOUNT_LAN_TLS_DIR:-${LAN_TLS_DIR:-$HOME/.config/lan-tls}}
+lan_tls_file() { if [ -f "$BANKACCOUNT_LAN_TLS_DIR/server.crt" ] && [ -f "$BANKACCOUNT_LAN_TLS_DIR/server.key" ] &&
+    [ -f "$BANKACCOUNT_LAN_TLS_DIR/$1" ]; then echo "$BANKACCOUNT_LAN_TLS_DIR/$1"; else echo /dev/null; fi; }
+BANKACCOUNT_LAN_TLS_CA=$(lan_tls_file ca.crt)
+BANKACCOUNT_LAN_TLS_CERT=$(lan_tls_file server.crt)
+BANKACCOUNT_LAN_TLS_KEY=$(lan_tls_file server.key)
+export BANKACCOUNT_LAN_TLS_CA BANKACCOUNT_LAN_TLS_CERT BANKACCOUNT_LAN_TLS_KEY
 # The server's address on the home LAN (it must stay put: a DHCP reservation in the router).
 export BANKACCOUNT_LAN_ADDRESS=${BANKACCOUNT_LAN_ADDRESS:-192.168.1.100}
 BANKACCOUNT_UID=$(id -u)
@@ -65,6 +73,13 @@ fi
 docker compose -f "$LIVE_DIR/deploy/docker-compose.yml" up -d --remove-orphans --quiet-pull
 
 container=$(docker compose -f "$LIVE_DIR/deploy/docker-compose.yml" ps -q app)
+# A certificate renewed (deploy/lan-tls.sh) since the container started: an unchanged container
+# isn't recreated, and the daemon reads its certificate only when it starts.
+started=$(date -d "$(docker inspect -f '{{.State.StartedAt}}' "$container")" +%s)
+if [ "$BANKACCOUNT_LAN_TLS_CERT" != /dev/null ] && [ "$(stat -c %Y "$BANKACCOUNT_LAN_TLS_CERT")" -gt "$started" ]; then
+    echo "restarting for the renewed LAN certificate"
+    docker restart "$container" >/dev/null
+fi
 for _ in $(seq 60); do
     case $(docker inspect -f '{{.State.Health.Status}}' "$container") in
         healthy) echo "live: $(git -C "$LIVE_DIR" log -1 --format='%h %s')"; exit 0 ;;
