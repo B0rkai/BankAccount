@@ -205,8 +205,9 @@ Decided 2026-11-24 (7e-7g):
   renewed); an account in two connections is fetched through the longer-lasting one. Account
   numbers are compared by `AccountKey()`, which files a Hungarian IBAN ("HU85 1210 ...", as some
   Gránit exports stored it) under its BBAN, as the API gives it.
-- **A brand-new account** (in a connection, not in Persely): a fetch reads its last 89 days into an
-  import that creates the account on Save - named after the bank's product name (renamable later),
+- **A brand-new account** (in a connection, not in Persely): a fetch asks for 15 years of history,
+  then 2 years, then the last 89 days, whichever the bank first accepts (banks often give more
+  soon after the bank login), into an import that creates the account on Save - named after the bank's product name (renamable later),
   in the bank's group, with no owner (only admins see it until one is set on its page). Its import
   is seen only by whoever fetched it, and a scheduled fetch never saves it. Older history can't be
   added after it: a file's import starts from the last stored day. So for an account with history,

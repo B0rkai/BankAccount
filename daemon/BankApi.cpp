@@ -23,6 +23,9 @@ constexpr std::time_t PENDING_SECONDS = 30 * 60;
 // How far back the first fetch of an account Persely doesn't have yet reaches - PSD2 lets a bank
 // ask for a fresh login beyond 90 days.
 constexpr std::time_t FIRST_FETCH_DAYS = 89;
+// A new account's first fetch asks this far back, the next try if the bank refuses: 15 years, 2
+// years, then the 90 days every bank gives.
+constexpr std::time_t FIRST_FETCH_TRIES[] = { 15 * 365, 2 * 365, FIRST_FETCH_DAYS };
 const char* const SOURCE_FORMAT = "ENABLE_BANKING";
 
 QueryApiResult Ok(const json& body) {
@@ -473,9 +476,25 @@ bool BankApi::Pull(const std::string& connection_id, const std::map<std::string,
 		// own dates, and a day more to be safe.
 		auto last = last_dates.find(account.account_number);
 		const uint16_t from = last != last_dates.end() && last->second ? (uint16_t)(last->second - 2 - shift) : 0;
-		const std::string date_from = from ? IsoDate(from) : IsoDate(now - FIRST_FETCH_DAYS * 86400);
+		// An account Persely doesn't have yet: its whole history if the bank gives it (some do,
+		// soon after the bank login), else as far back as it lets.
+		std::vector<std::string> tries;
+		if (from) {
+			tries.push_back(IsoDate(from));
+		} else {
+			for (std::time_t days : FIRST_FETCH_TRIES) {
+				tries.push_back(IsoDate(now - days * 86400));
+			}
+		}
 		std::string error;
-		std::optional<json> transactions = EnableBanking::FetchTransactions(*m_http, account.uid, date_from, error);
+		std::optional<json> transactions;
+		for (const std::string& date_from : tries) {
+			transactions = EnableBanking::FetchTransactions(*m_http, account.uid, date_from, error);
+			if (transactions) {
+				break;
+			}
+			LogInfo("BANK") << conn->bank << " " << account.account_number << " from " << date_from << ": " << error;
+		}
 		if (!transactions) {
 			pull.error = error;
 			continue;

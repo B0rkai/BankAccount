@@ -21,8 +21,14 @@ class FakeBank : public IEnableBankingHttp {
 public:
 	std::map<std::string, json> answers;
 	std::vector<std::pair<std::string, json>> calls; // "METHOD path?query", body
+	std::string refuse_before;                        // a date_from before this is refused
 	std::optional<json> Call(const std::string& method, const std::string& path, const json* body, std::string& error) override {
 		calls.push_back({ method + " " + path, body ? *body : json() });
+		const size_t from = path.find("date_from=");
+		if (!refuse_before.empty() && from != std::string::npos && path.substr(from + 10, 10) < refuse_before) {
+			error = "Enable Banking answered 422: date_from refused";
+			return std::nullopt;
+		}
 		auto it = answers.find(method + " " + path.substr(0, path.find('?')));
 		if (it == answers.end()) {
 			error = "Enable Banking answered 404: no " + method + " " + path;
@@ -275,8 +281,8 @@ TEST_F(BankApiTest, FetchOpensAnImportFromTheDayBeforeTheLastStoredOne) {
 	ASSERT_EQ(pulled.size(), 2u);
 	// From two days before the last stored day, in the bank's (day-early) dates.
 	EXPECT_NE(http.Last("GET /accounts/uid-huf/transactions?date_from=2025-12-06"), nullptr);
-	// An account Persely doesn't have yet: the last 89 days.
-	EXPECT_NE(http.Last("GET /accounts/uid-eur/transactions?date_from=2025-10-04"), nullptr);
+	// An account Persely doesn't have yet: its whole history.
+	EXPECT_NE(http.Last("GET /accounts/uid-eur/transactions?date_from=2011-01-05"), nullptr);
 
 	const json results = Body(StartBankImports(pulled, mgr, imports, "a@x", NOW))["results"];
 	ASSERT_EQ(results.size(), 2u);
@@ -365,6 +371,25 @@ TEST_F(BankApiTest, AFetchFromBeyondTheBanksReachMustReachBack) {
 	ASSERT_TRUE(results[0].contains("error")) << results.dump();
 	EXPECT_NE(results[0]["error"].get<std::string>().find("don't reach back to 2025-12-09"), std::string::npos) << results.dump();
 	EXPECT_TRUE(imports.All().empty());
+}
+
+TEST_F(BankApiTest, ANewAccountsHistoryIsAskedForAsFarBackAsTheBankGoes) {
+	const std::string id = Connect();
+	http.refuse_before = "2024-01-01"; // the bank gives two years at most
+	http.answers["GET /accounts/uid-huf/transactions"] = { { "transactions", json::array() } };
+	http.answers["GET /accounts/uid-eur/transactions"] = { { "transactions", json::array() } };
+	std::vector<BankPull> pulled;
+	QueryApiResult failure{ 0, "" };
+	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46000 } }, NOW, pulled, failure, "12100011-99999999-00000000"));
+	ASSERT_EQ(pulled.size(), 1u);
+	EXPECT_TRUE(pulled[0].error.empty()) << pulled[0].error;
+	EXPECT_NE(http.Last("GET /accounts/uid-eur/transactions?date_from=2011-01-05"), nullptr); // refused
+	EXPECT_NE(http.Last("GET /accounts/uid-eur/transactions?date_from=2024-01-02"), nullptr); // given
+
+	http.refuse_before = "2025-12-01"; // only the last month: the 89 days are refused too
+	pulled.clear();
+	ASSERT_TRUE(api->Pull(id, {}, NOW, pulled, failure, "12100011-99999999-00000000"));
+	EXPECT_NE(pulled[0].error.find("refused"), std::string::npos) << pulled[0].error;
 }
 
 TEST_F(BankApiTest, AFetchLeavesAFilesImportAlone) {

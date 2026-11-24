@@ -82,7 +82,8 @@ public:
 
 	// The download half of POST /api/v1/bank/fetch - no database lock held. Every account of the
 	// connection (or only `only_account`, an account number), from the day before
-	// `last_dates[account_number]` (an Excel date; missing or 0: the last 89 days). False with
+	// `last_dates[account_number]` (an Excel date; missing or 0: an account Persely doesn't have
+	// yet - its whole history if the bank gives it, else 2 years, else the last 89 days). False with
 	// `error` (404) for an unknown connection.
 	bool Pull(const std::string& connection_id, const std::map<std::string, uint16_t>& last_dates, std::time_t now, std::vector<BankPull>& pulled, QueryApiResult& error,
 		const std::string& only_account = "");
