@@ -300,6 +300,7 @@ a.tag:hover { background: var(--accent-soft); color: var(--accent-strong); }
 .spark-cell { color: var(--expense); width: 130px; }
 .sparkline { display: block; }
 .movers { display: flex; flex-direction: column; gap: 18px; }
+.movers.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px 24px; }
 .mover-group h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
 .mover { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; margin: 0 -10px; border-radius: 8px; color: var(--text); }
 .mover:hover { background: var(--surface-2); color: var(--text); }

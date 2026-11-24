@@ -167,7 +167,7 @@ export function Year({ params }: { params: URLSearchParams }) {
           {categories.loading ? (
             <Skeleton rows={6} />
           ) : (
-            <div className="movers single">
+            <div className="movers pair">
               <YearMoves title="Spent more on" rows={up} def={def} names={names} />
               <YearMoves title="Spent less on" rows={down} def={def} names={names} />
             </div>
