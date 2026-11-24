@@ -347,11 +347,44 @@ QueryApiResult AnswerImport(int64_t id, const json& body, AccountManager& mgr, D
 		return refusal;
 	}
 	std::string error;
-	if (!ImportEngine::Answer(mgr, *session, answer, error)) {
+	bool keyword_added = false;
+	if (!ImportEngine::Answer(mgr, *session, answer, error, &keyword_added)) {
 		return MakeErrorResult(400, error);
 	}
 	imports.Changed(id);
-	return Ok(Details(*session, mgr));
+	json details = Details(*session, mgr);
+	details["keyword_added"] = keyword_added;
+	return Ok(details);
+}
+
+QueryApiResult UndoImportAnswer(int64_t id, const json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now) {
+	ImportSession* session = imports.Find(id);
+	if (!session) {
+		return NoSuchImport();
+	}
+	QueryTopic topic = QueryTopic::TYPE;
+	if (!body.is_object() || !IsIndex(body.value("row", json())) || !ParseTopic(body.value("topic", json()), topic)) {
+		return MakeErrorResult(400, "Expected {\"row\", \"topic\", \"keyword\"?, \"definitive\"?}");
+	}
+	const size_t row = body["row"].get<size_t>();
+	String keyword;
+	if (body.contains("keyword") && body["keyword"].is_string()) {
+		keyword = Text(body["keyword"]);
+	}
+	ImportSession changed = *session;
+	QueryApiResult refusal;
+	if (!MayChange(changed, body, actor, now, refusal)) {
+		return refusal;
+	}
+	std::string error;
+	if (!ImportEngine::Unanswer(mgr, changed, row, topic, keyword, body.value("definitive", true), error)) {
+		return { 409, json{{"error", error}, {"stale", true}}.dump() };
+	}
+	*session = std::move(changed);
+	imports.Changed(id);
+	// Back on the row the answer was for, if it is open again (a keyword elsewhere may settle it).
+	const bool open = ImportEngine::Question(mgr, *session, row).has_value();
+	return Ok(Details(*session, mgr, open ? std::optional<size_t>(row) : std::nullopt));
 }
 
 QueryApiResult StopImport(int64_t id, const json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now) {
@@ -394,7 +427,17 @@ QueryApiResult ImportRows(int64_t id, const AccountManager& mgr, const DaemonDb:
 	json rows = json::array();
 	int64_t total = 0;
 	for (size_t i = 0; i < end; ++i) {
-		rows.push_back(RowToJson(*session, i, mgr));
+		json row = RowToJson(*session, i, mgr);
+		// An open row: what it is asked next, and the answer that question would pre-select.
+		if (const std::optional<ImportQuestion> q = session->rows[i].Resolved() ? std::nullopt : ImportEngine::Question(mgr, *session, i)) {
+			const bool suggested = q->preselect != Id(INVALID_ID) && (q->topic != QueryTopic::CATEGORY || !q->choices.empty());
+			row["question"] = {
+				{"topic", TopicName(q->topic)},
+				{"suggest", suggested ? json{{"id", (Id::Type)q->preselect}, {"name", NameOrNull(mgr, q->topic, q->preselect)}} : json(nullptr)},
+				{"exact_value", Utf8(q->exact_value)},
+			};
+		}
+		rows.push_back(row);
 		total += session->rows[i].amount;
 	}
 	json summary{
@@ -408,47 +451,100 @@ QueryApiResult ImportRows(int64_t id, const AccountManager& mgr, const DaemonDb:
 	return Ok(json{{"rows", rows}, {"summary", summary}, {"session", SessionSummary(*session, mgr)}});
 }
 
+namespace {
+
+// {category_id?, client_id?, description?} of a row edit; nullopt (with the refusal) if bad or empty.
+struct RowChange {
+	std::optional<Id> category, client;
+	std::optional<String> description;
+};
+std::optional<RowChange> ReadRowChange(const json& body, QueryApiResult& refusal) {
+	if (!body.is_object()) {
+		refusal = MakeErrorResult(400, "Expected {category_id?, client_id?, description?}");
+		return std::nullopt;
+	}
+	RowChange change;
+	Id read(INVALID_ID);
+	if (body.contains("category_id")) {
+		if (!ReadId(body, "category_id", read)) {
+			refusal = MakeErrorResult(400, "Bad category_id");
+			return std::nullopt;
+		}
+		change.category = read;
+	}
+	if (body.contains("client_id")) {
+		if (!ReadId(body, "client_id", read)) {
+			refusal = MakeErrorResult(400, "Bad client_id");
+			return std::nullopt;
+		}
+		change.client = read;
+	}
+	if (body.contains("description") && body["description"].is_string()) {
+		change.description = Text(body["description"]);
+	}
+	if (!change.category && !change.client && !change.description) {
+		refusal = MakeErrorResult(400, "Nothing to change");
+		return std::nullopt;
+	}
+	return change;
+}
+
+} // namespace
+
 QueryApiResult EditImportRow(int64_t id, size_t idx, const json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now) {
 	ImportSession* session = imports.Find(id);
 	if (!session) {
 		return NoSuchImport();
 	}
-	if (!body.is_object()) {
-		return MakeErrorResult(400, "Expected {category_id?, client_id?, description?}");
-	}
-	std::optional<Id> category, client;
-	std::optional<String> description;
-	Id read(INVALID_ID);
-	if (body.contains("category_id")) {
-		if (!ReadId(body, "category_id", read)) {
-			return MakeErrorResult(400, "Bad category_id");
-		}
-		category = read;
-	}
-	if (body.contains("client_id")) {
-		if (!ReadId(body, "client_id", read)) {
-			return MakeErrorResult(400, "Bad client_id");
-		}
-		client = read;
-	}
-	if (body.contains("description") && body["description"].is_string()) {
-		description = Text(body["description"]);
-	}
-	if (!category && !client && !description) {
-		return MakeErrorResult(400, "Nothing to change");
+	QueryApiResult refusal;
+	const std::optional<RowChange> change = ReadRowChange(body, refusal);
+	if (!change) {
+		return refusal;
 	}
 	ImportSession changed = *session;
-	QueryApiResult refusal;
 	if (!MayChange(changed, body, actor, now, refusal)) {
 		return refusal;
 	}
 	std::string error;
-	if (!ImportEngine::EditRow(mgr, changed, idx, category, client, description, error)) {
+	if (!ImportEngine::EditRow(mgr, changed, idx, change->category, change->client, change->description, error)) {
 		return MakeErrorResult(404, error);
 	}
 	*session = std::move(changed);
 	imports.Changed(id);
 	return Ok(json{{"ok", true}, {"row", RowToJson(*session, idx, mgr)}});
+}
+
+QueryApiResult EditImportRows(int64_t id, const json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now) {
+	ImportSession* session = imports.Find(id);
+	if (!session) {
+		return NoSuchImport();
+	}
+	QueryApiResult refusal;
+	const std::optional<RowChange> change = ReadRowChange(body, refusal);
+	if (!change) {
+		return refusal;
+	}
+	const json rows = body.value("rows", json());
+	if (!rows.is_array() || rows.empty()) {
+		return MakeErrorResult(400, "Expected \"rows\": [row index, ...]");
+	}
+	ImportSession changed = *session;
+	if (!MayChange(changed, body, actor, now, refusal)) {
+		return refusal;
+	}
+	std::string error;
+	for (const json& idx : rows) {
+		if (!IsIndex(idx) || !ImportEngine::EditRow(mgr, changed, idx.get<size_t>(), change->category, change->client, change->description, error)) {
+			return MakeErrorResult(404, error.empty() ? "No such row" : error);
+		}
+	}
+	*session = std::move(changed);
+	imports.Changed(id);
+	json edited = json::array();
+	for (const json& idx : rows) {
+		edited.push_back(RowToJson(*session, idx.get<size_t>(), mgr));
+	}
+	return Ok(json{{"ok", true}, {"rows", edited}});
 }
 
 QueryApiResult CommitImport(int64_t id, const json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now) {

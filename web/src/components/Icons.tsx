@@ -14,6 +14,10 @@ const paths = {
   imports: 'M12 16V4M7 9l5-5 5 5M5 20h14',
   accounts: 'M3 8h18v12H3zM3 12h18M7 16h4M6 8V5h12v3',
   edit: 'M4 20h4L19 9l-4-4L4 16v4M14 6l4 4',
+  check: 'M5 12l5 5L20 7',
+  back: 'M15 18l-6-6 6-6',
+  tag: 'M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 6a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3',
+  user: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8M4 21c0-4 4-6 8-6s8 2 8 6',
 } as const
 
 export type IconName = keyof typeof paths

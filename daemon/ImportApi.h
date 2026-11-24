@@ -56,17 +56,27 @@ QueryApiResult ImportDetails(int64_t id, std::optional<size_t> row, const Accoun
 // id?, name?, keyword?, definitive?, description?, take_over?} - any open row's question. Every
 // row not answered by hand is then worked out again (a new keyword may settle - or reopen -
 // others). Responds ImportDetails() for the first open row. 409 if that question was already
-// answered (another device got there first).
+// answered (another device got there first). Its response also has "keyword_added": whether the
+// keyword is new (an Undo takes only a new one off again).
 QueryApiResult AnswerImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+// POST /api/v1/imports/{id}/undo: {row, topic, keyword?, definitive?, take_over?} - takes back the
+// hand answer to that row's topic (Undo); `keyword` is the one the answer added (its response said
+// "keyword_added": true), removed again. Responds ImportDetails() for that row if it is open
+// again, else the first open one; 409 {"stale": true} if that topic isn't answered by hand.
+QueryApiResult UndoImportAnswer(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
 // POST /api/v1/imports/{id}/stop: {row?, take_over?} - "Stop here": rows from `row` on are dropped
 // on Save (null: keep all again; left out: the first open row). 409 if it would cut into the
 // rows replacing stored transactions.
 QueryApiResult StopImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
 // GET /api/v1/imports/{id}/rows: {"rows": [row], "summary": {"count", "total", "currency", "replaced",
-// "open", "dropped"}, "session"} - the rows a Save would add (open ones with nulls).
+// "open", "dropped"}, "session"} - the rows a Save would add (open ones with nulls, and a
+// "question": {"topic", "suggest": {"id", "name"} | null, "exact_value"} - what they're asked next).
 QueryApiResult ImportRows(int64_t id, const AccountManager& mgr, const DaemonDb::Imports& imports);
 // PATCH /api/v1/imports/{id}/rows/{idx}: {category_id?, client_id?, description?, take_over?}.
 QueryApiResult EditImportRow(int64_t id, size_t idx, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
+// PATCH /api/v1/imports/{id}/rows: {rows: [idx], category_id?, client_id?, description?, take_over?} -
+// the same change to several rows at once. {"ok", "rows": [row]}.
+QueryApiResult EditImportRows(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
 // POST /api/v1/imports/{id}/commit: {take_over?} - Save, once no row is open. {"ok",
 // "account_id", "saved"}. Only now do the transactions (and clients' bank account numbers) change.
 QueryApiResult CommitImport(int64_t id, const nlohmann::json& body, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);

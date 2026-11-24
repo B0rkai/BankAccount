@@ -244,9 +244,11 @@ POST   /api/v1/imports                    upload a bank file (multipart) -> sess
 GET    /api/v1/imports                    open sessions (for the Overview badge and the Imports page)
 GET    /api/v1/imports/{id}               session, context strip, current question
 POST   /api/v1/imports/{id}/answer        Answer -> next question, or state 'review'
+POST   /api/v1/imports/{id}/undo          take back a hand answer (and the keyword it added)
 POST   /api/v1/imports/{id}/stop          Stop here -> review
-GET    /api/v1/imports/{id}/rows          resolved rows for the review table
+GET    /api/v1/imports/{id}/rows          resolved rows for the review table (open ones: next question)
 PATCH  /api/v1/imports/{id}/rows/{idx}    fix a resolved row during review
+PATCH  /api/v1/imports/{id}/rows          the same fix to several rows
 POST   /api/v1/imports/{id}/commit        Save
 DELETE /api/v1/imports/{id}               Discard
 ```

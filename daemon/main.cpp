@@ -999,6 +999,12 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 	server.Post(R"(/api/v1/imports/(\d+)/answer)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		HandleImport(ctx, req, res, listener, AnswerImport);
 	});
+	server.Post(R"(/api/v1/imports/(\d+)/undo)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleImport(ctx, req, res, listener, UndoImportAnswer);
+	});
+	server.Patch(R"(/api/v1/imports/(\d+)/rows)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		HandleImport(ctx, req, res, listener, EditImportRows);
+	});
 	server.Post(R"(/api/v1/imports/(\d+)/stop)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		HandleImport(ctx, req, res, listener, StopImport);
 	});

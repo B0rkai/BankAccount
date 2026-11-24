@@ -336,6 +336,8 @@ export interface ImportRow {
   category: string | null
   description: string
   how: Record<ImportTopic, How>
+  // Only in the rows list, on an open row: what it's asked next and the pre-selected answer.
+  question?: { topic: ImportTopic; suggest: { id: number; name: string } | null; exact_value: string }
 }
 
 export interface ImportQuestion {
@@ -354,6 +356,7 @@ export interface ImportDetails extends ImportSummary {
   current: ImportRow | null
   next: ImportRow | null
   previous: (ImportRow | (TransactionRow & { history: true }))[] // near the start: the account's last stored ones
+  keyword_added?: boolean // after an answer: its keyword is new (an Undo takes it off again)
 }
 
 export interface ImportAnswer {
@@ -396,7 +399,12 @@ export const imports = {
   // row: where to cut (null keeps every row again); left out, the first open row.
   stop: (id: number, row: number | null | undefined, takeOver = false) =>
     post<ImportDetails>(imp(id, '/stop'), row === undefined ? { take_over: takeOver } : { row, take_over: takeOver }),
+  // Takes back the hand answer to a row's topic; `keyword` - the one it added - comes off again.
+  undo: (id: number, undo: { row: number; topic: ImportTopic; keyword?: string; definitive?: boolean }, takeOver = false) =>
+    post<ImportDetails>(imp(id, '/undo'), { ...undo, take_over: takeOver }).then((r) => (undo.keyword ? dataChanged(r) : r)),
   rows: (id: number) => request<ImportRows>(imp(id, '/rows')),
+  editRows: (id: number, rows: number[], change: TransactionEdit, takeOver = false) =>
+    request<{ ok: boolean; rows: ImportRow[] }>(imp(id, '/rows'), { method: 'PATCH', body: JSON.stringify({ rows, ...change, take_over: takeOver }) }),
   editRow: (id: number, idx: number, change: TransactionEdit, takeOver = false) =>
     request<{ ok: boolean; row: ImportRow }>(imp(id, `/rows/${idx}`), { method: 'PATCH', body: JSON.stringify({ ...change, take_over: takeOver }) }),
   commit: (id: number, takeOver = false) => post<{ ok: boolean; account_id: number; saved: number }>(imp(id, '/commit'), { take_over: takeOver }).then(dataChanged),

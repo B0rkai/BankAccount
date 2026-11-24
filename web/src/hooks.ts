@@ -74,3 +74,16 @@ export function useThemeColours() {
   }, [])
   return colours
 }
+
+// Phone width (the CSS's max-width: 760px breakpoint), following resizes and rotation.
+export function useNarrow(): boolean {
+  const query = '(max-width: 760px)'
+  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const onChange = () => setNarrow(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return narrow
+}

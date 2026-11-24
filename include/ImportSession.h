@@ -26,7 +26,8 @@ struct ImportRow {
 	Id category_id = Id(INVALID_ID);
 	String description;
 	// How each topic (type, client, category) was resolved: 'a' by a keyword, 'm' by an answer,
-	// 'r' kept from the stored transaction this row replaces, '-' not yet.
+	// 'r' kept from the stored transaction this row replaces, '-' not yet, '?' asked again after an
+	// Undo (until answered, keywords don't settle it).
 	std::string how = "---";
 
 	bool Resolved() const;
@@ -124,8 +125,13 @@ public:
 	static std::vector<size_t> OpenRows(const ImportSession& session);
 	// The question for an open row (default: the first one) - its first unresolved topic.
 	static std::optional<ImportQuestion> Question(const AccountManager& manager, const ImportSession& session, std::optional<size_t> row = std::nullopt);
-	// Applies an answer to an open row's question, then Resolve()s.
-	static bool Answer(AccountManager& manager, ImportSession& session, const ImportAnswer& answer, std::string& error);
+	// Applies an answer to an open row's question, then Resolve()s. keyword_added: whether its
+	// keyword is new (not one the entity already had - an Undo must leave that one).
+	static bool Answer(AccountManager& manager, ImportSession& session, const ImportAnswer& answer, std::string& error, bool* keyword_added = nullptr);
+	// Takes back an answer (Undo): the row's `topic` is asked again ('?' - not settled by keywords
+	// or by the name of a client it created, which stays), and `keyword` (if not empty), added with
+	// that answer, comes off what it pointed to. Only a topic answered by hand ('m') can be taken back.
+	static bool Unanswer(AccountManager& manager, ImportSession& session, size_t row, QueryTopic topic, const String& keyword, bool definitive, std::string& error);
 	// "Stop here": rows from `row` on are dropped on Save (none: keep them all). Can't cut into
 	// the rows that replace stored transactions (FirstStoppableRow()).
 	static bool StopAt(ImportSession& session, std::optional<size_t> row, std::string& error);

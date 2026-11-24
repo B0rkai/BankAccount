@@ -1,41 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, cachedNameList, type NameList, type TransactionRow } from '../api'
+import { api, type TransactionRow } from '../api'
 import { formatDate, formatMoney } from '../format'
+import { choiceId, choiceLabel, choiceOf, PickerField, type FieldChoice } from './PickerSheet'
 
 // Change a transaction's category, client or note. A
-// client typed that doesn't exist yet is created on save. Saved straight away (one change on the
+// client or category picked as new is created on save. Saved straight away (one change on the
 // server), then every page showing it reloads.
 export function EditTransaction({ transaction: t, onClose }: { transaction: TransactionRow; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  const [categories, setCategories] = useState<NameList>()
-  const [clients, setClients] = useState<NameList>()
-  const [categoryId, setCategoryId] = useState(t.category_id)
-  const [client, setClient] = useState(t.client)
+  const [category, setCategory] = useState<FieldChoice>({ id: t.category_id, name: t.category_id ? t.category : '' })
+  const [client, setClient] = useState<FieldChoice>({ id: t.client_id, name: t.client_id ? t.client : '' })
   const [description, setDescription] = useState(t.description)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
 
   useEffect(() => {
     dialog.current?.showModal()
-    cachedNameList('categories').then(setCategories, (e: Error) => setError(e.message))
-    cachedNameList('clients').then(setClients, (e: Error) => setError(e.message))
   }, [])
-
-  const typed = client.trim()
-  const clientIndex = clients?.names.indexOf(typed) ?? -1
-  const clientId = !typed ? 0 : clientIndex >= 0 ? clients?.ids?.[clientIndex] : undefined
-  const newClient = clients && typed && clientId === undefined
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     setBusy(true)
     setError(undefined)
     try {
-      let id = clientId
-      if (id === undefined) id = (await api.createEntity('client', typed)).id
       const change: { category_id?: number; client_id?: number; description?: string } = {}
+      const categoryId = await choiceId('category', category)
+      const clientId = await choiceId('client', client)
       if (categoryId !== t.category_id) change.category_id = categoryId
-      if (id !== t.client_id) change.client_id = id
+      if (clientId !== t.client_id) change.client_id = clientId
       if (description.trim() !== t.description) change.description = description.trim()
       if (Object.keys(change).length) await api.editTransaction(t, change)
       dialog.current?.close()
@@ -44,9 +36,6 @@ export function EditTransaction({ transaction: t, onClose }: { transaction: Tran
       setBusy(false)
     }
   }
-
-  const categoryOptions = categories ? categories.names.map((n, i) => ({ name: n, id: categories.ids?.[i] ?? -1 })).filter((c) => c.id >= 0) : []
-  if (categories && !categoryOptions.some((c) => c.id === 0)) categoryOptions.unshift({ name: 'Uncategorized', id: 0 })
 
   return (
     <dialog ref={dialog} className="dialog" onClose={onClose} aria-labelledby="edit-title">
@@ -59,26 +48,26 @@ export function EditTransaction({ transaction: t, onClose }: { transaction: Tran
           </p>
           {t.memo && <p className="muted small clip" title={t.memo}>{t.memo}</p>}
         </div>
-        <label className="field">
-          Category
-          <select value={categoryId} onChange={(e) => setCategoryId(Number(e.target.value))} disabled={!categories}>
-            {categoryOptions.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Client
-          <input list="edit-client-options" value={client} onChange={(e) => setClient(e.target.value)} placeholder="No client" />
-          <datalist id="edit-client-options">
-            {[...new Set(clients?.names ?? [])].map((n) => (
-              <option key={n} value={n} />
-            ))}
-          </datalist>
-          {newClient && <span className="muted small">A new client “{typed}” will be created.</span>}
-        </label>
+        <PickerField
+          label="Category"
+          topic="category"
+          value={choiceLabel(category)}
+          placeholder="Uncategorized"
+          subtitle={`${t.client || t.type} · ${formatMoney(t.amount, t.currency, { sign: true })}`}
+          selectedId={'id' in category ? category.id : null}
+          defaultLabel="Uncategorized"
+          onPick={(p) => setCategory(choiceOf(p))}
+        />
+        <PickerField
+          label="Client"
+          topic="client"
+          value={choiceLabel(client)}
+          placeholder="No client"
+          subtitle={`${t.type} · ${formatMoney(t.amount, t.currency, { sign: true })}`}
+          selectedId={'id' in client ? client.id : null}
+          defaultLabel="No client"
+          onPick={(p) => setClient(choiceOf(p))}
+        />
         <label className="field">
           Note
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Your own note" maxLength={200} />
@@ -88,7 +77,7 @@ export function EditTransaction({ transaction: t, onClose }: { transaction: Tran
           <button type="button" className="button secondary" onClick={() => dialog.current?.close()}>
             Cancel
           </button>
-          <button type="submit" className="button primary" disabled={busy || !categories || !clients}>
+          <button type="submit" className="button primary" disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>

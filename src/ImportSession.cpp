@@ -288,16 +288,18 @@ bool ImportEngine::Resolve(const AccountManager& manager, ImportSession& session
 	for (ImportRow& row : session.rows) {
 		for (QueryTopic topic : TOPICS) {
 			const size_t h = ImportRow::HowIndex(topic);
-			if (row.how[h] != 'm') { // answers stay; everything else is worked out again
+			if (row.how[h] != 'm' && row.how[h] != '?') { // answers stay; everything else is worked out again
 				TopicId(row, topic) = Id(INVALID_ID);
 				row.how[h] = '-';
 			}
 		}
-		if (Recall(manager, row, recallable)) {
+		const bool ask_again = row.how.find('?') != std::string::npos;
+		if (!ask_again && Recall(manager, row, recallable)) {
 			continue;
 		}
 		for (QueryTopic topic : TOPICS) {
-			if (row.how[ImportRow::HowIndex(topic)] != 'm' && !TryAuto(manager, row, topic)) {
+			const char how = row.how[ImportRow::HowIndex(topic)];
+			if (how == '?' || (how != 'm' && !TryAuto(manager, row, topic))) {
 				break;
 			}
 		}
@@ -447,7 +449,7 @@ ImportQuestion ImportEngine::Ask(const AccountManager& manager, const ImportSess
 	return q;
 }
 
-bool ImportEngine::Answer(AccountManager& manager, ImportSession& session, const ImportAnswer& answer, std::string& error) {
+bool ImportEngine::Answer(AccountManager& manager, ImportSession& session, const ImportAnswer& answer, std::string& error, bool* keyword_added) {
 	const std::optional<ImportQuestion> q = Question(manager, session, answer.row);
 	if (!q || q->topic != answer.topic) {
 		error = "This question was already answered";
@@ -491,7 +493,14 @@ bool ImportEngine::Answer(AccountManager& manager, ImportSession& session, const
 			error = "A keyword needs a client or category to point to";
 			return false;
 		}
+		bool had = false;
+		for (const auto& [word, definitive] : manager.GetKeywordsOf(answer.topic, id)) {
+			had = had || (word == keyword && definitive == answer.keyword_definitive);
+		}
 		manager.AddKeyword(answer.topic, id, keyword, answer.keyword_definitive);
+		if (keyword_added) {
+			*keyword_added = !had;
+		}
 	}
 	ImportRow& row = session.rows[q->row];
 	if (answer.description) {
@@ -500,6 +509,29 @@ bool ImportEngine::Answer(AccountManager& manager, ImportSession& session, const
 	TopicId(row, answer.topic) = id;
 	row.how[ImportRow::HowIndex(answer.topic)] = 'm';
 	Resolve(manager, session); // a new keyword or client may settle other rows too
+	return true;
+}
+
+bool ImportEngine::Unanswer(AccountManager& manager, ImportSession& session, size_t index, QueryTopic topic, const String& keyword, bool definitive, std::string& error) {
+	if (session.state == ImportSession::State::Committed || index >= session.End()) {
+		error = "No such row";
+		return false;
+	}
+	ImportRow& row = session.rows[index];
+	char& how = row.how[ImportRow::HowIndex(topic)];
+	if (how != 'm') {
+		error = "That wasn't answered by hand";
+		return false;
+	}
+	Id& id = TopicId(row, topic);
+	String word = keyword;
+	word.Trim(true).Trim(false);
+	if (!word.empty() && id != Id(INVALID_ID)) {
+		manager.RemoveKeyword(topic, id, word, definitive);
+	}
+	id = Id(INVALID_ID);
+	how = '?'; // asked again, even if a keyword or the new one's name would now settle it
+	Resolve(manager, session);
 	return true;
 }
 

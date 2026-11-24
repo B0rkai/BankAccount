@@ -811,3 +811,73 @@ TEST_F(ImportDaemonTests, SomeoneElseNeedsToTakeOverARecentlyTouchedSession) {
 	// Answering the same question twice: the second one is stale.
 	EXPECT_EQ(AnswerOnce(details, "a@x").http_status, 409);
 }
+
+TEST_F(ImportDaemonTests, UndoReopensTheAnswerAndTakesItsNewKeywordOff) {
+	json details = Upload();
+	// The first client question: answered with a new client and a keyword of its own.
+	while (!details["question"].is_null() && details["question"]["topic"] != "client") {
+		details = json::parse(AnswerOnce(details).body);
+	}
+	ASSERT_FALSE(details["question"].is_null());
+	const json q = details["question"];
+	const int64_t id = details["id"];
+	json body{{"row", q["row"]}, {"topic", "client"}, {"kind", "create"}, {"name", q["exact_value"]}, {"keyword", "UNDOTEST"}};
+	QueryApiResult r = Change("a@x", [&](AccountManager& mgr, DaemonDb::Imports& imports) { return AnswerImport(id, body, mgr, imports, "a@x", now); });
+	ASSERT_EQ(r.http_status, 200) << r.body;
+	EXPECT_TRUE(json::parse(r.body)["keyword_added"].get<bool>());
+	const Id created = Sessions()[0].rows[q["row"].get<size_t>()].client_id;
+	ASSERT_NE(created, Id(INVALID_ID));
+
+	json undo{{"row", q["row"]}, {"topic", "client"}, {"keyword", "UNDOTEST"}};
+	r = Change("a@x", [&](AccountManager& mgr, DaemonDb::Imports& imports) { return UndoImportAnswer(id, undo, mgr, imports, "a@x", now); });
+	ASSERT_EQ(r.http_status, 200) << r.body;
+	const json after = json::parse(r.body);
+	EXPECT_EQ(after["question"]["row"], q["row"]);
+	EXPECT_EQ(after["question"]["topic"], "client");
+	EXPECT_EQ(Sessions()[0].rows[q["row"].get<size_t>()].how[1], '?'); // the new client's name would match it: asked anyway
+	db->WithManager([&](const AccountManager& m) { EXPECT_TRUE(m.GetKeywordsOf(QueryTopic::CLIENT, created).empty()); });
+	// Answered again, it's settled like any answer.
+	body["kind"] = "select";
+	body["id"] = (Id::Type)created;
+	body.erase("keyword");
+	r = Change("a@x", [&](AccountManager& mgr, DaemonDb::Imports& imports) { return AnswerImport(id, body, mgr, imports, "a@x", now); });
+	ASSERT_EQ(r.http_status, 200) << r.body;
+	EXPECT_EQ(Sessions()[0].rows[q["row"].get<size_t>()].how[1], 'm');
+	undo.erase("keyword");
+	ASSERT_EQ(Change("a@x", [&](AccountManager& mgr, DaemonDb::Imports& imports) { return UndoImportAnswer(id, undo, mgr, imports, "a@x", now); }).http_status, 200);
+	// Twice: nothing answered by hand there any more.
+	r = Change("a@x", [&](AccountManager& mgr, DaemonDb::Imports& imports) { return UndoImportAnswer(id, undo, mgr, imports, "a@x", now); });
+	EXPECT_EQ(r.http_status, 409);
+}
+
+TEST_F(ImportDaemonTests, SeveralRowsAreEditedAtOnce) {
+	const json details = AnswerAll(Upload());
+	const int64_t id = details["id"];
+	const json body{{"rows", {3, 4}}, {"category_id", 2}};
+	const QueryApiResult r = Change("a@x", [&](AccountManager& mgr, DaemonDb::Imports& imports) { return EditImportRows(id, body, mgr, imports, "a@x", now); });
+	ASSERT_EQ(r.http_status, 200) << r.body;
+	EXPECT_EQ(json::parse(r.body)["rows"].size(), 2u);
+	for (size_t row : { 3, 4 }) {
+		EXPECT_EQ(Sessions()[0].rows[row].category_id, Id(2));
+		EXPECT_EQ(Sessions()[0].rows[row].how[2], 'm');
+	}
+	const json bad{{"rows", {3, 999}}, {"category_id", 1}};
+	EXPECT_EQ(Change("a@x", [&](AccountManager& mgr, DaemonDb::Imports& imports) { return EditImportRows(id, bad, mgr, imports, "a@x", now); }).http_status, 404);
+	EXPECT_EQ(Sessions()[0].rows[3].category_id, Id(2)); // all or nothing
+}
+
+TEST_F(ImportDaemonTests, OpenRowsSayWhatTheyAreAskedNext) {
+	const json details = Upload();
+	const int64_t id = details["id"];
+	QueryApiResult r;
+	db->WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) { r = ImportRows(id, mgr, imports); });
+	ASSERT_EQ(r.http_status, 200);
+	size_t asked = 0;
+	const json body = json::parse(r.body);
+	for (const json& row : body["rows"]) {
+		const bool open = row["type_id"].is_null() || row["client_id"].is_null() || row["category_id"].is_null();
+		EXPECT_EQ(row.contains("question"), open) << row.dump();
+		asked += row.contains("question");
+	}
+	EXPECT_EQ(asked, details["open"].get<size_t>());
+}

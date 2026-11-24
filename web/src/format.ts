@@ -40,10 +40,10 @@ export function formatCount(n: number): string {
   return n.toLocaleString(LOCALE, GROUP)
 }
 
-export function formatDate(iso: string, opts: { year?: boolean } = {}): string {
+export function formatDate(iso: string, opts: { year?: boolean; weekday?: boolean } = {}): string {
   const d = new Date(`${iso}T00:00:00`)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: opts.year ? 'numeric' : undefined })
+  return d.toLocaleDateString('en-GB', { weekday: opts.weekday ? 'short' : undefined, day: 'numeric', month: 'short', year: opts.year ? 'numeric' : undefined })
 }
 
 export function formatDateTime(iso: string): string {
