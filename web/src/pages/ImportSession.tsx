@@ -67,10 +67,10 @@ export function Progress({ session: s }: { session: ImportSummary }) {
   )
 }
 
-// "Keep 142 rows, drop this one and the 237 after it?"
+// "Leave out this row and the 237 after it? ..." - a cut, not a pause: says so.
 const stopQuestion = (row: number, rows: number) => {
   const after = rows - row - 1
-  return `Keep ${formatCount(row)} rows and drop ${after ? `this one and the ${formatCount(after)} after it` : 'this one'}?`
+  return `Leave out ${after ? `this row and the ${formatCount(after)} after it` : 'this row'}? Save will store only the ${formatCount(row)} rows before it; the left-out ones come back with the next import or bank fetch.\n\nTo just continue later, don't do this - leave the page: your answers are already saved.`
 }
 
 const TOPIC_NOUN = { type: 'type', client: 'client', category: 'category' } as const
@@ -499,19 +499,24 @@ function QuestionForm({
 
       {keywordDefault !== '' && (
         <div className="remember card">
-          <label className="remember-row">
+          {/* Not one <label>: the "edit" button would be the control it clicks. */}
+          <div className="remember-row">
             <span className="fill-1">
-              <span className="remember-title">Remember for next time</span>
+              <span className="remember-title" id="remember-title">
+                Remember for next time
+              </span>
               <span className="muted small">
                 {q.topic === 'type' ? 'Rows of type' : 'Rows with'} “<strong className="text">{keyword.trim() || '…'}</strong>” go here{definitive ? '' : ' as a suggestion'} ·{' '}
-                <button type="button" className="link-button inline" onClick={(e) => (e.preventDefault(), setEditKeyword(!editKeyword))}>
+                <button type="button" className="link-button inline" onClick={() => setEditKeyword(!editKeyword)}>
                   {editKeyword ? 'done' : 'edit'}
                 </button>
               </span>
             </span>
-            <input type="checkbox" className="switch-input" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-            <span className="switch" aria-hidden="true" />
-          </label>
+            <label className="switch-label">
+              <input type="checkbox" className="switch-input" checked={remember} onChange={(e) => setRemember(e.target.checked)} aria-labelledby="remember-title" />
+              <span className="switch" aria-hidden="true" />
+            </label>
+          </div>
           {editKeyword && (
             <>
               <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Words in the bank's text" maxLength={120} autoComplete="off" aria-label="Keyword" />
@@ -537,12 +542,18 @@ function QuestionForm({
             Note
             <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Your own note" maxLength={200} />
           </label>
+          <div>
+            <a className="button secondary" href="/accounts" onClick={linkHandler('/accounts')}>
+              Finish later
+            </a>
+            <p className="muted small">Every answer is saved as you go: continue from the Overview or Accounts, on any device.</p>
+          </div>
           {q.row >= details.first_stoppable && (
-            <div>
-              <button type="button" className="button secondary" disabled={busy} onClick={stop}>
-                Stop here
+            <div className="leave-out">
+              <button type="button" className="button secondary danger" disabled={busy} onClick={stop}>
+                Leave out this row and the rest
               </button>
-              <p className="muted small">Save only the rows before this one (e.g. a card hold that isn't booked yet).</p>
+              <p className="muted small">For a card hold that isn't booked yet: Save stores only the rows before this one. The left-out ones aren't saved now - the next import or bank fetch brings them back.</p>
             </div>
           )}
         </section>
@@ -791,7 +802,7 @@ function Review({
         {busy === 'discard' ? 'Discarding…' : 'Discard'}
       </button>
       <button type="button" className="button primary" disabled={!!busy || !s || s.open > 0} onClick={save}>
-        {busy === 'save' ? 'Saving…' : s && s.open > 0 ? `${formatCount(s.open)} to answer first` : `Save ${s ? formatCount(s.count) : ''} transactions`}
+        {busy === 'save' ? 'Saving…' : s && s.open > 0 ? `${formatCount(s.open)} to answer first` : `Save ${s ? formatCount(s.count) : ''} transactions${s?.dropped ? ` (${formatCount(s.dropped)} left out)` : ''}`}
       </button>
     </div>
   )
@@ -809,9 +820,10 @@ function Review({
               {s.replaced > 0 && <span className="muted">replaces {formatCount(s.replaced)} stored from the same days</span>}
             </div>
             {s.dropped > 0 && (
-              <p className="small">
-                {s.dropped === 1 ? 'The last row of the file is' : `The last ${formatCount(s.dropped)} rows of the file are`} dropped (Stop here).{' '}
-                <button type="button" className="link-button" disabled={!!busy} onClick={keepAll}>
+              <p className="notice">
+                {s.dropped === 1 ? 'The last row of the file is' : `The last ${formatCount(s.dropped)} rows of the file are`} left out: Save won't store{' '}
+                {s.dropped === 1 ? 'it' : 'them'} (the next import or bank fetch brings {s.dropped === 1 ? 'it' : 'them'} back).{' '}
+                <button type="button" className="link-button inline" disabled={!!busy} onClick={keepAll}>
                   {s.dropped === 1 ? 'Keep it' : 'Keep them'}
                 </button>
               </p>
@@ -1221,7 +1233,7 @@ function NoteDialog({ count, onSave, onClose }: { count: number; onSave: (note: 
 }
 
 // Fix one row before saving - the same fields as editing a stored transaction, plus "drop this row
-// and the ones after it" (Stop here) where that's allowed.
+// and the ones after it" (Leave out from here) where that's allowed.
 function EditImportRow({
   session,
   row: r,
@@ -1315,8 +1327,8 @@ function EditImportRow({
         {error && <p className="alert">{error}</p>}
         <div className="dialog-actions">
           {r.idx >= session.first_stoppable && (
-            <button type="button" className="button secondary" onClick={stop} disabled={busy} title="Save only the rows before this one">
-              Stop here
+            <button type="button" className="button secondary danger" onClick={stop} disabled={busy} title="Save stores only the rows before this one; the next import or fetch brings the rest back">
+              Leave out from here
             </button>
           )}
           <span className="spacer" />

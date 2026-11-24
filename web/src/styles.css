@@ -489,7 +489,7 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .answer-hint { font-size: 12px; color: var(--muted); }
 .answer.primary .answer-hint { color: inherit; opacity: 0.85; }
 .remember { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
-.remember-row { position: relative; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.remember-row { display: flex; align-items: center; gap: 12px; }
 .remember-row > span { display: flex; flex-direction: column; gap: 2px; }
 .remember-title { font-size: 14px; font-weight: 600; }
 .remember .text { color: var(--text); overflow-wrap: anywhere; }
@@ -504,6 +504,9 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .switch-input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
 .more-card { display: flex; flex-direction: column; gap: 14px; }
 .more-card .button { margin-bottom: 6px; }
+.leave-out { border-top: 1px solid var(--border); padding-top: 14px; }
+.button.secondary.danger { color: var(--danger); }
+.switch-label { position: relative; display: inline-flex; padding: 8px 0 8px 8px; cursor: pointer; }
 .answer-bar {
   position: sticky; bottom: 0; z-index: 5; display: flex; flex-direction: column; gap: 8px;
   margin: 0 -4px; padding: 10px 4px; background: var(--bg);

@@ -13,7 +13,8 @@
         "Transactions on a phone: the filters fold into one line saying what's set, and fold up by themselves after a search; Group by and Over time moved under \"Group, more filters\"",
         "A bank account Persely doesn't have yet is fetched with as much history as the bank gives (up to 15 years, else 2, else 90 days)",
         "A fetch you start tells the bank you're there, so the bank's limit of 4 background reads a day per account (\"Maximum daily access exceeded\") no longer stops it; scheduled fetches still count against it",
-        "Categorizing on a phone: one tap on a suggestion answers, \"Remember for next time\" (a keyword from the bank's text) is on by default, Undo after every answer, a search sheet for every category/client picker (also when editing a transaction), open rows grouped by bank text to answer a group at once, and a review list where you swipe right to accept a suggestion or hold to select several and set them together"
+        "Categorizing on a phone: one tap on a suggestion answers, \"Remember for next time\" (a keyword from the bank's text) is on by default, Undo after every answer, a search sheet for every category/client picker (also when editing a transaction), open rows grouped by bank text to answer a group at once, and a review list where you swipe right to accept a suggestion or hold to select several and set them together",
+        "Import: the Remember switch can be switched again (tapping it opened the keyword editor); \"Stop here\" is now \"Leave out this row and the rest\", says the left-out rows aren't saved, sits under a new \"Finish later\" (answers are saved as you go), and Save says how many are left out"
     ],
     "released": [
         {
