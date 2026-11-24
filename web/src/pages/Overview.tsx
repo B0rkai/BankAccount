@@ -132,7 +132,7 @@ export function Overview({ me }: { me: Me }) {
 
   return (
     <div className="page">
-      <TopicSearch period={period} />
+      {/* Banners first, so they sit together under the app's Windows Hello bar. */}
       <ImportBanner />
       <BankExpiryBanner />
       {stale !== undefined && stale > STALE_DAYS && (
@@ -150,6 +150,7 @@ export function Overview({ me }: { me: Me }) {
           )}
         </div>
       )}
+      <TopicSearch period={period} />
 
       <div className="page-head">
         <div>
