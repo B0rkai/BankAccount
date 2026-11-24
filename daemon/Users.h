@@ -39,7 +39,7 @@ public:
 	// GET /api/v1/users: {"users": [{login, name, role, fixed}]}.
 	QueryApiResult List();
 	// POST /api/v1/users: {login, name?, role: admin|user} - adds or changes one. 400 for a bad
-	// login or role, 409 for a fixed admin.
+	// login or role; a fixed admin can be named, but 409 for any other role.
 	QueryApiResult Save(const nlohmann::json& body);
 	// DELETE /api/v1/users?login=: 404 if not there, 409 for a fixed admin.
 	QueryApiResult Remove(const std::string& login);

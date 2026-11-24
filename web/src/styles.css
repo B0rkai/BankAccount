@@ -520,3 +520,6 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .hello-setup input { width: 100%; text-transform: uppercase; letter-spacing: 0.08em; }
 .hello-code strong { font-size: 22px; letter-spacing: 0.12em; }
 @media (max-width: 1232px) { .hello-bar { margin-left: 16px; margin-right: 16px; } }
+.inline-icon { width: 28px; height: 28px; vertical-align: middle; }
+.user-rename { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.user-rename input { flex: 1 1 160px; min-width: 0; }

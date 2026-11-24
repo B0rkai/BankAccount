@@ -55,7 +55,11 @@ std::vector<UserEntry> UserStore::LoadLocked() {
 	}
 	for (const json& j : root["users"]) {
 		UserEntry u{ Lower(Str(j, "login")), Str(j, "name"), Str(j, "role") == "admin" ? Role::Admin : Role::User, false };
-		if (ValidLogin(u.login) && !m_fixed.count(u.login)) {
+		if (m_fixed.count(u.login)) { // a server admin: only its name is kept here
+			u.role = Role::Admin;
+			u.fixed = true;
+		}
+		if (ValidLogin(u.login)) {
 			users.push_back(u);
 		}
 	}
@@ -73,15 +77,17 @@ bool UserStore::SaveLocked(const std::vector<UserEntry>& users, std::string& err
 }
 
 std::vector<UserEntry> UserStore::All() {
-	std::vector<UserEntry> all;
-	for (const std::string& login : m_fixed) {
-		all.push_back({ login, "", Role::Admin, true });
-	}
 	std::vector<UserEntry> stored;
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		stored = LoadLocked();
 	}
+	std::vector<UserEntry> all;
+	for (const std::string& login : m_fixed) {
+		auto named = std::find_if(stored.begin(), stored.end(), [&](const UserEntry& u) { return u.login == login; });
+		all.push_back({ login, named == stored.end() ? "" : named->name, Role::Admin, true });
+	}
+	stored.erase(std::remove_if(stored.begin(), stored.end(), [](const UserEntry& u) { return u.fixed; }), stored.end());
 	std::sort(stored.begin(), stored.end(), [](const UserEntry& a, const UserEntry& b) { return a.login < b.login; });
 	all.insert(all.end(), stored.begin(), stored.end());
 	return all;
@@ -129,13 +135,15 @@ QueryApiResult UserStore::Save(const json& body) {
 	if (name.size() > 100) {
 		return MakeErrorResult(400, "The name is too long");
 	}
-	if (m_fixed.count(login)) {
-		return MakeErrorResult(409, login + " is an admin set on the server (BANKACCOUNT_ALLOWED_LOGINS) - change it there");
+	// A server admin (BANKACCOUNT_ALLOWED_LOGINS) can be named here, but stays an admin.
+	const bool fixed = m_fixed.count(login) > 0;
+	if (fixed && role != "admin") {
+		return MakeErrorResult(409, login + " is always an admin: it's set in the server's configuration (BANKACCOUNT_ALLOWED_LOGINS)");
 	}
 	std::lock_guard<std::mutex> lock(m_mutex);
 	std::vector<UserEntry> users = LoadLocked();
 	auto it = std::find_if(users.begin(), users.end(), [&](const UserEntry& u) { return u.login == login; });
-	const UserEntry entry{ login, name, role == "admin" ? Role::Admin : Role::User, false };
+	const UserEntry entry{ login, name, role == "admin" ? Role::Admin : Role::User, fixed };
 	if (it == users.end()) {
 		users.push_back(entry);
 	} else {
@@ -151,7 +159,7 @@ QueryApiResult UserStore::Save(const json& body) {
 QueryApiResult UserStore::Remove(const std::string& raw_login) {
 	const std::string login = Lower(raw_login);
 	if (m_fixed.count(login)) {
-		return MakeErrorResult(409, login + " is an admin set on the server (BANKACCOUNT_ALLOWED_LOGINS) - change it there");
+		return MakeErrorResult(409, login + " is always an admin: it's set in the server's configuration (BANKACCOUNT_ALLOWED_LOGINS)");
 	}
 	std::lock_guard<std::mutex> lock(m_mutex);
 	std::vector<UserEntry> users = LoadLocked();

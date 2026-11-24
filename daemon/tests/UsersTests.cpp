@@ -67,6 +67,9 @@ TEST_F(UsersTest, ServerAdminsAreFixedAndOthersAreAddedChangedAndRemoved) {
 	EXPECT_EQ(users.Find("viki@x")->role, Role::Admin);
 
 	EXPECT_EQ(users.Save({ { "login", "admin@x" }, { "role", "user" } }).http_status, 409); // can't demote a server admin
+	EXPECT_EQ(users.Save({ { "login", "admin@x" }, { "name", "Boss" }, { "role", "admin" } }).http_status, 200); // but can name it
+	EXPECT_EQ(users.Find("admin@x")->name, "Boss");
+	EXPECT_TRUE(users.Find("admin@x")->fixed);
 	EXPECT_EQ(users.Remove("admin@x").http_status, 409);
 	EXPECT_EQ(users.Save({ { "login", "no at sign" }, { "role", "user" } }).http_status, 400);
 	EXPECT_EQ(users.Save({ { "login", "a@x" }, { "role", "owner" } }).http_status, 400);
@@ -74,6 +77,7 @@ TEST_F(UsersTest, ServerAdminsAreFixedAndOthersAreAddedChangedAndRemoved) {
 	UserStore reopened((dir / "users.json").string(), { "admin@x" });
 	EXPECT_EQ(reopened.Logins(), (std::set<std::string>{ "admin@x", "viki@x" }));
 	EXPECT_EQ(json::parse(reopened.List().body)["users"].size(), 2u);
+	EXPECT_EQ(reopened.Find("admin@x")->name, "Boss");
 	EXPECT_EQ(reopened.Remove("viki@x").http_status, 200);
 	EXPECT_EQ(reopened.Remove("viki@x").http_status, 404);
 	EXPECT_FALSE(reopened.Find("viki@x"));

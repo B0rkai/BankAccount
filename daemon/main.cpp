@@ -661,11 +661,14 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		if (listener == Listener::TAILNET) {
 			body["via"] = "tailscale";
 			body["login"] = req.get_header_value(TAILSCALE_LOGIN_HEADER);
-			body["name"] = DecodeMimeWord(req.get_header_value(TAILSCALE_NAME_HEADER));
+			// The name given in Settings → Users, else Tailscale's.
+			const std::optional<UserEntry> user = ctx.users.Find(caller.login);
+			body["name"] = user && !user->name.empty() ? user->name : DecodeMimeWord(req.get_header_value(TAILSCALE_NAME_HEADER));
 		} else {
 			body["via"] = "lan";
 			body["login"] = caller.login;
-			body["name"] = caller.login.empty() ? "Home network" : caller.login;
+			const std::optional<UserEntry> user = ctx.users.Find(caller.login);
+			body["name"] = caller.login.empty() ? "Home network" : user && !user->name.empty() ? user->name : caller.login;
 		}
 		if (listener == Listener::LAN_TLS) {
 			// Windows Hello: whether a key was set up on this address, and until when this session is unlocked.

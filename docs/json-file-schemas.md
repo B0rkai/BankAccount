@@ -73,7 +73,7 @@ Persely's users besides the admins in `BANKACCOUNT_ALLOWED_LOGINS` (`daemon/User
 
 | Key | Type | Meaning |
 |---|---|---|
-| `login` | string | Their Tailscale login, lower case. One of the server's admins here is ignored. |
+| `login` | string | Their Tailscale login, lower case. For one of the server's admins only `name` counts: it stays an admin. |
 | `name` | string | Shown instead of the login. |
 | `role` | `"admin"` \| `"user"` | A user sees only the accounts they own. |
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { canAdmin, users, type UserInfo } from '../api'
 import { useAsync } from '../hooks'
+import { Icon } from './Icons'
 import { Skeleton } from '../pages/Overview'
 
 // Settings → Users: who may sign in (with their own Tailscale login) and as what. An admin sees
@@ -9,6 +10,7 @@ export function UserList() {
   const [version, setVersion] = useState(0)
   const list = useAsync(() => users.list(), `users:${version}`)
   const [error, setError] = useState<string>()
+  const [renaming, setRenaming] = useState<{ login: string; name: string }>()
   const editable = canAdmin()
 
   const run = async (action: () => Promise<unknown>) => {
@@ -42,9 +44,39 @@ export function UserList() {
           {list.data.users.map((u) => (
             <li key={u.login}>
               <div className="grow-1">
-                <strong>{u.name || u.login}</strong>
-                {u.name && <span className="muted small"> {u.login}</span>}
-                {u.fixed && <span className="muted small"> · set on the server</span>}
+                {renaming?.login === u.login ? (
+                  <form
+                    className="user-rename"
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      if (await run(() => users.save({ login: u.login, name: renaming.name.trim(), role: u.role }))) setRenaming(undefined)
+                    }}
+                  >
+                    <input value={renaming.name} onChange={(e) => setRenaming({ login: u.login, name: e.target.value })} placeholder="Name" aria-label={`Name of ${u.login}`} autoFocus />
+                    <button type="button" className="button secondary small" onClick={() => setRenaming(undefined)}>
+                      Cancel
+                    </button>
+                    <button type="submit" className="button primary small">
+                      Save
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <strong>{u.name || u.login}</strong>
+                    {u.name && <span className="muted small"> {u.login}</span>}
+                    {editable && (
+                      <button type="button" className="icon-button inline-icon" title="Rename" aria-label={`Rename ${u.login}`} onClick={() => setRenaming({ login: u.login, name: u.name })}>
+                        <Icon name="edit" size={14} />
+                      </button>
+                    )}
+                  </>
+                )}
+                {u.fixed && (
+                  <span className="muted small" title="This login is in the server's configuration (BANKACCOUNT_ALLOWED_LOGINS), so it can't be removed or made a user here - nobody can lock the household out.">
+                    {' '}
+                    · always admin
+                  </span>
+                )}
               </div>
               {editable && !u.fixed ? (
                 <>
