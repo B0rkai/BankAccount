@@ -12,7 +12,8 @@ export const daysLeftText = (c: BankConnection) =>
   c.days_left === null ? '' : c.days_left < 0 ? 'expired' : c.days_left === 0 ? 'expires today' : `${c.days_left} day${c.days_left === 1 ? '' : 's'} left`
 
 // Settings → Bank connections: the banks Persely may read (an Enable Banking consent each, 90 or
-// 180 days), connecting one and renewing it. The bank login happens on the bank's own pages and
+// 180 days - one per bank login, so a bank can be connected once per person), connecting one and
+// renewing it. The bank login happens on the bank's own pages and
 // comes back to /api/v1/bank/callback, which lands here with ?bank=connected or ?bank_error=.
 export function BankConnections() {
   const [version, setVersion] = useState(0)
@@ -167,10 +168,12 @@ export function BankFetchResults({ list }: { list: BankFetchResult[] }) {
 }
 
 function ConnectForm({ status, onConnect }: { status: BankStatus; onConnect: (bank: string) => void }) {
-  const free = status.banks.filter((b) => !status.connections.some((c) => c.bank === b))
-  const [choice, setChoice] = useState(free[0] ?? '')
+  // A connected bank stays on the list: someone else's login to it (their own accounts) is a
+  // connection of its own; the same login again just renews.
+  const connected = (b: string) => status.connections.some((c) => c.bank === b)
+  const [choice, setChoice] = useState(status.banks.find((b) => !connected(b)) ?? status.banks[0] ?? '')
   const [busy, setBusy] = useState(false)
-  if (!free.length) return null
+  if (!status.banks.length) return null
   return (
     <form
       className="bank-connect"
@@ -183,14 +186,17 @@ function ConnectForm({ status, onConnect }: { status: BankStatus; onConnect: (ba
       <label>
         <span className="muted small">Bank</span>
         <select value={choice} onChange={(e) => setChoice(e.target.value)}>
-          {free.map((b) => (
-            <option key={b}>{b}</option>
+          {status.banks.map((b) => (
+            <option key={b} value={b}>
+              {connected(b) ? `${b} - another login` : b}
+            </option>
           ))}
         </select>
       </label>
       <button type="submit" className="button primary" disabled={busy || !choice}>
         Connect
       </button>
+      {connected(choice) && <p className="muted small">For another person's {choice} accounts: they log in with their own bank login. Logging in with one already connected renews it.</p>}
     </form>
   )
 }

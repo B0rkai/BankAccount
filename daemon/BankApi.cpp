@@ -1,6 +1,7 @@
 #include "BankApi.h"
 #include <algorithm>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include "AccountSettings.h"
 #include "EnableBankingImport.h"
@@ -65,6 +66,11 @@ std::string IsoDate(uint16_t excel_date) {
 	char buf[16];
 	std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
 	return buf;
+}
+
+// The Excel date of a moment (UTC).
+long ExcelDay(std::time_t t) {
+	return (long)(t / 86400) + 25569;
 }
 
 std::string Str(const json& j, const char* key) {
@@ -341,8 +347,16 @@ QueryApiResult BankApi::Complete(const std::string& code, const std::string& sta
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		std::vector<BankConnection> connections = LoadLocked();
+		// The same login again (a renewal) replaces the older connection: one whose accounts the new
+		// one all has. Another person's login to the same bank is a connection of its own.
+		std::set<std::string> fresh;
+		for (const BankAccountLink& a : conn.accounts) {
+			fresh.insert(AccountKey(a.account_number));
+		}
 		for (auto it = connections.begin(); it != connections.end();) {
-			if (it->bank == conn.bank) {
+			const bool renewed = it->bank == conn.bank && !it->accounts.empty()
+				&& std::all_of(it->accounts.begin(), it->accounts.end(), [&](const BankAccountLink& a) { return fresh.count(AccountKey(a.account_number)) > 0; });
+			if (renewed) {
 				replaced_sessions.push_back(it->session_id);
 				it = connections.erase(it);
 			} else {
@@ -472,10 +486,19 @@ bool BankApi::Pull(const std::string& connection_id, const std::map<std::string,
 			pull.error = error;
 			continue;
 		}
-		data.complete_from = from ? (uint16_t)(from + shift) : 0;
+		// Banks give about the last 90 days: asked from further back, an answer starting later may
+		// have left days out, so it must reach back to the last stored day like a file.
+		const bool within_reach = from && (long)from >= ExcelDay(now) - (long)FIRST_FETCH_DAYS;
+		data.complete_from = within_reach ? (uint16_t)(from + shift) : 0;
 		pull.data = std::move(data);
 	}
 	return true;
+}
+
+// A fetch from further back than the bank gives, that came back short.
+std::string NotReachingBack(const ImportEngine::StoredAccount& stored) {
+	return "The bank's transactions don't reach back to " + IsoDate(stored.last_date) + ", the last day already in " + std::string(stored.name.utf8_str())
+		+ " (banks give about the last 90 days) - import an exported file up to recent days first, then fetch";
 }
 
 QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now,
@@ -521,7 +544,7 @@ QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& m
 			ImportSession fresh;
 			std::string error;
 			if (!ImportEngine::Start(mgr, data, open->source_name, open->source_format, fresh, error)) {
-				r["error"] = error;
+				r["error"] = !data.complete_from && stored && stored->last_date ? NotReachingBack(*stored) : error;
 				results.push_back(r);
 				continue;
 			}
@@ -539,7 +562,7 @@ QueryApiResult StartBankImports(std::vector<BankPull>& pulled, AccountManager& m
 			const QueryApiResult started = StartImport(data, upload, mgr, imports, actor, now);
 			const json answer = json::parse(started.body, nullptr, false);
 			if (started.http_status != 200) {
-				r["error"] = Str(answer, "error");
+				r["error"] = !data.complete_from && stored && stored->last_date ? NotReachingBack(*stored) : Str(answer, "error");
 				results.push_back(r);
 				continue;
 			}

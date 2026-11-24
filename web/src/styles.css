@@ -489,6 +489,7 @@ a.quiet-link:hover { color: var(--accent-strong); text-decoration: underline; }
 .bank-results li { overflow-wrap: anywhere; }
 .bank-connect { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 14px; }
 .bank-connect label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; }
+.bank-connect p { flex-basis: 100%; margin: 0; }
 .bank-paste { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 .bank-paste input { width: 100%; }
 .bank-paste code { overflow-wrap: anywhere; }

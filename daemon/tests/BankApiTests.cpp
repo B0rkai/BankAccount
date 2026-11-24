@@ -4,6 +4,8 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "Account.h"
+#include "AccountApi.h"
 #include "AccountManager.h"
 #include "BankApi.h"
 #include "ImportApi.h"
@@ -209,6 +211,36 @@ TEST_F(BankApiTest, RenewingReplacesTheOldConnectionAndEndsItsConsent) {
 	EXPECT_NE(http.Last("DELETE /sessions/sess-1"), nullptr);
 }
 
+TEST_F(BankApiTest, AnotherPersonsLoginToTheSameBankIsKeptBesideIt) {
+	const std::string mine = Connect();
+	// Someone else's Gránit login: only their own account.
+	http.answers["POST /sessions"] = {
+		{ "session_id", "sess-2" },
+		{ "access", { { "valid_until", "2026-06-30T00:00:00.000000+00:00" } } },
+		{ "accounts", { { { "uid", "uid-other" }, { "account_id", { { "iban", "HU00121000115555555500000000" } } }, { "currency", "HUF" }, { "product", "Prestige" } } } },
+	};
+	const std::string theirs = Connect();
+	const json status = Body(api->Status(mgr, NOW));
+	ASSERT_EQ(status["connections"].size(), 2u);
+	EXPECT_EQ(status["connections"][0]["id"], mine);
+	EXPECT_EQ(status["connections"][1]["id"], theirs);
+	EXPECT_EQ(http.Last("DELETE /sessions/sess-1"), nullptr); // the first consent goes on
+}
+
+TEST_F(BankApiTest, AnAccountStoredAsAnIbanIsTheBankApisAccount) {
+	// A file stored the account as a Hungarian IBAN; the API gives the BBAN.
+	NullJournal null;
+	Manager stored(null);
+	std::string text = SAMPLE;
+	text.replace(text.find("12100011-12345678"), 17, "HU85 1210 0011 1234 5678 0000 0000");
+	stored.Load(text);
+	Connect();
+	const std::vector<BankConnection> connections = api->Connections();
+	const BankConnection* conn = ConnectionOf(connections, stored.FindAccount(Id(0))->GetAccNumber());
+	ASSERT_NE(conn, nullptr);
+	EXPECT_EQ(Body(api->Status(stored, NOW))["connections"][0]["accounts"][0]["account_id"], 0);
+}
+
 TEST_F(BankApiTest, Disconnect) {
 	const std::string id = Connect();
 	EXPECT_EQ(api->Disconnect(id).http_status, 200);
@@ -284,6 +316,55 @@ TEST_F(BankApiTest, FetchOpensAnImportFromTheDayBeforeTheLastStoredOne) {
 	EXPECT_EQ(updated.rows[1].description, "new shoes");
 	EXPECT_EQ(updated.created_by, "a@x");
 	EXPECT_EQ(second[0]["open"], 1);                  // only the new row asks
+}
+
+TEST_F(BankApiTest, ABrandNewAccountIsCreatedOnlyWhenItsImportIsSaved) {
+	const Id shopping = mgr.CreateId(QueryTopic::CATEGORY, "Shopping");
+	mgr.AddKeyword(QueryTopic::CATEGORY, shopping, "SHOP");
+	const std::string id = Connect();
+	http.answers["GET /accounts/uid-huf/transactions"] = { { "transactions", json::array() } };
+	json eur = Transaction("2025-12-20", "12.50000", "DBIT", "SHOP");
+	eur["transaction_amount"]["currency"] = "EUR";
+	http.answers["GET /accounts/uid-eur/transactions"] = { { "transactions", { eur } } };
+	std::vector<BankPull> pulled;
+	QueryApiResult failure{ 0, "" };
+	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46000 } }, NOW, pulled, failure));
+
+	// Even a scheduled fetch whose rows all sort themselves leaves a new account's import open.
+	BankImportOptions scheduled;
+	scheduled.save_when_sorted = true;
+	const json results = Body(StartBankImports(pulled, mgr, imports, "a@x", NOW, scheduled))["results"];
+	EXPECT_EQ(results[1]["account_name"], "Deviza EUR") << results.dump(); // the bank's product name
+	EXPECT_EQ(results[1]["open"], 0);
+	EXPECT_FALSE(results[1].contains("saved"));
+	EXPECT_EQ(mgr.CountAccounts(), 1u);
+	ImportSession& session = *imports.Find(results[1]["session_id"].get<int64_t>());
+	EXPECT_EQ(session.account_id, Id(INVALID_ID));
+	EXPECT_EQ(session.created_by, "a@x");
+
+	std::string error;
+	session.End();
+	ASSERT_TRUE(ImportEngine::Commit(mgr, session, error)) << error;
+	ASSERT_EQ(mgr.CountAccounts(), 2u);
+	const Account* created = mgr.FindAccount(Id(1));
+	EXPECT_EQ(created->GetName(), "Deviza EUR");
+	EXPECT_EQ(created->GetGroupName(), String::FromUTF8("Gránit Bank"));
+	EXPECT_EQ(created->GetAccNumber(), "12100011-99999999-00000000");
+	EXPECT_EQ(Body(api->Status(mgr, NOW))["connections"][0]["accounts"][1]["account_id"], 1);
+}
+
+TEST_F(BankApiTest, AFetchFromBeyondTheBanksReachMustReachBack) {
+	const std::string id = Connect();
+	// The last stored day is 150 days back; the bank answers with the last few months only.
+	http.answers["GET /accounts/uid-huf/transactions"] = { { "transactions", { Transaction("2025-12-20", "100.00000", "DBIT", "SHOP") } } };
+	http.answers["GET /accounts/uid-eur/transactions"] = { { "transactions", json::array() } };
+	std::vector<BankPull> pulled;
+	QueryApiResult failure{ 0, "" };
+	ASSERT_TRUE(api->Pull(id, { { "12100011-12345678-00000000", 46000 } }, NOW + 150 * 86400, pulled, failure));
+	const json results = Body(StartBankImports(pulled, mgr, imports, "a@x", NOW + 150 * 86400))["results"];
+	ASSERT_TRUE(results[0].contains("error")) << results.dump();
+	EXPECT_NE(results[0]["error"].get<std::string>().find("don't reach back to 2025-12-09"), std::string::npos) << results.dump();
+	EXPECT_TRUE(imports.All().empty());
 }
 
 TEST_F(BankApiTest, AFetchLeavesAFilesImportAlone) {

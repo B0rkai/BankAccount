@@ -6,7 +6,8 @@
         "Account pages: details, owner, bank connection, fetch one account now, and weekly or monthly automatic fetches (saved by themselves only when every row sorts itself; otherwise the import waits, shown on the overview, and later fetches add to it). A transaction fetched or imported again keeps its saved client, category and description",
         "Users and roles: admins add users by their Tailscale login in Settings → Users; a user sees only the accounts they own (queries, transactions, reports, imports, bank fetches) and can import into and categorize them, while renaming, merging, settings, bank connections and users stay with admins",
         "Editing on the home network page from a PC: the LAN page is also served over HTTPS (port 8443), where Windows Hello unlocks editing for 12 hours; a key is set up with a code made in Settings over Tailscale",
-        "Users: every user can be given a name, the server's own admins too; the top bar shows it"
+        "Users: every user can be given a name, the server's own admins too; the top bar shows it",
+        "Bank connections: one per bank login, so a second person's account at the same bank connects beside the first; an account stored as an IBAN matches the bank's number; a fetch that can't reach back to the last stored day fails instead of leaving a gap"
     ],
     "released": [
         {

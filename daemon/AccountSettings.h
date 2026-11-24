@@ -50,7 +50,9 @@ constexpr size_t MAX_RUNS = 20;
 constexpr std::time_t SCHEDULE_RETRY_SECONDS = 6 * 3600;
 
 // The key an account number is filed under: its letters and digits, upper case - the same for
-// "12100011-12345678-00000000" and "1210001112345678 00000000".
+// "12100011-12345678-00000000", "1210001112345678" (a 16-digit BBAN, as AccountNumber pads it) and
+// the Hungarian IBAN "HU85 1210 0011 1234 5678 0000 0000" (the bank API gives the BBAN for an
+// account a file stored as an IBAN). A foreign IBAN keeps its country and check digits.
 std::string AccountKey(const std::string& account_number);
 
 // "week"/"month" and a day that fits it - false otherwise.

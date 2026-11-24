@@ -91,14 +91,16 @@ std::vector<int> OwnedAccounts(const AccountManager& mgr, const std::map<std::st
 
 const BankConnection* ConnectionOf(const std::vector<BankConnection>& connections, const String& account_number) {
 	const std::string key = AccountKey(Utf8(account_number));
+	const BankConnection* found = nullptr;
 	for (const BankConnection& c : connections) {
 		for (const BankAccountLink& a : c.accounts) {
-			if (AccountKey(a.account_number) == key) {
-				return &c;
+			// In two connections (two people's logins): the one that lasts longer.
+			if (AccountKey(a.account_number) == key && (!found || c.valid_until > found->valid_until)) {
+				found = &c;
 			}
 		}
 	}
-	return nullptr;
+	return found;
 }
 
 QueryApiResult ListAccounts(const AccountContext& ctx) {

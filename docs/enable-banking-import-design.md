@@ -200,6 +200,20 @@ Decided 2026-11-24 (7e-7g):
   snapshot; otherwise it stays open - on the overview for every sign-in, and on the account page -
   and the next run adds to it. A failed run is tried again 6 hours later (banks allow 4 unattended
   reads a day); an expired consent makes each try fail without calling the bank until renewed.
+- **One connection per bank login**, not per bank: Viki's Gránit login sits beside Ákos's. A new
+  connection replaces an older one only when it has all the older one's accounts (the same login,
+  renewed); an account in two connections is fetched through the longer-lasting one. Account
+  numbers are compared by `AccountKey()`, which files a Hungarian IBAN ("HU85 1210 ...", as some
+  Gránit exports stored it) under its BBAN, as the API gives it.
+- **A brand-new account** (in a connection, not in Persely): a fetch reads its last 89 days into an
+  import that creates the account on Save - named after the bank's product name (renamable later),
+  in the bank's group, with no owner (only admins see it until one is set on its page). Its import
+  is seen only by whoever fetched it, and a scheduled fetch never saves it. Older history can't be
+  added after it: a file's import starts from the last stored day. So for an account with history,
+  import the exported files first, then fetch.
+- **Beyond the bank's reach**: banks give about the last 90 days. A fetch asked from further back
+  (the account's last stored day is older) must reach back to that day like a file, or it fails
+  with "import an exported file up to recent days first" - instead of saving with a silent gap.
 
 The proposal below is the starting point for 7b-7d.
 

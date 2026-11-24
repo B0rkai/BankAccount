@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string_view>
 #include <sys/stat.h>
+#include "AccountSettings.h"
 #include "BafArchive.h"
 #include "Logger.h"
 
@@ -254,7 +255,8 @@ const ImportSession* DaemonDb::Imports::Find(int64_t id) const {
 
 const ImportSession* DaemonDb::Imports::FindByAccountNumber(const String& account_number) const {
 	for (const ImportSession& session : m_sessions) {
-		if (session.account_number == account_number && session.state != ImportSession::State::Committed) {
+		// The same account as a file's IBAN or the bank API's BBAN.
+		if (AccountKey(std::string(session.account_number.utf8_str())) == AccountKey(std::string(account_number.utf8_str())) && session.state != ImportSession::State::Committed) {
 			return &session;
 		}
 	}

@@ -41,6 +41,12 @@ std::string AccountKey(const std::string& account_number) {
 			key += (char)std::toupper((unsigned char)c);
 		}
 	}
+	const bool digits = std::all_of(key.begin() + std::min<size_t>(key.size(), 2), key.end(), [](unsigned char c) { return std::isdigit(c); });
+	if (key.size() == 28 && key.compare(0, 2, "HU") == 0 && digits) {
+		key.erase(0, 4);
+	} else if (key.size() == 16 && digits && std::isdigit((unsigned char)key[0])) {
+		key += "00000000";
+	}
 	return key;
 }
 

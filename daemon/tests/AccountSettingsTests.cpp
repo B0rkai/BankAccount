@@ -50,6 +50,10 @@ BankRun ScheduledRun(const char* at, const char* outcome) {
 TEST_F(AccountSettingsTest, AccountNumbersAreFiledByTheirLettersAndDigits) {
 	EXPECT_EQ(AccountKey("12100011-12345678-00000000"), "121000111234567800000000");
 	EXPECT_EQ(AccountKey("hu00 1210 0011"), "HU0012100011");
+	// A Hungarian IBAN and a short BBAN are filed as the 24 digits; a foreign IBAN keeps its country.
+	EXPECT_EQ(AccountKey("HU85 1210 0011 1234 5678 0000 0000"), "121000111234567800000000");
+	EXPECT_EQ(AccountKey("12100011-12345678"), "121000111234567800000000");
+	EXPECT_EQ(AccountKey("DE89 3704 0044 0532 0130 00"), "DE89370400440532013000");
 }
 
 TEST_F(AccountSettingsTest, WeeklyRunsOnItsDayAtSixAndMonthlyOnTheMonthsLastDayIfShorter) {

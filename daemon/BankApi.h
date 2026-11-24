@@ -71,7 +71,8 @@ public:
 	// ("paste": true) and its address is pasted into Complete().
 	QueryApiResult Connect(const nlohmann::json& body, const std::string& callback, const std::string& actor, std::time_t now);
 	// Finishes a login: the `code` and `state` the bank login ended with. Saves the connection,
-	// replacing an older one to the same bank. {"ok", "connection": {...}}.
+	// replacing an older one of the same login (one whose accounts it all has); another person's
+	// login to the same bank is kept beside it. {"ok", "connection": {...}}.
 	QueryApiResult Complete(const std::string& code, const std::string& state, const std::string& actor, std::time_t now);
 	// The same from the address the bank login ended on (POST /api/v1/bank/complete {url}).
 	QueryApiResult CompleteFromUrl(const std::string& url, const std::string& actor, std::time_t now);
