@@ -67,7 +67,7 @@ std::string EnableBankingJwt(const EnableBankingApp& app, int64_t now, std::stri
 	return signing_input + "." + Base64Url(signature);
 }
 
-std::optional<json> EnableBankingHttp::Call(const std::string& method, const std::string& path, const json* body, std::string& error) {
+std::optional<json> EnableBankingHttp::Call(const std::string& method, const std::string& path, const json* body, std::string& error, const PsuHeaders& psu) {
 	const std::string jwt = EnableBankingJwt(m_app, (int64_t)time(nullptr), error);
 	if (jwt.empty()) {
 		return std::nullopt;
@@ -75,7 +75,12 @@ std::optional<json> EnableBankingHttp::Call(const std::string& method, const std
 	httplib::SSLClient client(API_HOST);
 	client.set_connection_timeout(15, 0);
 	client.set_read_timeout(60, 0);
-	const httplib::Headers headers = { { "Authorization", "Bearer " + jwt } };
+	httplib::Headers headers = { { "Authorization", "Bearer " + jwt } };
+	for (const auto& [name, value] : psu) {
+		if (!value.empty()) {
+			headers.emplace(name, value);
+		}
+	}
 	httplib::Result result = method == "POST" ? client.Post(path, headers, body ? body->dump() : "{}", "application/json")
 		: method == "DELETE" ? client.Delete(path, headers) : client.Get(path, headers);
 	// Only the path before '?' goes in the log: query parameters may hold continuation keys.
@@ -118,7 +123,7 @@ std::string UrlEncode(const std::string& text) {
 	return out;
 }
 
-std::optional<json> FetchTransactions(IEnableBankingHttp& http, const std::string& uid, const std::string& date_from, std::string& error) {
+std::optional<json> FetchTransactions(IEnableBankingHttp& http, const std::string& uid, const std::string& date_from, std::string& error, const PsuHeaders& psu) {
 	json all = json::array();
 	std::string continuation;
 	for (int page = 0; page < 1000; ++page) {
@@ -126,7 +131,7 @@ std::optional<json> FetchTransactions(IEnableBankingHttp& http, const std::strin
 		if (!continuation.empty()) {
 			path += "&continuation_key=" + UrlEncode(continuation);
 		}
-		std::optional<json> answer = http.Call("GET", path, nullptr, error);
+		std::optional<json> answer = http.Call("GET", path, nullptr, error, psu);
 		if (!answer) {
 			return std::nullopt;
 		}

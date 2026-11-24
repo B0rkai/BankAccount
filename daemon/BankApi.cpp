@@ -440,7 +440,7 @@ std::vector<BankAccountLink> BankApi::Accounts(const std::string& connection_id)
 }
 
 bool BankApi::Pull(const std::string& connection_id, const std::map<std::string, uint16_t>& last_dates, std::time_t now, std::vector<BankPull>& pulled, QueryApiResult& failure,
-		const std::string& only_account) {
+		const std::string& only_account, const PsuHeaders& psu) {
 	if (!m_http) {
 		failure = MakeErrorResult(503, "Bank connections aren't set up on this server");
 		return false;
@@ -489,7 +489,7 @@ bool BankApi::Pull(const std::string& connection_id, const std::map<std::string,
 		std::string error;
 		std::optional<json> transactions;
 		for (const std::string& date_from : tries) {
-			transactions = EnableBanking::FetchTransactions(*m_http, account.uid, date_from, error);
+			transactions = EnableBanking::FetchTransactions(*m_http, account.uid, date_from, error, psu);
 			if (transactions) {
 				break;
 			}

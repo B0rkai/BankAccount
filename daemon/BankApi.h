@@ -85,8 +85,9 @@ public:
 	// `last_dates[account_number]` (an Excel date; missing or 0: an account Persely doesn't have
 	// yet - its whole history if the bank gives it, else 2 years, else the last 89 days). False with
 	// `error` (404) for an unknown connection.
+	// `psu`: a fetch someone started (EnableBankingClient.h) - none for a scheduled one.
 	bool Pull(const std::string& connection_id, const std::map<std::string, uint16_t>& last_dates, std::time_t now, std::vector<BankPull>& pulled, QueryApiResult& error,
-		const std::string& only_account = "");
+		const std::string& only_account = "", const PsuHeaders& psu = {});
 
 	// The connection's accounts, for the caller to look up their last dates.
 	std::vector<BankAccountLink> Accounts(const std::string& connection_id);

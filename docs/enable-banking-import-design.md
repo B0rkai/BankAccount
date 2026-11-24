@@ -212,6 +212,11 @@ Decided 2026-11-24 (7e-7g):
   is seen only by whoever fetched it, and a scheduled fetch never saves it. Older history can't be
   added after it: a file's import starts from the last stored day. So for an account with history,
   import the exported files first, then fetch.
+- **Fetching by hand vs on a schedule**: a fetch someone starts (Fetch from the bank, an account
+  page's Fetch) sends PSU headers (`Psu-Ip-Address` - the address tailscale serve forwards -,
+  `Psu-User-Agent`, `Psu-Accept-Language`), which tell the bank the account holder is there, so
+  its limit on background reads (often 4 a day per account; a 429 "Maximum daily access
+  exceeded") doesn't apply. A scheduled fetch sends none and counts against that limit.
 - **Beyond the bank's reach**: banks give about the last 90 days. A fetch asked from further back
   (the account's last stored day is older) must reach back to that day like a file, or it fails
   with "import an exported file up to recent days first" - instead of saving with a silent gap.

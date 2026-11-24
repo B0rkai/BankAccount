@@ -465,11 +465,25 @@ std::string BankCallbackUrl(const httplib::Request& req, Listener listener) {
 	return std::string(listener == Listener::TAILNET ? "https://" : "http://") + req.get_header_value("Host") + "/api/v1/bank/callback";
 }
 
+// The PSU headers of a fetch someone started from the browser (EnableBankingClient.h): the bank
+// then knows they're there, and its daily limit on background reads doesn't apply. The address is
+// the one tailscale serve forwards, else the LAN client's.
+PsuHeaders PsuOf(const httplib::Request& req) {
+	std::string ip = req.get_header_value("X-Forwarded-For");
+	ip = ip.substr(0, ip.find(','));
+	ip.erase(0, ip.find_first_not_of(' '));
+	if (ip.empty()) {
+		ip = req.remote_addr;
+	}
+	return { { "Psu-Ip-Address", ip }, { "Psu-User-Agent", req.get_header_value("User-Agent") }, { "Psu-Accept-Language", req.get_header_value("Accept-Language") } };
+}
+
 // Downloads a connection's new transactions - every account's, or only `only_account`'s - without
 // holding the database lock, then opens (or brings up to date) their imports in one write and
 // records each account's fetch. `scheduled`: an account's schedule, in its setter's name - an
 // import whose rows all sorted themselves is saved straight away, after a snapshot.
-QueryApiResult FetchFromBank(Context& ctx, const std::string& connection_id, const std::string& only_account, const std::string& login, bool scheduled) {
+QueryApiResult FetchFromBank(Context& ctx, const std::string& connection_id, const std::string& only_account, const std::string& login, bool scheduled,
+		const PsuHeaders& psu = {}) {
 	const std::vector<BankAccountLink> accounts = ctx.bank.Accounts(connection_id);
 	if (accounts.empty()) {
 		return MakeErrorResult(404, "No such bank connection");
@@ -485,7 +499,7 @@ QueryApiResult FetchFromBank(Context& ctx, const std::string& connection_id, con
 	const std::time_t now = std::time(nullptr);
 	std::vector<BankPull> pulled;
 	QueryApiResult result{0, ""};
-	if (!ctx.bank.Pull(connection_id, last_dates, now, pulled, result, only_account)) {
+	if (!ctx.bank.Pull(connection_id, last_dates, now, pulled, result, only_account, psu)) {
 		return result;
 	}
 	if (pulled.empty()) {
@@ -1090,7 +1104,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		}
 		const nlohmann::json body = ParseBody(req);
 		const std::string id = body.is_object() && body.contains("connection_id") && body["connection_id"].is_string() ? body["connection_id"].get<std::string>() : "";
-		SendResult(res, FetchFromBank(ctx, id, "", login, false));
+		SendResult(res, FetchFromBank(ctx, id, "", login, false, PsuOf(req)));
 	});
 
 	// Account pages (AccountApi.h): owner and schedule live in db/account_settings.json.
@@ -1138,7 +1152,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			SendError(res, 404, "This account isn't read through a bank connection");
 			return;
 		}
-		SendResult(res, FetchFromBank(ctx, connection_id, number, login, false));
+		SendResult(res, FetchFromBank(ctx, connection_id, number, login, false, PsuOf(req)));
 	});
 
 	server.Get("/api/v1/entity", [&ctx](const httplib::Request& req, httplib::Response& res) {

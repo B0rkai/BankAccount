@@ -22,8 +22,10 @@ public:
 	std::map<std::string, json> answers;
 	std::vector<std::pair<std::string, json>> calls; // "METHOD path?query", body
 	std::string refuse_before;                        // a date_from before this is refused
-	std::optional<json> Call(const std::string& method, const std::string& path, const json* body, std::string& error) override {
+	PsuHeaders last_psu;
+	std::optional<json> Call(const std::string& method, const std::string& path, const json* body, std::string& error, const PsuHeaders& psu = {}) override {
 		calls.push_back({ method + " " + path, body ? *body : json() });
+		last_psu = psu;
 		const size_t from = path.find("date_from=");
 		if (!refuse_before.empty() && from != std::string::npos && path.substr(from + 10, 10) < refuse_before) {
 			error = "Enable Banking answered 422: date_from refused";
@@ -385,6 +387,13 @@ TEST_F(BankApiTest, ANewAccountsHistoryIsAskedForAsFarBackAsTheBankGoes) {
 	EXPECT_TRUE(pulled[0].error.empty()) << pulled[0].error;
 	EXPECT_NE(http.Last("GET /accounts/uid-eur/transactions?date_from=2011-01-05"), nullptr); // refused
 	EXPECT_NE(http.Last("GET /accounts/uid-eur/transactions?date_from=2024-01-02"), nullptr); // given
+
+	EXPECT_TRUE(http.last_psu.empty()); // nobody there: a background read
+
+	// Someone pressed Fetch: the bank is told they're there.
+	pulled.clear();
+	ASSERT_TRUE(api->Pull(id, {}, NOW, pulled, failure, "12100011-99999999-00000000", { { "Psu-Ip-Address", "100.64.0.7" }, { "Psu-User-Agent", "Edge" } }));
+	EXPECT_EQ(http.last_psu.at("Psu-Ip-Address"), "100.64.0.7");
 
 	http.refuse_before = "2025-12-01"; // only the last month: the 89 days are refused too
 	pulled.clear();
