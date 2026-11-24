@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { accountLink, bank, canEdit, type BankConnection, type BankFetchResult, type BankStatus } from '../api'
+import { accountLink, bank, canAdmin, canEdit, isAdmin, type BankConnection, type BankFetchResult, type BankStatus } from '../api'
 import { formatCount, formatDate, formatDateTime } from '../format'
 import { useAsync } from '../hooks'
 import { linkHandler, navigate } from '../router'
@@ -91,7 +91,7 @@ export function BankConnections() {
                 {c.valid_until && ` · until ${formatDate(c.valid_until.slice(0, 10), { year: true })}`} · connected by {c.created_by} {formatDateTime(c.created_at)}
               </p>
             </div>
-            {canEdit() && (
+            {canAdmin() && (
               <div className="card-actions">
                 <button type="button" className="button secondary small" onClick={() => disconnect(c)}>
                   Disconnect
@@ -122,8 +122,9 @@ export function BankConnections() {
         </article>
       ))}
       {paste && <PasteAddress bank={paste.bank} landsOn={paste.landsOn} onDone={pasted} />}
-      {s.configured && canEdit() && !paste && <ConnectForm status={s} onConnect={connect} />}
+      {s.configured && canAdmin() && !paste && <ConnectForm status={s} onConnect={connect} />}
       {s.configured && !canEdit() && <p className="muted small">Connecting a bank needs a sign-in that may change data (over Tailscale).</p>}
+      {s.configured && canEdit() && !isAdmin() && <p className="muted small">An admin connects the banks; fetch your accounts from their pages.</p>}
     </section>
   )
 }

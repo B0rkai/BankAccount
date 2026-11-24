@@ -3,7 +3,8 @@
         "Retired the Windows desktop app, the CLI and their build; the core's own tests now run on Linux with every build. Fixed on Linux: MBH CSV files with Windows line endings imported nothing, and euro amounts lost their € sign. Persely's Settings shows What's new",
         "Enable Banking groundwork: bank API transactions become import rows (Gránit's day-early dates corrected, cut type names and squeezed spaces matched to existing keywords), and the daemon can make signed bank API calls",
         "Persely fetches transactions straight from the bank: connect, renew or disconnect a bank in Settings, then Import → Fetch from the bank opens an import per account; the overview warns before a connection runs out",
-        "Account pages: details, owner, bank connection, fetch one account now, and weekly or monthly automatic fetches (saved by themselves only when every row sorts itself; otherwise the import waits, shown on the overview, and later fetches add to it). A transaction fetched or imported again keeps its saved client, category and description"
+        "Account pages: details, owner, bank connection, fetch one account now, and weekly or monthly automatic fetches (saved by themselves only when every row sorts itself; otherwise the import waits, shown on the overview, and later fetches add to it). A transaction fetched or imported again keeps its saved client, category and description",
+        "Users and roles: admins add users by their Tailscale login in Settings → Users; a user sees only the accounts they own (queries, transactions, reports, imports, bank fetches) and can import into and categorize them, while renaming, merging, settings, bank connections and users stay with admins"
     ],
     "released": [
         {

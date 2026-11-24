@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { ApiError, bank, canEdit, imports, type BankConnection, type BankFetchResult, type ImportDetected, type ImportSummary } from '../api'
+import { ApiError, bank, canEdit, imports, isAdmin, type BankConnection, type BankFetchResult, type ImportDetected, type ImportSummary } from '../api'
 import { BankFetchResults, daysLeftText } from '../components/BankConnections'
 import { Icon } from '../components/Icons'
 import { formatCount, formatDate, formatDateTime } from '../format'
@@ -47,7 +47,7 @@ export function Imports() {
           <p className="muted">Straight from the bank, or MBH Bank CSV and Gránit Bank XML exports. Nothing reaches the transactions until you save.</p>
         </div>
       </div>
-      <FromTheBank onFetched={() => setVersion((v) => v + 1)} />
+      {isAdmin() && <FromTheBank onFetched={() => setVersion((v) => v + 1)} />}
       <Upload onStarted={(id) => navigate(importLink(id))} />
       {(list.error || error) && <p className="alert">{list.error ?? error}</p>}
       {list.loading && !list.data ? (

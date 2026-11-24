@@ -189,7 +189,7 @@ bool BankApi::SaveLocked(const std::vector<BankConnection>& connections, std::st
 	return WriteFileAtomically(m_path, json{ { "connections", list } }.dump(2) + "\n", error, 0600);
 }
 
-QueryApiResult BankApi::Status(const AccountManager& mgr, std::time_t now) {
+QueryApiResult BankApi::Status(const AccountManager& mgr, std::time_t now, const std::vector<int>* only_accounts) {
 	json banks = json::array();
 	for (const char* const* b = BANKS; *b; ++b) {
 		banks.push_back(*b);
@@ -202,12 +202,21 @@ QueryApiResult BankApi::Status(const AccountManager& mgr, std::time_t now) {
 	json list = json::array();
 	for (const BankConnection& c : connections) {
 		json j = ConnectionToJson(c, now);
+		json accounts = json::array();
 		for (json& a : j["accounts"]) {
 			std::optional<ImportEngine::StoredAccount> stored = ImportEngine::FindAccount(mgr, String::FromUTF8(a["account_number"].get<std::string>().c_str()));
+			if (only_accounts && (!stored || std::find(only_accounts->begin(), only_accounts->end(), (int)(Id::Type)stored->id) == only_accounts->end())) {
+				continue;
+			}
 			a["account_id"] = stored ? json((Id::Type)stored->id) : json(nullptr);
 			a["account_name"] = stored ? json(std::string(stored->name.utf8_str())) : json(nullptr);
 			a["last_date"] = stored && stored->last_date ? json(IsoDate(stored->last_date)) : json(nullptr);
+			accounts.push_back(a);
 		}
+		if (only_accounts && accounts.empty()) {
+			continue;
+		}
+		j["accounts"] = accounts;
 		list.push_back(j);
 	}
 	return Ok(json{ { "configured", Configured() }, { "banks", banks }, { "connections", list } });

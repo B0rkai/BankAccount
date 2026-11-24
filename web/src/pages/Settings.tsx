@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { api, canEdit } from '../api'
+import { api, canAdmin, isAdmin } from '../api'
 import { BankConnections } from '../components/BankConnections'
 import { AccountList } from './Account'
+import { UserList } from '../components/UserList'
 import { Maintenance } from '../components/Maintenance'
 import { NamePicker } from '../components/NamePicker'
 import { WhatsNew } from '../components/WhatsNew'
@@ -75,7 +76,9 @@ export function Settings() {
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p className="muted">How the overview and the year in review count your money. Shared by every device you sign in on.</p>
+          <p className="muted">
+            {isAdmin() ? 'How the overview and the year in review count your money. Shared by every device you sign in on.' : 'Your accounts, and what changed in Persely.'}
+          </p>
         </div>
         <div className="toolbar" aria-live="polite">
           {status.saved && <span className="muted small">Saved</span>}
@@ -83,52 +86,57 @@ export function Settings() {
       </div>
       {status.error && <div className="alert">Couldn't save: {status.error}</div>}
 
-      <section className="card">
-        <h2>Left out of the totals</h2>
-        <p className="muted small">
-          Money moving between your own accounts would count once as spent and again as income. Categories listed here are left out of the overview and the year in review
-          altogether.
-        </p>
-        {settings && names ? (
-          <CategoryList label="Categories" ids={excluded} names={names} onChange={(ids) => save({ excluded_categories: ids })} placeholder="e.g. Internal Transfer" />
-        ) : (
-          <Skeleton rows={2} />
-        )}
-      </section>
+      {isAdmin() && (
+        <>
+          <section className="card">
+            <h2>Left out of the totals</h2>
+            <p className="muted small">
+              Money moving between your own accounts would count once as spent and again as income. Categories listed here are left out of the overview and the year in review
+              altogether.
+            </p>
+            {settings && names ? (
+              <CategoryList label="Categories" ids={excluded} names={names} onChange={(ids) => save({ excluded_categories: ids })} placeholder="e.g. Internal Transfer" />
+            ) : (
+              <Skeleton rows={2} />
+            )}
+          </section>
 
-      <section className="card">
-        <h2>Not income</h2>
-        <p className="muted small">
-          Money coming in under these categories - a loan, a mortgage, money passed on through your accounts - isn't counted in the big green income figure, and so not in net or
-          the savings rate either. It shows apart as a small grey "other money in".
-        </p>
-        {settings && names ? (
-          <>
-            <CategoryList label="Categories" ids={notIncome} names={names} onChange={(ids) => save({ other_income_categories: ids })} placeholder="e.g. Debt" />
-            {suggestions.length > 0 && (
-              <div className="suggestions">
-                <span className="muted small">Money came in under:</span>
-                {suggestions.map((s) => (
-                  <button key={s.label} type="button" className="chip-button" title={`Add ${s.label}`} onClick={() => save({ other_income_categories: [...notIncome, s.id!] })}>
-                    + {shortCategory(s.label)} <span className="muted">{formatMoney(s.value, 'HUF')}</span>
-                  </button>
-                ))}
-              </div>
+          <section className="card">
+            <h2>Not income</h2>
+            <p className="muted small">
+              Money coming in under these categories - a loan, a mortgage, money passed on through your accounts - isn't counted in the big green income figure, and so not in net or
+              the savings rate either. It shows apart as a small grey "other money in".
+            </p>
+            {settings && names ? (
+              <>
+                <CategoryList label="Categories" ids={notIncome} names={names} onChange={(ids) => save({ other_income_categories: ids })} placeholder="e.g. Debt" />
+                {suggestions.length > 0 && (
+                  <div className="suggestions">
+                    <span className="muted small">Money came in under:</span>
+                    {suggestions.map((s) => (
+                      <button key={s.label} type="button" className="chip-button" title={`Add ${s.label}`} onClick={() => save({ other_income_categories: [...notIncome, s.id!] })}>
+                        + {shortCategory(s.label)} <span className="muted">{formatMoney(s.value, 'HUF')}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!incoming.loading && (
+                  <p className="muted small">
+                    Since {since.slice(0, 4)}: <strong className="income-text">{formatMoney(income, 'HUF')}</strong> income
+                    {other > 0 && ` and ${formatMoney(other, 'HUF')} other money in`}.
+                  </p>
+                )}
+              </>
+            ) : (
+              <Skeleton rows={3} />
             )}
-            {!incoming.loading && (
-              <p className="muted small">
-                Since {since.slice(0, 4)}: <strong className="income-text">{formatMoney(income, 'HUF')}</strong> income
-                {other > 0 && ` and ${formatMoney(other, 'HUF')} other money in`}.
-              </p>
-            )}
-          </>
-        ) : (
-          <Skeleton rows={3} />
-        )}
-      </section>
+          </section>
+        </>
+      )}
       <AccountList />
       <BankConnections />
-      {canEdit() && <Maintenance />}
+      {isAdmin() && <UserList />}
+      {canAdmin() && <Maintenance />}
       <WhatsNew />
     </div>
   )

@@ -1,5 +1,6 @@
 #pragma once
 #include <ctime>
+#include <functional>
 #include <optional>
 #include <string>
 #include <nlohmann/json.hpp>
@@ -43,8 +44,8 @@ std::string ImportFormatOf(const std::string& file_name);
 // 400 if a new account has no account_name; 422 if the file can't be imported.
 QueryApiResult StartImport(const RawImportData& data, const ImportUpload& upload, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& actor, std::time_t now);
 
-// GET /api/v1/imports: {"imports": [session summary]}.
-QueryApiResult ListImports(const AccountManager& mgr, const DaemonDb::Imports& imports);
+// GET /api/v1/imports: {"imports": [session summary]} - those `visible` lets through (all without it).
+QueryApiResult ListImports(const AccountManager& mgr, const DaemonDb::Imports& imports, const std::function<bool(const ImportSession&)>& visible = {});
 // GET /api/v1/imports/{id}[?row=N]: the summary ("rows", "open" - how many still need an
 // answer, "dropped" - cut off by Stop here) plus "open_rows" (their indexes), "question" for the
 // first open row (or row N; null when none is open), "current" (that row), "previous" (up to 5

@@ -61,6 +61,22 @@ drop it.
 | `excluded_categories` | `number[]` \| `null` | Categories left out of the overview's and year in review's totals. Missing: none (a browser that still has the old per-browser list moves it here on first load). |
 | `other_income_categories` | `number[]` \| `null` | Money in under these isn't counted as income; it shows as "other money in". Missing or empty: all money in is income. |
 
+## `db/users.json`
+
+Persely's users besides the admins in `BANKACCOUNT_ALLOWED_LOGINS` (`daemon/Users.h`,
+[users-and-roles.md](users-and-roles.md)). Written by Settings → Users (`POST`/`DELETE
+/api/v1/users`); a missing file means only the server's admins.
+
+```json
+{ "users": [ { "login": "someone@example.com", "name": "Someone", "role": "user" } ] }
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `login` | string | Their Tailscale login, lower case. One of the server's admins here is ignored. |
+| `name` | string | Shown instead of the login. |
+| `role` | `"admin"` \| `"user"` | A user sees only the accounts they own. |
+
 ## `db/account_settings.json`
 
 What Persely keeps about each account besides its transactions - the account pages

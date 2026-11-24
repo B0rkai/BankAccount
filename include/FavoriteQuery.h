@@ -66,4 +66,7 @@ std::optional<FavoriteQueryDef> ParseAdHocQuery(std::istream& in);
 // Builds a Query from `def`. DateMode::RELATIVE_KEYWORD is resolved against GetToday()
 // (CommonTypes.h) - a test wanting a fixed "today" sets one via SetToday() first.
 // `enabled_accounts`: the account ids the query may cover (every account, from the daemon).
-void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std::vector<int>& enabled_accounts);
+// `only_accounts`: when given, nothing outside these account ids is seen at all, whatever the
+// definition names - a user's own accounts (daemon/Users.h). It's the query's first element, so
+// no sum ever counts another account's transaction.
+void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std::vector<int>& enabled_accounts, const std::vector<int>* only_accounts = nullptr);

@@ -18,7 +18,8 @@ struct QueryApiResult {
 // then runs it via RunQueryDef() below. Malformed JSON (or a non-object root) yields http_status
 // 400 with a JSON {"error": "..."} body instead of silently substituting an unfiltered query the
 // caller never asked for.
-QueryApiResult RunAdHocQuery(const std::string& request_body, const AccountManager& mgr);
+// `only_accounts`: a user's own accounts (BuildQueryFromFavorite()); null - every account.
+QueryApiResult RunAdHocQuery(const std::string& request_body, const AccountManager& mgr, const std::vector<int>* only_accounts = nullptr);
 
 // Runs an already-parsed query definition through BuildQueryFromFavorite() +
 // AccountManager::MakeQuery() exactly like a favorite query would, via HtmlReport.h's
@@ -33,7 +34,7 @@ QueryApiResult RunAdHocQuery(const std::string& request_body, const AccountManag
 // currently loaded. Shared by RunAdHocQuery() above (an ad-hoc request) and the favorites
 // API's run-by-name endpoint (FavoritesApi.h, story 4) so both funnel through the same
 // execution/serialization path instead of two hand-maintained copies of it.
-QueryApiResult RunQueryDef(const FavoriteQueryDef& def, const AccountManager& mgr);
+QueryApiResult RunQueryDef(const FavoriteQueryDef& def, const AccountManager& mgr, const std::vector<int>* only_accounts = nullptr);
 
 // A {"error": message} JSON body with the given HTTP status - shared by every daemon API route
 // that needs to report a request-side failure (malformed body, unknown favorite name, ...).

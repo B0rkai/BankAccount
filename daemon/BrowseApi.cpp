@@ -72,7 +72,7 @@ double Amount(const Transaction& tr) {
 	return currency->HasCents() ? tr.GetAmount() / 100.0 : static_cast<double>(tr.GetAmount());
 }
 
-QueryApiResult ListTransactions(const std::string& request_body, const AccountManager& mgr) {
+QueryApiResult ListTransactions(const std::string& request_body, const AccountManager& mgr, const std::vector<int>* only_accounts) {
 	nlohmann::json body = nlohmann::json::parse(request_body, nullptr, false);
 	std::istringstream in(request_body);
 	std::optional<FavoriteQueryDef> def = ParseAdHocQuery(in);
@@ -91,7 +91,7 @@ QueryApiResult ListTransactions(const std::string& request_body, const AccountMa
 	std::vector<int> enabled_accounts(mgr.CountAccounts());
 	std::iota(enabled_accounts.begin(), enabled_accounts.end(), 0);
 	Query query;
-	BuildQueryFromFavorite(*def, query, enabled_accounts);
+	BuildQueryFromFavorite(*def, query, enabled_accounts, only_accounts);
 	mgr.MakeQuery(query); // sorts query.GetResult() oldest first
 
 	const String needle = String::FromUTF8(ReadString(body, "search").c_str()).Trim().Trim(false);
@@ -132,7 +132,7 @@ QueryApiResult ListTransactions(const std::string& request_body, const AccountMa
 	return { 200, out.dump() };
 }
 
-QueryApiResult ListNames(const std::string& topic, const AccountManager& mgr) {
+QueryApiResult ListNames(const std::string& topic, const AccountManager& mgr, const std::vector<int>* only_accounts) {
 	StringVector names;
 	if (topic == "accounts") {
 		mgr.ListOfAccNames(names);
@@ -155,7 +155,8 @@ QueryApiResult ListNames(const std::string& topic, const AccountManager& mgr) {
 		out["ids"] = nlohmann::json::array();
 	}
 	for (size_t i = 0; i < names.size(); ++i) {
-		if (!names[i].empty()) {
+		const bool hidden = topic == "accounts" && only_accounts && std::find(only_accounts->begin(), only_accounts->end(), (int)i) == only_accounts->end();
+		if (!names[i].empty() && !hidden) {
 			out["names"].push_back(Utf8(names[i]));
 			if (with_ids) {
 				out["ids"].push_back(i);

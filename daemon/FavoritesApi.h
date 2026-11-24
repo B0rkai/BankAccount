@@ -30,4 +30,5 @@ QueryApiResult ListFavoriteReports(const std::vector<FavoriteReportDef>& defs);
 // Runs the favorite query named `name` against `mgr` and serializes it exactly like POST /query
 // (QueryApi.h's RunQueryDef) does - a JSON array of {"heading", "table", "chart_shape"?, "chart"?}
 // sections. Returns a 404 {"error": ...} if no loaded favorite has that name.
-QueryApiResult RunFavoriteQueryByName(const std::string& name, const std::vector<FavoriteQueryDef>& defs, const AccountManager& mgr);
+// `only_accounts`: a user's own accounts (QueryApi.h).
+QueryApiResult RunFavoriteQueryByName(const std::string& name, const std::vector<FavoriteQueryDef>& defs, const AccountManager& mgr, const std::vector<int>* only_accounts = nullptr);

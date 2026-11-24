@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { accountLink, accounts, api, canEdit, type AccountDetails, type AccountInfo, type BankFetchResult, type BankRun, type BankSchedule } from '../api'
+import { accountLink, accounts, api, canAdmin, canEdit, type AccountDetails, type AccountInfo, type BankFetchResult, type BankRun, type BankSchedule } from '../api'
 import { BankFetchResults, RENEW_DAYS } from '../components/BankConnections'
 import { Icon } from '../components/Icons'
 import { transactionsLink } from '../drill'
@@ -138,7 +138,7 @@ function AccountName({ account, onSaved }: { account: AccountInfo; onSaved: () =
 
 function OwnerPicker({ account, onSaved }: { account: AccountDetails; onSaved: () => void }) {
   const [error, setError] = useState<string>()
-  if (!canEdit()) return <>{account.owner || <span className="muted">not set</span>}</>
+  if (!canAdmin()) return <>{account.owner || <span className="muted">not set</span>}</>
   const choose = async (owner: string) => {
     setError(undefined)
     try {

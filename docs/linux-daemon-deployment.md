@@ -27,7 +27,8 @@ its top.
 
 - **Tailscale**: `tailscale serve` adds `Tailscale-User-Login` to every request it forwards to
   `127.0.0.1:8300`. The daemon lets a request in only if that login is in
-  `BANKACCOUNT_ALLOWED_LOGINS`; anyone else gets 403. No password.
+  `BANKACCOUNT_ALLOWED_LOGINS` (always admins) or added in Settings → Users (`db/users.json`,
+  admin or user - [users-and-roles.md](users-and-roles.md)); anyone else gets 403. No password.
 - **LAN**: on `:8400` those headers are ignored (anyone on the LAN could send one). The app shows
   a password page; a correct password gives an HttpOnly session cookie (12 hours, or 30 days with
   "keep me signed in"). Five wrong passwords from one address lock it out for 15 minutes. Sessions
@@ -74,8 +75,8 @@ downloads MNB's archive (3.6 MB) and keeps the rate each transaction date is con
 own, or for a weekend or bank holiday the last one published before it (Friday's for a Saturday).
 That doesn't count as a change made in Persely, so the refresh keeps working.
 
-Who may change data: only the Tailscale logins on the allowlist; a LAN password session stays
-read-only. Each change is one SQL transaction, recorded with the login that made it
+Who may change data: only Tailscale logins of Persely's users (a user only their own accounts);
+a LAN password session stays read-only. Each change is one SQL transaction, recorded with the login that made it
 (`created_by`/`updated_by` on the transaction, `changed_by` in `meta`).
 
 ## Backups

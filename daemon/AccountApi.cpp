@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include "AccountApi.h"
 #include "Account.h"
 #include "BrowseApi.h"
@@ -20,6 +22,15 @@ QueryApiResult Ok(const json& body) {
 
 const Account* AccountAt(const AccountManager& mgr, int64_t id) {
 	return id >= 0 && id < INVALID_ID ? mgr.FindAccount(Id((Id::Type)id)) : nullptr;
+}
+
+bool Visible(const AccountContext& ctx, int64_t id) {
+	return !ctx.only_accounts || std::find(ctx.only_accounts->begin(), ctx.only_accounts->end(), (int)id) != ctx.only_accounts->end();
+}
+
+std::string Lower(std::string s) {
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+	return s;
 }
 
 json Owners(const AccountContext& ctx) {
@@ -66,6 +77,18 @@ json AccountToJson(const AccountContext& ctx, Id::Type id) {
 
 } // namespace
 
+std::vector<int> OwnedAccounts(const AccountManager& mgr, const std::map<std::string, AccountSettings>& settings, const std::string& login) {
+	std::vector<int> owned;
+	const std::string who = Lower(login);
+	for (Id::Type id = 0; id < mgr.CountAccounts(); ++id) {
+		auto found = settings.find(AccountKey(Utf8(mgr.FindAccount(Id(id))->GetAccNumber())));
+		if (!who.empty() && found != settings.end() && Lower(found->second.owner) == who) {
+			owned.push_back(id);
+		}
+	}
+	return owned;
+}
+
 const BankConnection* ConnectionOf(const std::vector<BankConnection>& connections, const String& account_number) {
 	const std::string key = AccountKey(Utf8(account_number));
 	for (const BankConnection& c : connections) {
@@ -81,14 +104,16 @@ const BankConnection* ConnectionOf(const std::vector<BankConnection>& connection
 QueryApiResult ListAccounts(const AccountContext& ctx) {
 	json list = json::array();
 	for (Id::Type id = 0; id < ctx.mgr.CountAccounts(); ++id) {
-		list.push_back(AccountToJson(ctx, id));
+		if (Visible(ctx, id)) {
+			list.push_back(AccountToJson(ctx, id));
+		}
 	}
 	return Ok(json{ { "accounts", list }, { "owners", Owners(ctx) } });
 }
 
 QueryApiResult AccountDetails(const AccountContext& ctx, int64_t id) {
 	const Account* acc = AccountAt(ctx.mgr, id);
-	if (!acc) {
+	if (!acc || !Visible(ctx, id)) {
 		return MakeErrorResult(404, "No such account");
 	}
 	json j = AccountToJson(ctx, (Id::Type)id);
@@ -104,10 +129,13 @@ QueryApiResult AccountDetails(const AccountContext& ctx, int64_t id) {
 	return Ok(j);
 }
 
-QueryApiResult UpdateAccountSettings(const AccountContext& ctx, int64_t id, const json& body, AccountSettingsStore& store, const std::string& actor) {
+QueryApiResult UpdateAccountSettings(const AccountContext& ctx, int64_t id, const json& body, AccountSettingsStore& store, const std::string& actor, bool admin) {
 	const Account* acc = AccountAt(ctx.mgr, id);
-	if (!acc) {
+	if (!acc || !Visible(ctx, id)) {
 		return MakeErrorResult(404, "No such account");
+	}
+	if (body.is_object() && body.contains("owner") && !admin) {
+		return MakeErrorResult(403, "Only an admin can change who owns an account");
 	}
 	if (!body.is_object() || (!body.contains("owner") && !body.contains("schedule"))) {
 		return MakeErrorResult(400, "Expected {owner?, schedule?}");

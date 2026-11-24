@@ -73,11 +73,11 @@ QueryApiResult ListFavoriteReports(const std::vector<FavoriteReportDef>& defs) {
 	return { 200, arr.dump() };
 }
 
-QueryApiResult RunFavoriteQueryByName(const std::string& name, const std::vector<FavoriteQueryDef>& defs, const AccountManager& mgr) {
+QueryApiResult RunFavoriteQueryByName(const std::string& name, const std::vector<FavoriteQueryDef>& defs, const AccountManager& mgr, const std::vector<int>* only_accounts) {
 	String wanted(name);
 	for (const FavoriteQueryDef& def : defs) {
 		if (def.name == wanted) {
-			return RunQueryDef(def, mgr);
+			return RunQueryDef(def, mgr, only_accounts);
 		}
 	}
 	return MakeErrorResult(404, "No favorite query named '" + name + "'");

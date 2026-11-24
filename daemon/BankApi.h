@@ -62,7 +62,8 @@ public:
 	// days_left, created_at, created_by, accounts: [{uid, account_number, currency, name,
 	// account_id, account_name, last_date}]}]} - account_* null for an account Persely doesn't
 	// have yet.
-	QueryApiResult Status(const AccountManager& mgr, std::time_t now);
+	// `only_accounts`: a user's own accounts - only connections holding one, and only those accounts.
+	QueryApiResult Status(const AccountManager& mgr, std::time_t now, const std::vector<int>* only_accounts = nullptr);
 
 	// POST /api/v1/bank/connect {bank}: starts a bank login - {"url": the bank's login page,
 	// "paste": bool}. `callback` is this page's own /api/v1/bank/callback URL: when the app has it

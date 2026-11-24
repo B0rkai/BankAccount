@@ -19,7 +19,7 @@
 // and "seq" (where it is - what an edit addresses, EditApi.h)}, ...]}. A name
 // filter of "#<id>" matches that one client/category exactly (Query.cpp's QueryByName), unlike a
 // plain name, which matches fuzzily - the web app's drill-downs and client pages use the ids.
-QueryApiResult ListTransactions(const std::string& request_body, const AccountManager& mgr);
+QueryApiResult ListTransactions(const std::string& request_body, const AccountManager& mgr, const std::vector<int>* only_accounts = nullptr);
 
 // One transaction as ListTransactions() lists it.
 nlohmann::json TransactionToJson(const Transaction& tr, const AccountManager& mgr);
@@ -31,7 +31,8 @@ double Amount(const Transaction& tr);
 // GET /api/v1/names?topic=accounts|categories|clients: every name of that kind, for the web app's
 // filter pickers/autocomplete, as {"names": [...], "ids": [...]} (parallel arrays; ids only for
 // categories and clients). Categories are full "Group::Name" names. 400 for any other topic.
-QueryApiResult ListNames(const std::string& topic, const AccountManager& mgr);
+// `only_accounts` (ListTransactions() too): a user's own accounts - the only ones listed.
+QueryApiResult ListNames(const std::string& topic, const AccountManager& mgr, const std::vector<int>* only_accounts = nullptr);
 
 // The transactions route's "search": true when `needle` appears, ignoring case and accents, in any of `fields`
 // (client, memo, description, type, category, account), or - when it is a number such as

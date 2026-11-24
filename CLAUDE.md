@@ -47,7 +47,8 @@ core tests build fixture data; daemon tests mostly `StreamIn()` a small text sam
   auth wiring), `DaemonDb` (the loaded AccountManager, writes, reloads), `QueryApi`/`BrowseApi`
   (reads), `EditApi` (edits), `ImportApi` (imports), `FavoritesStore`/`FavoritesApi`, `WebAuth`
   (Tailscale login header or LAN password), `EnableBankingClient`/`BankApi` (bank connections),
-  `AccountSettings`/`AccountApi` (account pages: owner, scheduled fetches), `Backups` (daily snapshots), `MigrateMain`
+  `AccountSettings`/`AccountApi` (account pages: owner, scheduled fetches), `Users` (admin/user roles -
+  [docs/users-and-roles.md](docs/users-and-roles.md)), `Backups` (daily snapshots), `MigrateMain`
   (`bankaccount-migrate`, `.baf` -> SQLite).
 - `web/src/` - the web app: `api.ts` (every API call and its types), `router.ts`, `pages/`,
   `components/`, `styles.css`.

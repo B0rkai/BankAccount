@@ -24,9 +24,13 @@ struct AccountContext {
 	const DaemonDb::Imports& imports;
 	const std::map<std::string, AccountSettings>& settings; // AccountSettingsStore::All()
 	const std::vector<BankConnection>& connections;
-	const std::set<std::string>& logins; // who may be an owner: the allowlisted tailnet logins
+	const std::set<std::string>& logins; // who may be an owner: Persely's users (Users.h)
 	std::time_t now;
+	const std::vector<int>* only_accounts = nullptr; // a user's own accounts: the only ones shown
 };
+
+// The accounts `login` owns, by id (owners compare without case).
+std::vector<int> OwnedAccounts(const AccountManager& mgr, const std::map<std::string, AccountSettings>& settings, const std::string& login);
 
 // GET /api/v1/accounts: {"accounts": [account], "owners": [login]}.
 QueryApiResult ListAccounts(const AccountContext& ctx);
@@ -37,5 +41,6 @@ QueryApiResult AccountDetails(const AccountContext& ctx, int64_t id);
 const BankConnection* ConnectionOf(const std::vector<BankConnection>& connections, const String& account_number);
 
 // PATCH /api/v1/accounts/{id}: {owner?: login | "", schedule?: {every: week|month, day} | null}.
-// A schedule needs the account's bank to be connected (409 otherwise). {"ok"}.
-QueryApiResult UpdateAccountSettings(const AccountContext& ctx, int64_t id, const nlohmann::json& body, AccountSettingsStore& store, const std::string& actor);
+// A schedule needs the account's bank to be connected (409 otherwise). Only an admin may change
+// the owner (`admin`); the caller has already checked the account is theirs to change. {"ok"}.
+QueryApiResult UpdateAccountSettings(const AccountContext& ctx, int64_t id, const nlohmann::json& body, AccountSettingsStore& store, const std::string& actor, bool admin = true);

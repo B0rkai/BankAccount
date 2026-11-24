@@ -12,6 +12,7 @@ export interface Me {
   transactions?: number
   last_record_date?: string
   can_edit?: boolean // editing is on on the server and this sign-in may change data (Tailscale)
+  role?: 'admin' | 'user' // a user sees only the accounts they own (daemon/Users.h); the LAN reads as an admin
 }
 
 // One query, as POST /api/v1/query takes it - the favorite_queries.json field set minus "name"
@@ -211,6 +212,9 @@ export function setMe(me: Me) {
   currentMe = me
 }
 export const canEdit = () => !!currentMe?.can_edit
+export const isAdmin = () => currentMe?.role !== 'user'
+// Renaming, merging, maintenance, settings, bank connections and users: an admin who may edit.
+export const canAdmin = () => canEdit() && isAdmin()
 
 export type EntityTopic = 'client' | 'category' | 'type'
 export interface Keyword {
@@ -494,6 +498,20 @@ export const accounts = {
   fetch: (id: number) => post<{ results: BankFetchResult[] }>(`/api/v1/accounts/${id}/fetch`, {}).then(dataChanged),
 }
 export const accountLink = (id: number) => `/account?id=${id}`
+
+// ---- users (daemon/Users.h) ----
+
+export interface UserInfo {
+  login: string // their Tailscale login
+  name: string
+  role: 'admin' | 'user'
+  fixed: boolean // an admin set on the server (BANKACCOUNT_ALLOWED_LOGINS): can't be changed here
+}
+export const users = {
+  list: () => request<{ users: UserInfo[] }>('/api/v1/users'),
+  save: (user: { login: string; name: string; role: 'admin' | 'user' }) => post<{ ok: boolean }>('/api/v1/users', user).then(dataChanged),
+  remove: (login: string) => del<{ ok: boolean }>(`/api/v1/users?login=${encodeURIComponent(login)}`).then(dataChanged),
+}
 
 // Names change with an edit or import here (dataChanged clears this).
 const nameCache = new Map<string, Promise<NameList>>()

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, cachedNameList, canEdit, type EntityTopic, type Keyword } from '../api'
+import { api, cachedNameList, canAdmin, type EntityTopic, type Keyword } from '../api'
 import { categoryLink, clientLink } from '../drill'
 import { useAsync } from '../hooks'
 import { navigate } from '../router'
@@ -12,7 +12,7 @@ const NOUN: Record<EntityTopic, string> = { client: 'client', category: 'categor
 // here - and, when this sign-in may edit, renaming, adding/removing keywords and merging into
 // another one.
 export function ManageEntity({ topic, id, name }: { topic: 'client' | 'category'; id: number; name?: string }) {
-  const editable = canEdit()
+  const editable = canAdmin()
   const details = useAsync(() => api.entity(topic, id), `${topic}:${id}`)
   const [error, setError] = useState<string>()
   const [keyword, setKeyword] = useState('')

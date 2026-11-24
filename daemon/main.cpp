@@ -40,6 +40,7 @@
 #include "Logger.h"
 #include "Query.h"
 #include "QueryApi.h"
+#include "Users.h"
 #include "Version.h"
 #include "WebAuth.h"
 
@@ -212,6 +213,7 @@ struct Context {
 	std::atomic<bool>& rates_running;
 	BankApi& bank;
 	AccountSettingsStore& account_settings;
+	UserStore& users;
 };
 
 // The whole file, or "" if it can't be read.
@@ -235,6 +237,50 @@ void WithDb(Context& ctx, httplib::Response& res, Fn&& fn) {
 // able to change anything. Returns that login, or "" for a request that may only read.
 std::string WriterLogin(const httplib::Request& req, Listener listener) {
 	return (listener == Listener::TAILNET) ? req.get_header_value(TAILSCALE_LOGIN_HEADER) : std::string();
+}
+
+// Who a request is from (Users.h): a tailnet login and its role, or the LAN password - which sees
+// everything, like an admin, but never changes anything.
+struct Caller {
+	std::string login; // "" on the LAN
+	bool admin = false;
+	bool writer = false; // may change data: a tailnet login, with editing on
+};
+
+Caller Who(Context& ctx, const httplib::Request& req, Listener listener) {
+	Caller c;
+	if (listener == Listener::LAN) {
+		c.admin = true;
+		return c;
+	}
+	const std::optional<UserEntry> user = ctx.users.Find(req.get_header_value(TAILSCALE_LOGIN_HEADER));
+	if (user) {
+		c.login = user->login;
+		c.admin = user->role == Role::Admin;
+		c.writer = ctx.edits_enabled;
+	}
+	return c;
+}
+
+// The accounts a user sees - the ones they own; nullopt for an admin (and the LAN): every one.
+std::optional<std::vector<int>> ScopeOf(Context& ctx, const Caller& caller, const AccountManager& mgr) {
+	if (caller.admin) {
+		return std::nullopt;
+	}
+	return OwnedAccounts(mgr, ctx.account_settings.All(), caller.login);
+}
+
+bool InScope(const std::optional<std::vector<int>>& scope, int64_t account_id) {
+	return !scope || std::find(scope->begin(), scope->end(), (int)account_id) != scope->end();
+}
+
+// Whether `caller` may see and work on an import: an admin always; a user one of their own
+// accounts, or a new account they started.
+bool MaySeeImport(const Caller& caller, const std::optional<std::vector<int>>& scope, const ImportSession& session) {
+	if (caller.admin) {
+		return true;
+	}
+	return session.account_id == Id(INVALID_ID) ? session.created_by == caller.login : InScope(scope, (Id::Type)session.account_id);
 }
 
 // One change route: `change(body, AccountManager&, DaemonDb::Imports&, login, now)` runs as one
@@ -274,9 +320,14 @@ nlohmann::json ParseBody(const httplib::Request& req) {
 	return nlohmann::json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
 }
 
-// One edit route (EditApi.h): `edit(body, AccountManager&)`.
+// One edit route (EditApi.h): `edit(body, AccountManager&)`. `admin_only`: renames, merges,
+// keyword removal and recategorizing are the admins' (Users.h).
 template <class Edit>
-void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Edit&& edit) {
+void HandleEdit(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener, Edit&& edit, bool admin_only = false) {
+	if (admin_only && !Who(ctx, req, listener).admin && !WriterLogin(req, listener).empty()) {
+		SendError(res, 403, "Only an admin can do this");
+		return;
+	}
 	const nlohmann::json body = ParseBody(req);
 	if (body.is_discarded()) {
 		SendError(res, 400, "Malformed JSON");
@@ -296,7 +347,12 @@ void HandleImport(Context& ctx, const httplib::Request& req, httplib::Response& 
 		return;
 	}
 	const int64_t id = std::stoll(req.matches[1]);
+	const Caller caller = Who(ctx, req, listener);
 	HandleChange(ctx, req, res, listener, body, [&](const nlohmann::json& b, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& login, std::time_t now) {
+		const ImportSession* session = imports.Find(id);
+		if (session && !MaySeeImport(caller, ScopeOf(ctx, caller, mgr), *session)) {
+			return MakeErrorResult(404, "No such import");
+		}
 		return change(id, b, mgr, imports, login, now);
 	});
 }
@@ -368,6 +424,16 @@ std::string RequireWriter(Context& ctx, const httplib::Request& req, httplib::Re
 	const std::string login = WriterLogin(req, listener);
 	if (!ctx.edits_enabled || login.empty()) {
 		SendError(res, 403, ctx.edits_enabled ? "Changes can only be made over Tailscale" : "Editing is turned off on this server");
+		return "";
+	}
+	return login;
+}
+
+// The login an admin-only change acts for, or "" after answering 403.
+std::string RequireAdmin(Context& ctx, const httplib::Request& req, httplib::Response& res, Listener listener) {
+	const std::string login = RequireWriter(ctx, req, res, listener);
+	if (!login.empty() && !Who(ctx, req, listener).admin) {
+		SendError(res, 403, "Only an admin can do this");
 		return "";
 	}
 	return login;
@@ -476,9 +542,13 @@ void RunDueBankSchedules(Context& ctx) {
 				}
 			}
 		});
+		// Whoever set it must still be allowed to fetch the account: an admin, or its owner.
+		const std::optional<UserEntry> setter = ctx.users.Find(settings.schedule->set_by);
+		const bool allowed = setter && (setter->role == Role::Admin || ParseLoginList(settings.owner).count(setter->login) > 0);
 		const std::vector<BankConnection> connections = ctx.bank.Connections();
 		const BankConnection* conn = number.empty() ? nullptr : ConnectionOf(connections, number);
-		QueryApiResult result = conn ? FetchFromBank(ctx, conn->id, std::string(number.utf8_str()), settings.schedule->set_by, true)
+		QueryApiResult result = !allowed ? MakeErrorResult(403, settings.schedule->set_by + " may no longer fetch this account - set the schedule again")
+			: conn ? FetchFromBank(ctx, conn->id, std::string(number.utf8_str()), settings.schedule->set_by, true)
 			: MakeErrorResult(409, number.empty() ? "Persely has no such account" : "The account's bank isn't connected");
 		LogInfo("BANK") << "Scheduled fetch of " << key << ": " << (result.http_status == 200 ? "done" : result.body);
 		if (result.http_status != 200) {
@@ -496,15 +566,17 @@ void RunDueBankSchedules(Context& ctx) {
 
 // The facts an account route needs, read under the database lock.
 template <class Fn>
-void WithAccounts(Context& ctx, httplib::Response& res, Fn&& fn) {
+void WithAccounts(Context& ctx, httplib::Response& res, const Caller& caller, Fn&& fn) {
 	if (!ctx.db.IsLoaded()) {
 		SendError(res, 503, "Database not loaded");
 		return;
 	}
 	const std::map<std::string, AccountSettings> settings = ctx.account_settings.All();
 	const std::vector<BankConnection> connections = ctx.bank.Connections();
+	const std::set<std::string> logins = ctx.users.Logins();
 	ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
-		fn(AccountContext{ mgr, imports, settings, connections, ctx.auth.allowed_logins, std::time(nullptr) });
+		const std::optional<std::vector<int>> scope = caller.admin ? std::nullopt : std::optional<std::vector<int>>(OwnedAccounts(mgr, settings, caller.login));
+		fn(AccountContext{ mgr, imports, settings, connections, logins, std::time(nullptr), scope ? &*scope : nullptr });
 	});
 }
 
@@ -515,7 +587,7 @@ void InstallAuth(httplib::Server& server, Context& ctx, Listener listener) {
 		}
 		if (listener == Listener::TAILNET) {
 			std::string login = req.get_header_value(TAILSCALE_LOGIN_HEADER);
-			if (IsAllowedTailnetLogin(ctx.auth.allowed_logins, login)) {
+			if (!login.empty() && ctx.users.Find(login)) {
 				return httplib::Server::HandlerResponse::Unhandled;
 			}
 			LogWarn("AUTH") << "Refused tailnet request for " << req.path << " from login '" << login << "'";
@@ -564,6 +636,8 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		body["db_loaded"] = ctx.db.IsLoaded();
 		body["last_loaded"] = ctx.db.LastLoadedIso();
 		body["can_edit"] = ctx.edits_enabled && ctx.db.IsWritable() && !WriterLogin(req, listener).empty();
+		const Caller caller = Who(ctx, req, listener);
+		body["role"] = caller.admin ? "admin" : "user";
 		if (listener == Listener::TAILNET) {
 			body["via"] = "tailscale";
 			body["login"] = req.get_header_value(TAILSCALE_LOGIN_HEADER);
@@ -575,9 +649,25 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		}
 		if (ctx.db.IsLoaded()) {
 			ctx.db.WithManager([&](const AccountManager& mgr) {
-				body["accounts"] = mgr.CountAccounts();
-				body["transactions"] = mgr.CountTransactions();
-				body["last_record_date"] = std::string(mgr.GetLastRecordDate().utf8_str());
+				const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+				if (!scope) {
+					body["accounts"] = mgr.CountAccounts();
+					body["transactions"] = mgr.CountTransactions();
+					body["last_record_date"] = std::string(mgr.GetLastRecordDate().utf8_str());
+					return;
+				}
+				size_t transactions = 0;
+				uint16_t last = 0;
+				for (int id : *scope) {
+					const Account* acc = mgr.FindAccount(Id((Id::Type)id));
+					transactions += acc->Size();
+					if (acc->Size()) {
+						last = std::max(last, acc->GetLastRecord()->GetDate());
+					}
+				}
+				body["accounts"] = scope->size();
+				body["transactions"] = transactions;
+				body["last_record_date"] = last ? std::string(DateAsString(last).utf8_str()) : std::string();
 			});
 		}
 		SendJson(res, 200, body);
@@ -614,55 +704,83 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		});
 	}
 
-	server.Get("/api/v1/names", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	// Reads: a user sees only their own accounts (ScopeOf()).
+	server.Get("/api/v1/names", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const Caller caller = Who(ctx, req, listener);
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
-			SendResult(res, ListNames(req.get_param_value("topic"), mgr));
+			const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+			SendResult(res, ListNames(req.get_param_value("topic"), mgr, scope ? &*scope : nullptr));
 		});
 	});
 
-	server.Post("/api/v1/query", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	server.Post("/api/v1/query", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const Caller caller = Who(ctx, req, listener);
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
-			SendResult(res, RunAdHocQuery(req.body, mgr));
+			const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+			SendResult(res, RunAdHocQuery(req.body, mgr, scope ? &*scope : nullptr));
 		});
 	});
 
-	server.Post("/api/v1/transactions", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	server.Post("/api/v1/transactions", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const Caller caller = Who(ctx, req, listener);
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
-			SendResult(res, ListTransactions(req.body, mgr));
+			const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+			SendResult(res, ListTransactions(req.body, mgr, scope ? &*scope : nullptr));
 		});
 	});
 
 	// Edits (EditApi.h) - only work with BANKACCOUNT_EDITS=on, over Tailscale.
 	server.Patch("/api/v1/transactions", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		HandleEdit(ctx, req, res, listener, EditTransaction);
+		const Caller caller = Who(ctx, req, listener);
+		HandleEdit(ctx, req, res, listener, [&](const nlohmann::json& body, AccountManager& mgr) {
+			const int64_t account = body.is_object() && body.contains("account_id") && body["account_id"].is_number_integer() ? body["account_id"].get<int64_t>() : -1;
+			if (!InScope(ScopeOf(ctx, caller, mgr), account)) {
+				return MakeErrorResult(404, "No such transaction");
+			}
+			return EditTransaction(body, mgr);
+		});
 	});
 	server.Post("/api/v1/entities", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		HandleEdit(ctx, req, res, listener, CreateEntity);
 	});
 	server.Post("/api/v1/entities/rename", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		HandleEdit(ctx, req, res, listener, RenameEntity);
+		// A user may rename their own accounts; everything else is an admin's.
+		const Caller caller = Who(ctx, req, listener);
+		const nlohmann::json body = ParseBody(req);
+		const bool account = body.is_object() && body.value("topic", std::string()) == "account";
+		HandleEdit(ctx, req, res, listener, [&](const nlohmann::json& b, AccountManager& mgr) {
+			const int64_t id = b.contains("id") && b["id"].is_number_integer() ? b["id"].get<int64_t>() : -1;
+			if (account && !InScope(ScopeOf(ctx, caller, mgr), id)) {
+				return MakeErrorResult(404, "No such account");
+			}
+			return RenameEntity(b, mgr);
+		}, !account);
 	});
 	server.Post("/api/v1/entities/keywords", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		HandleEdit(ctx, req, res, listener, AddKeyword);
 	});
 	server.Delete("/api/v1/entities/keywords", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		HandleEdit(ctx, req, res, listener, RemoveKeyword);
+		HandleEdit(ctx, req, res, listener, RemoveKeyword, true);
 	});
 	server.Post("/api/v1/entities/merge", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		// A merge is the one edit that's hard to undo by hand: snapshot first.
-		if (ctx.edits_enabled && ctx.backups && !WriterLogin(req, listener).empty()) {
+		if (ctx.edits_enabled && ctx.backups && !WriterLogin(req, listener).empty() && Who(ctx, req, listener).admin) {
 			std::string error;
 			if (!ctx.backups->TakeNow("merge", error)) {
 				SendError(res, 500, "Could not take a snapshot before merging: " + error);
 				return;
 			}
 		}
-		HandleEdit(ctx, req, res, listener, MergeEntities);
+		HandleEdit(ctx, req, res, listener, MergeEntities, true);
 	});
 	server.Post("/api/v1/recategorize", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		HandleEdit(ctx, req, res, listener, ApplyRecategorize);
+		HandleEdit(ctx, req, res, listener, ApplyRecategorize, true);
 	});
-	server.Get("/api/v1/recategorize", [&ctx](const httplib::Request&, httplib::Response& res) {
+	server.Get("/api/v1/recategorize", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		if (!Who(ctx, req, listener).admin) {
+			SendError(res, 403, "Only an admin can do this");
+			return;
+		}
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
 			SendResult(res, PreviewRecategorize(mgr));
 		});
@@ -683,25 +801,39 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			SendError(res, 422, "Persely reads MBH Bank .csv and Gránit Bank .xml exports");
 			return;
 		}
+		const Caller caller = Who(ctx, req, listener);
 		HandleChange(ctx, req, res, listener, nlohmann::json::object(), [&](const nlohmann::json&, AccountManager& mgr, DaemonDb::Imports& imports, const std::string& login, std::time_t now) {
+			// A user imports into their own accounts, or starts a new one (theirs once saved).
+			const std::optional<ImportEngine::StoredAccount> stored = ImportEngine::FindAccount(mgr, data.account_number);
+			if (stored && !InScope(ScopeOf(ctx, caller, mgr), (Id::Type)stored->id)) {
+				return MakeErrorResult(403, "This file is for an account that isn't yours");
+			}
 			return StartImport(data, upload, mgr, imports, login, now);
 		});
 	});
-	server.Get("/api/v1/imports", [&ctx](const httplib::Request&, httplib::Response& res) {
+	server.Get("/api/v1/imports", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		if (!ctx.db.IsLoaded()) {
 			SendError(res, 503, "Database not loaded");
 			return;
 		}
+		const Caller caller = Who(ctx, req, listener);
 		ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
-			SendResult(res, ListImports(mgr, imports));
+			const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+			SendResult(res, ListImports(mgr, imports, [&](const ImportSession& s) { return MaySeeImport(caller, scope, s); }));
 		});
 	});
-	server.Get(R"(/api/v1/imports/(\d+))", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	server.Get(R"(/api/v1/imports/(\d+))", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		if (!ctx.db.IsLoaded()) {
 			SendError(res, 503, "Database not loaded");
 			return;
 		}
+		const Caller caller = Who(ctx, req, listener);
 		ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
+			const ImportSession* session = imports.Find(std::stoll(req.matches[1]));
+			if (session && !MaySeeImport(caller, ScopeOf(ctx, caller, mgr), *session)) {
+				SendError(res, 404, "No such import");
+				return;
+			}
 			std::optional<size_t> row;
 			if (req.has_param("row")) {
 				row = std::strtoul(req.get_param_value("row").c_str(), nullptr, 10);
@@ -709,12 +841,18 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			SendResult(res, ImportDetails(std::stoll(req.matches[1]), row, mgr, imports));
 		});
 	});
-	server.Get(R"(/api/v1/imports/(\d+)/rows)", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	server.Get(R"(/api/v1/imports/(\d+)/rows)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		if (!ctx.db.IsLoaded()) {
 			SendError(res, 503, "Database not loaded");
 			return;
 		}
+		const Caller caller = Who(ctx, req, listener);
 		ctx.db.WithImports([&](const AccountManager& mgr, const DaemonDb::Imports& imports) {
+			const ImportSession* session = imports.Find(std::stoll(req.matches[1]));
+			if (session && !MaySeeImport(caller, ScopeOf(ctx, caller, mgr), *session)) {
+				SendError(res, 404, "No such import");
+				return;
+			}
 			SendResult(res, ImportRows(std::stoll(req.matches[1]), mgr, imports));
 		});
 	});
@@ -740,7 +878,24 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 				return;
 			}
 		}
+		// A new account a user saves is theirs.
+		const Caller caller = Who(ctx, req, listener);
+		std::string new_account;
+		if (!caller.admin) {
+			ctx.db.WithImports([&](const AccountManager&, const DaemonDb::Imports& imports) {
+				const ImportSession* s = imports.Find(std::stoll(req.matches[1]));
+				if (s && s->account_id == Id(INVALID_ID) && s->created_by == caller.login) {
+					new_account = std::string(s->account_number.utf8_str());
+				}
+			});
+		}
 		HandleImport(ctx, req, res, listener, CommitImport);
+		if (res.status == 200 && !new_account.empty()) {
+			std::string error;
+			if (!ctx.account_settings.Update(new_account, [&](AccountSettings& s) { s.owner = caller.login; }, error)) {
+				LogWarn("ACCOUNTS") << "Could not make " << caller.login << " the owner of " << new_account << ": " << error;
+			}
+		}
 		if (res.status == 200) {
 			// New days need their exchange rates; downloading takes a while, so not in this request.
 			std::thread([&ctx, login]() {
@@ -758,13 +913,16 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 
 	// Bank connections (BankApi.h). The callback is where a bank login ends: it isn't called by
 	// the web app but by the browser, so it answers with a redirect back into Settings.
-	server.Get("/api/v1/bank", [&ctx](const httplib::Request&, httplib::Response& res) {
+	// Connections are the admins'; a user sees the ones holding their accounts.
+	server.Get("/api/v1/bank", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const Caller caller = Who(ctx, req, listener);
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
-			SendResult(res, ctx.bank.Status(mgr, std::time(nullptr)));
+			const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+			SendResult(res, ctx.bank.Status(mgr, std::time(nullptr), scope ? &*scope : nullptr));
 		});
 	});
 	server.Post("/api/v1/bank/connect", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		const std::string login = RequireWriter(ctx, req, res, listener);
+		const std::string login = RequireAdmin(ctx, req, res, listener);
 		if (!login.empty()) {
 			SendResult(res, ctx.bank.Connect(ParseBody(req), BankCallbackUrl(req, listener), login, std::time(nullptr)));
 		}
@@ -772,6 +930,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 	server.Get("/api/v1/bank/callback", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		const std::string login = WriterLogin(req, listener);
 		QueryApiResult result = !ctx.edits_enabled || login.empty() ? MakeErrorResult(403, "Bank connections can only be made over Tailscale")
+			: !Who(ctx, req, listener).admin ? MakeErrorResult(403, "Only an admin can connect a bank")
 			: ctx.bank.CompleteFromUrl(req.target, login, std::time(nullptr));
 		std::string error;
 		if (result.http_status != 200) {
@@ -781,7 +940,7 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		res.set_redirect(error.empty() ? "/settings?bank=connected" : "/settings?bank_error=" + EnableBanking::UrlEncode(error));
 	});
 	server.Post("/api/v1/bank/complete", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		const std::string login = RequireWriter(ctx, req, res, listener);
+		const std::string login = RequireAdmin(ctx, req, res, listener);
 		if (!login.empty()) {
 			const nlohmann::json body = ParseBody(req);
 			const std::string url = body.is_object() && body.contains("url") && body["url"].is_string() ? body["url"].get<std::string>() : "";
@@ -789,13 +948,13 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		}
 	});
 	server.Delete(R"(/api/v1/bank/connections/([0-9a-f]+))", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		const std::string login = RequireWriter(ctx, req, res, listener);
+		const std::string login = RequireAdmin(ctx, req, res, listener);
 		if (!login.empty()) {
 			SendResult(res, ctx.bank.Disconnect(req.matches[1]));
 		}
 	});
 	server.Post("/api/v1/bank/fetch", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		const std::string login = RequireWriter(ctx, req, res, listener);
+		const std::string login = RequireAdmin(ctx, req, res, listener);
 		if (login.empty()) {
 			return;
 		}
@@ -809,13 +968,13 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 	});
 
 	// Account pages (AccountApi.h): owner and schedule live in db/account_settings.json.
-	server.Get("/api/v1/accounts", [&ctx](const httplib::Request&, httplib::Response& res) {
-		WithAccounts(ctx, res, [&](const AccountContext& a) {
+	server.Get("/api/v1/accounts", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		WithAccounts(ctx, res, Who(ctx, req, listener), [&](const AccountContext& a) {
 			SendResult(res, ListAccounts(a));
 		});
 	});
-	server.Get(R"(/api/v1/accounts/(\d+))", [&ctx](const httplib::Request& req, httplib::Response& res) {
-		WithAccounts(ctx, res, [&](const AccountContext& a) {
+	server.Get(R"(/api/v1/accounts/(\d+))", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		WithAccounts(ctx, res, Who(ctx, req, listener), [&](const AccountContext& a) {
 			SendResult(res, AccountDetails(a, std::stoll(req.matches[1])));
 		});
 	});
@@ -825,8 +984,9 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			return;
 		}
 		const nlohmann::json body = ParseBody(req);
-		WithAccounts(ctx, res, [&](const AccountContext& a) {
-			SendResult(res, UpdateAccountSettings(a, std::stoll(req.matches[1]), body, ctx.account_settings, login));
+		const Caller caller = Who(ctx, req, listener);
+		WithAccounts(ctx, res, caller, [&](const AccountContext& a) {
+			SendResult(res, UpdateAccountSettings(a, std::stoll(req.matches[1]), body, ctx.account_settings, login, caller.admin));
 		});
 	});
 	server.Post(R"(/api/v1/accounts/(\d+)/fetch)", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
@@ -839,8 +999,10 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			return;
 		}
 		std::string connection_id, number;
-		WithAccounts(ctx, res, [&](const AccountContext& a) {
-			const Account* acc = a.mgr.FindAccount(Id((Id::Type)std::min<long long>(std::stoll(req.matches[1]), INVALID_ID)));
+		WithAccounts(ctx, res, Who(ctx, req, listener), [&](const AccountContext& a) {
+			const int64_t id = std::min<long long>(std::stoll(req.matches[1]), INVALID_ID);
+			const bool visible = !a.only_accounts || std::find(a.only_accounts->begin(), a.only_accounts->end(), (int)id) != a.only_accounts->end();
+			const Account* acc = visible ? a.mgr.FindAccount(Id((Id::Type)id)) : nullptr;
 			if (const BankConnection* conn = acc ? ConnectionOf(a.connections, acc->GetAccNumber()) : nullptr) {
 				connection_id = conn->id;
 				number = std::string(acc->GetAccNumber().utf8_str());
@@ -859,9 +1021,8 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		});
 	});
 	server.Post("/api/v1/exchange-rates/update", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
-		const std::string login = WriterLogin(req, listener);
-		if (!ctx.edits_enabled || login.empty()) {
-			SendError(res, 403, ctx.edits_enabled ? "Changes can only be made over Tailscale" : "Editing is turned off on this server");
+		const std::string login = RequireAdmin(ctx, req, res, listener);
+		if (login.empty()) {
 			return;
 		}
 		std::string message;
@@ -898,19 +1059,55 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 		SendResult(res, ctx.favorites.Settings());
 	});
 
-	server.Put("/api/v1/settings", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	server.Put("/api/v1/settings", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		if (!Who(ctx, req, listener).admin) {
+			SendError(res, 403, "Only an admin can change the settings");
+			return;
+		}
 		SendResult(res, ctx.favorites.SaveSettings(req.body));
 	});
 
-	server.Get("/api/v1/favorites/queries/run", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	// Users (Users.h) - an admin's to see and change.
+	server.Get("/api/v1/users", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		if (!Who(ctx, req, listener).admin) {
+			SendError(res, 403, "Only an admin can see the users");
+			return;
+		}
+		SendResult(res, ctx.users.List());
+	});
+	server.Post("/api/v1/users", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireAdmin(ctx, req, res, listener);
+		if (!login.empty()) {
+			const QueryApiResult result = ctx.users.Save(ParseBody(req));
+			if (result.http_status == 200) {
+				LogInfo("USERS") << login << " saved user " << ParseBody(req).value("login", std::string());
+			}
+			SendResult(res, result);
+		}
+	});
+	server.Delete("/api/v1/users", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const std::string login = RequireAdmin(ctx, req, res, listener);
+		if (!login.empty()) {
+			const QueryApiResult result = ctx.users.Remove(req.get_param_value("login"));
+			if (result.http_status == 200) {
+				LogInfo("USERS") << login << " removed user " << req.get_param_value("login");
+			}
+			SendResult(res, result);
+		}
+	});
+
+	server.Get("/api/v1/favorites/queries/run", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
 		const std::vector<FavoriteQueryDef> queries = ctx.favorites.Queries();
+		const Caller caller = Who(ctx, req, listener);
 		WithDb(ctx, res, [&](const AccountManager& mgr) {
-			SendResult(res, RunFavoriteQueryByName(req.get_param_value("name"), queries, mgr));
+			const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+			SendResult(res, RunFavoriteQueryByName(req.get_param_value("name"), queries, mgr, scope ? &*scope : nullptr));
 		});
 	});
 
 	// A favorite report as one self-contained .html file (HtmlReport.h), offered as a download.
-	server.Get("/api/v1/favorites/reports/html", [&ctx](const httplib::Request& req, httplib::Response& res) {
+	server.Get("/api/v1/favorites/reports/html", [&ctx, listener](const httplib::Request& req, httplib::Response& res) {
+		const Caller caller = Who(ctx, req, listener);
 		const String name = String::FromUTF8(req.get_param_value("name").c_str());
 		const std::vector<FavoriteQueryDef> queries = ctx.favorites.Queries();
 		const std::vector<FavoriteReportDef> reports = ctx.favorites.Reports();
@@ -928,7 +1125,8 @@ void InstallRoutes(httplib::Server& server, Context& ctx, Listener listener) {
 			std::vector<int> all_accounts(mgr.CountAccounts());
 			std::iota(all_accounts.begin(), all_accounts.end(), 0);
 			Query query;
-			BuildQueryFromFavorite(*query_def, query, all_accounts);
+			const std::optional<std::vector<int>> scope = ScopeOf(ctx, caller, mgr);
+			BuildQueryFromFavorite(*query_def, query, all_accounts, scope ? &*scope : nullptr);
 			std::vector<ReportSection> sections = BuildReportSections(query, mgr);
 			String html = BuildHtmlReport(report->name, sections, report->chart_kinds, report->chart_sides,
 				ctx.chartjs_source, ctx.gridjs_source, ctx.gridjs_css);
@@ -1095,9 +1293,10 @@ int main(int argc, char** argv) {
 	}
 	BankApi bank(bank_http.get(), "db/bank_connections.json");
 	AccountSettingsStore account_settings("db/account_settings.json");
+	UserStore users("db/users.json", auth.allowed_logins);
 
 	Context ctx{db, favorites, auth, sessions, throttle, args.web_dir,
-		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank, account_settings};
+		LoadChartJsSource(), LoadGridJsSource(), LoadGridJsCss(), ReadTextFile("changelog.json"), edits_enabled, backups.get(), rates_running, bank, account_settings, users};
 
 	// Scheduled bank fetches, checked every minute.
 	std::atomic<bool> stop_scheduler{false};

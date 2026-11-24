@@ -286,9 +286,12 @@ QueryApiResult StartImport(const RawImportData& data, const ImportUpload& upload
 	return Ok(Details(added, mgr));
 }
 
-QueryApiResult ListImports(const AccountManager& mgr, const DaemonDb::Imports& imports) {
+QueryApiResult ListImports(const AccountManager& mgr, const DaemonDb::Imports& imports, const std::function<bool(const ImportSession&)>& visible) {
 	json list = json::array();
 	for (const ImportSession& session : imports.All()) {
+		if (visible && !visible(session)) {
+			continue;
+		}
 		list.push_back(SessionSummary(session, mgr));
 	}
 	return Ok(json{{"imports", list}});

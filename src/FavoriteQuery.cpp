@@ -231,7 +231,14 @@ namespace {
 	}
 }
 
-void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std::vector<int>& enabled_accounts) {
+void BuildQueryFromFavorite(const FavoriteQueryDef& def, Query& query, const std::vector<int>& enabled_accounts, const std::vector<int>* only_accounts) {
+	if (only_accounts) {
+		QueryAccount* scope = new QueryAccount; // no ids: matches nothing
+		for (const int id : *only_accounts) {
+			scope->AddId(id);
+		}
+		query.push_back(scope);
+	}
 	QueryAccount* qa = new QueryAccount;
 	if (def.accounts.empty()) {
 		for (const int id : enabled_accounts) {
