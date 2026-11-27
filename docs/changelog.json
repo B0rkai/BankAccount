@@ -1,186 +1,187 @@
 {
-    "unreleased": [
-        "Retired the Windows desktop app, the CLI and their build; the core's own tests now run on Linux with every build. Fixed on Linux: MBH CSV files with Windows line endings imported nothing, and euro amounts lost their € sign. Persely's Settings shows What's new",
-        "Enable Banking groundwork: bank API transactions become import rows (Gránit's day-early dates corrected, cut type names and squeezed spaces matched to existing keywords), and the daemon can make signed bank API calls",
-        "Persely fetches transactions straight from the bank: connect, renew or disconnect a bank in Settings, then Import → Fetch from the bank opens an import per account; the overview warns before a connection runs out",
-        "Account pages: details, owner, bank connection, fetch one account now, and weekly or monthly automatic fetches (saved by themselves only when every row sorts itself; otherwise the import waits, shown on the overview, and later fetches add to it). A transaction fetched or imported again keeps its saved client, category and description",
-        "Users and roles: admins add users by their Tailscale login in Settings → Users; a user sees only the accounts they own (queries, transactions, reports, imports, bank fetches) and can import into and categorize them, while renaming, merging, settings, bank connections and users stay with admins",
-        "Editing on the home network page from a PC: the LAN page is also served over HTTPS (port 8443), where Windows Hello unlocks editing for 12 hours; a key is set up with a code made in Settings over Tailscale",
-        "Users: every user can be given a name, the server's own admins too; the top bar shows it",
-        "Bank connections: one per bank login, so a second person's account at the same bank connects beside the first; an account stored as an IBAN matches the bank's number; a fetch that can't reach back to the last stored day fails instead of leaving a gap",
-        "A new Accounts tab: every account in a table (bank, owner, first and last entry, up to date or not, how it's fetched, entries and how many are categorized), with Import and Bank connections under it - the Import tab and Settings' account list are gone",
-        "Explore and Transactions are one page: the transaction filters can also group by category, client, type or account and over time, showing Explore's charts and tables above the list; favorites load and save there, and old Explore links still work",
-        "Transactions on a phone: the filters fold into one line saying what's set, and fold up by themselves after a search; Group by and Over time moved under \"Group, more filters\"",
-        "A bank account Persely doesn't have yet is fetched with as much history as the bank gives (up to 15 years, else 2, else 90 days)",
-        "A fetch you start tells the bank you're there, so the bank's limit of 4 background reads a day per account (\"Maximum daily access exceeded\") no longer stops it; scheduled fetches still count against it",
-        "Categorizing on a phone: one tap on a suggestion answers, \"Remember for next time\" (a keyword from the bank's text) is on by default, Undo after every answer, a search sheet for every category/client picker (also when editing a transaction), open rows grouped by bank text to answer a group at once, and a review list where you swipe right to accept a suggestion or hold to select several and set them together",
-        "Import: the Remember switch can be switched again (tapping it opened the keyword editor); \"Stop here\" is now \"Leave out this row and the rest\", says the left-out rows aren't saved, sits under a new \"Finish later\" (answers are saved as you go), and Save says how many are left out",
-        "Push notifications: turn them on per device in Settings → Notifications (on an iPhone, from the home-screen app) to hear when a scheduled bank fetch has transactions to sort, saved some by itself or failed, and when a bank connection runs out within a week; each kind can be switched off, with a test button and a list of your devices",
-        "The LAN certificate moved to the server's shared ~/.config/lan-tls (same authority, so the PC keeps trusting it); renewal swaps the pair atomically, only ca.crt/server.crt/server.key reach the container, and deploy/lan-tls-check.sh checks it",
-        "deploy/firewall.sh adds Persely's ufw rules (the LAN page from the home LAN, the tailnet page from the tailnet)",
-        "Year in review: the comparison with last year shows spent more and spent less side by side, so it lines up with the month chart",
-        "Overview: the import and bank-connection banners come before the search field, together under the Windows Hello bar"
-    ],
-    "released": [
-        {
-            "version": "1.0.6",
-            "date": "2026-09-04",
-            "changes": [
-                "Show what changed after an update, and on demand via Help → What's New"
-            ]
-        },
-        {
-            "version": "1.1.0",
-            "date": "2026-09-05",
-            "changes": [
-                "Fix What's New dialog: OK button clipped off-screen, and UTF-8 text (e.g. accented characters) rendered garbled",
-                "Add self-contained HTML reports (table + interactive charts) generated from favorite queries, via Reports → Favorite Reports",
-                "Fix charts: route each topic to income or expense by its net sum instead of showing it on both, and let a favorite report restrict which side(s) render via chart_sides",
-                "Fold long tails into an \"Others\" slice/series in report charts, and sort report tables/charts ascending by amount (Others always last)",
-                "Publish resources\\ files (e.g. the HTML reports' Chart.js) with releases and sync them onto already-installed clients during self-update"
-            ]
-        },
-        {
-            "version": "1.1.1",
-            "date": "2026-09-06",
-            "changes": [
-                "Render HTML report tables as interactive Grid.js grids (sortable, searchable, paginated) instead of plain tables, with tighter row spacing and fixes for a permanent stray scrollbar and mangled chart-title text"
-            ]
-        },
-        {
-            "version": "1.1.2",
-            "date": "2026-09-06",
-            "changes": [
-                "Add Database → Prune Last Transactions..., a manual repair tool to remove an account's last N transactions with a preview and confirmation, for when a bad import/edit leaves the tail out of date order and breaks import's insertion-point search"
-            ]
-        },
-        {
-            "version": "1.1.3",
-            "date": "2026-09-06",
-            "changes": [
-                "Add logging around import file-format detection and stored-data alignment (PrepareImport), so a failed/empty import is now traceable in the log instead of silent"
-            ]
-        },
-        {
-            "version": "1.1.4",
-            "date": "2026-09-06",
-            "changes": [
-                "Fix MBH Bank CSV import broken by a source-encoding bug (missing UTF-8 BOM corrupted the header-sentinel literal) and by an unstripped UTF-8 BOM on the bank's own export files; also handle multi-line quoted CSV fields and preserve genuinely-empty trailing fields when splitting semicolon-separated values"
-            ]
-        },
-        {
-            "version": "1.1.5",
-            "date": "2026-09-07",
-            "changes": [
-                "CSV parsing fixes"
-            ]
-        },
-        {
-            "version": "1.1.6",
-            "date": "2026-09-07",
-            "changes": [
-                "Add debug logging of each imported row's raw CSV/XML fields alongside its parsed date/type/amount/client/memo"
-            ]
-        },
-        {
-            "version": "1.1.7",
-            "date": "2026-09-08",
-            "changes": [
-                "Support MBH Bank's expanded CSV export column layout (7 additional columns before Kiegeszitoinformacio)",
-                "Manual category resolve now offers the client's own previously-used categories as selection choices, with the most-used one pre-selected"
-            ]
-        },
-        {
-            "version": "1.1.8",
-            "date": "2026-09-08",
-            "changes": [
-                "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)",
-                "Auto-recall a transaction's prior categorization when re-import or manual pruning removes it and a later import brings back the same date/amount/client, instead of asking again; fix a crash in PrepareImport when re-importing pops an account's entire transaction history"
-            ]
-        },
-        {
-            "version": "1.1.9",
-            "date": "2026-09-08",
-            "changes": [
-                "Add Store Query.../Store Report... in-app editors to save the current filter or an existing favorite query as a favorite without hand-editing JSON",
-                "Add per-side relative dates (right-click a from/to calendar for \"Today\"/\"Start of This Month\"/etc.) and keep Periods-menu shortcuts self-updating in saved favorites instead of freezing today's range"
-            ]
-        },
-        {
-            "version": "1.1.10",
-            "date": "2026-09-10",
-            "changes": [
-                "Word-wrap long lines in the What's New dialog instead of requiring horizontal scrolling",
-                "Fix periodic charts: a period that bucked a topic's overall trend (e.g. a refund month in an otherwise expense-heavy category) was plotted as a positive magnitude on that topic's chart instead of offsetting the total"
-            ]
-        },
-        {
-            "version": "1.1.11",
-            "date": "2026-09-12",
-            "changes": [
-                "Add a top-level Makefile building a read-only BankAccountCore subset on Linux (g++/wxBase), the first story of the Linux query daemon",
-                "Add a Linux daemon HTTP server skeleton (cpp-httplib) with a hot-reloading read-only db snapshot and a /health route, the second story of the Linux query daemon; fix a cross-platform log-path bug and a stale-pointer bug in Currency's exchange-rate history found along the way",
-                "Add a POST /query ad-hoc query endpoint to the Linux daemon (JSON in, JSON tables/charts out), the third story of the Linux query daemon; fix a null-pointer crash on any relative-date query, caused by the daemon never calling SetRealToday() at startup",
-                "Add favorite query/report listing and run-by-name endpoints to the Linux daemon, the fourth story of the Linux query daemon; fix favorite_queries.json/favorite_reports.json never being found on Linux due to a hardcoded backslash path",
-                "Add an interactive query builder web page to the Linux daemon (form filters, favorite query/report picker, live Grid.js tables and Chart.js charts), the fifth story of the Linux query daemon; fix the same hardcoded-backslash bug for the vendored Chart.js/Grid.js resource paths",
-                "Require a shared --token on every route of the Linux daemon (header or query param, constant-time compared), the sixth story of the Linux query daemon",
-                "Add a systemd unit and deployment guide for the Linux daemon (env-file-based secrets, dedicated unprivileged user, sandboxing), the seventh story of the Linux query daemon",
-                "Add GoogleTest coverage for the Linux daemon's JSON query/favorites API, the eighth and final story of the Linux query daemon",
-                "Vendor a trimmed, portable ZipLib (Store+Deflate only) directly into the repo instead of a Windows-only sibling checkout, and let the Linux daemon open a compressed/password-protected BData.baf directly instead of requiring a plain-text export",
-                "Revise income/expense chart routing so account/type split their income and expense legs independently while category/client stay net-sign, and a plain currency-sum query renders as one unsided Summary chart; consolidate the Linux daemon's query builder to one chart per currency with a dataset dropdown (Income/Expense/Summary) alongside the chart-kind picker",
-                "Serve the Linux daemon's query builder CSS/JS from hot-reloadable daemon/static/ files instead of baking them into the page string, so a styling/behavior edit shows up on the next page load with no daemon rebuild/restart",
-                "Fix the Linux daemon's account filter matching nothing unless every account was selected (AccountManager never resolved accounts by name), and fix report/daemon charts sometimes folding a single real category into a pointless one-item \"Others\" slice or showing an empty \"Others\" for a category with no actual activity",
-                "Fix the Linux daemon's ad-hoc query JSON fields (client/category/type/account filters, favorite query definitions) being decoded via the locale-dependent narrow-string constructor instead of UTF-8, breaking any accented-character filter (e.g. searching \"Autó\" never matched \"Autófókusz\")",
-                "Show the running APP_VERSION next to the title on the Linux daemon's web query page",
-                "Fix the real cause of the Linux daemon's accented-character search bug still failing after the earlier UTF-8 JSON-decode fix: ManagerType's SearchIds/Create/Rename and AccountManager::RenameId checked for an empty name via strlen() on a wxString, forcing it through a locale-dependent narrow-char conversion that silently fails on non-ASCII text under the daemon's uninitialized \"C\" locale, so any client/category/type/account filter containing an accented character (not just a mismatched one) matched nothing; also stop QueryByName::AddName from forcing every filter name through that same lossy conversion by taking a String directly instead of a const char*"
-            ]
-        },
-        {
-            "version": "1.1.12",
-            "date": "2026-10-05",
-            "changes": [
-                "Fix the Linux daemon aborting while loading a BData.baf read over a real Samba/CIFS mount: the vendored ZipLib's sub_streambuf treated a short read (normal on CIFS) as EOF, truncating decompression mid-file; also document copying the daemon's static frontend assets into the systemd WorkingDirectory",
-                "Fix the Linux daemon's Type aggregation rendering blank topic labels (table rows and chart legends): TransactionType's constructor took a const char*, so every accented type name loaded from the db went through a locale-dependent narrow-char conversion and came out empty under the daemon's \"C\" locale",
-                "Charts never mix Income and Expense: every chart (desktop, HTML reports, Linux daemon) shows exactly one dataset - Net (new, default), Income or Expense - Net as bar/line only and drawn either side of a zero line; single-entry charts keep fixed colours (Income green, Expense red, Net purple), multi-topic charts are colourful, line charts shade only between the line and zero, and the daemon gains a Currency dropdown with 'Convert all to this currency'"
-            ]
-        },
-        {
-            "version": "1.1.13",
-            "date": "2026-10-06",
-            "changes": [
-                "Chart \"Convert all to this currency\" now converts each transaction at its own date's exchange rate, matching the table's exchanged total"
-            ]
-        },
-        {
-            "version": "2.0.0",
-            "date": "2026-11-23",
-            "changes": [
-                "Persely becomes the only app: its own SQLite database on the server, editing and bank-file import in the browser (any device), daily snapshots; the Windows desktop app and CLI are retired",
-                "Fix crash when storing a favorite query/report with accented names (JSON now written/read as UTF-8; a failed save no longer empties the file)",
-                "HTML report files are now opened via a wide (Unicode) path and a failed write is reported instead of claiming success",
-                "Linux web service: new React web app (overview, query explorer, transactions, reports) with Tailscale-login and LAN-password sign-in, shipped as a Docker image",
-                "Linux web service: --hash-password hides the password and asks for it twice",
-                "Linux web service: deploy/set-secrets.sh writes the secrets file; the daemon refuses the template's placeholder values",
-                "Linux web service: the web app is now called Persely, at persely.tail61796b.ts.net",
-                "Persely: click any chart or table number for its transactions; transaction search; comparisons, category trends and a stale-data notice on the overview; client pages; year in review; save and delete favorites (the web app's own, kept on the server)",
-                "Persely: transaction lists fit a phone's width - long names end in an ellipsis, and the date moves under the name",
-                "Persely: 4-digit amounts are grouped too (3 380 Ft, not 3380 Ft)",
-                "Persely: clicking a category opens its own page - month-by-month and yearly charts, who was paid, latest transactions - over the clicked period",
-                "Persely: a Settings tab, shared by every device - categories left out of the totals, and categories whose money in isn't income (shown as small grey 'other money in'; net and savings rate follow); kept by id, so renaming a category doesn't break them",
-                "Persely: find a client or category by name and jump to its page; client and category pages break down by account (or name the only one) and list their 5 largest transactions; transaction lists drop columns every row agrees on and link every name - a client or category to its page, an account to its transactions",
-                "Persely: client and category charts switch between bars, lines and net, with an optional trend line and a one-line reading of it",
-                "Persely: client and category breakdowns show money out and money in apart (paid to / paid by, spent / received) when it went both ways",
-                "Persely: a client, category or account every listed transaction shares is named once above the list, as a link; a single transaction keeps all its columns",
-                "Linux daemon: a result in a single foreign currency also carries its HUF conversion, so Persely's totals no longer count euros as forints",
-                "Persely: runs from its own SQLite database on the server, converted from BData.baf and verified identical (bankaccount-migrate, refreshed with deploy/migrate-db.sh); the server build is optimized, so queries answer 4-8x faster",
-                "Persely: the server can now save changes straight into its database (one transaction per change, recorded with who made it, Tailscale sign-ins only) and keeps daily snapshots on the storage disk; nothing in the web app edits yet",
-                "Persely: editing - a transaction's category, client and note, keywords, renaming and merging clients/categories, categorizing by keywords, and MNB exchange rates downloaded on the server; switched off until the cutover (BANKACCOUNT_EDITS=on)",
-                "Exchange rates: a weekend or bank holiday is converted with the last rate published before it (Friday's for a Saturday) - only rates on transaction dates used to be kept, so such a day could get a rate up to 6 days old",
-                "Persely: import engine - a bank file becomes a step-by-step session (categorize one answer at a time, stop here, review, save), stored in the database and continued from any device; off until the cutover",
-                "Persely import: every row is tried with the keywords at once and only the ones that need an answer are asked; after any change (an answer, a keyword, a merge) the rest are worked out again, and nothing reaches the transactions before Save",
-                "Persely import screens: upload a bank file (see what's in it first), answer only the rows the keywords can't sort - on a phone, in any number of sittings - review and fix rows, then Save; open imports show on the Overview; off until the cutover",
-                "Cutover: Persely is now where bank files are imported and transactions edited; the desktop app's database is no longer read"
-            ]
-        }
-    ]
+  "unreleased": [
+    "Retired the Windows desktop app, the CLI and their build; the core's own tests now run on Linux with every build. Fixed on Linux: MBH CSV files with Windows line endings imported nothing, and euro amounts lost their € sign. Persely's Settings shows What's new",
+    "Enable Banking groundwork: bank API transactions become import rows (Gránit's day-early dates corrected, cut type names and squeezed spaces matched to existing keywords), and the daemon can make signed bank API calls",
+    "Persely fetches transactions straight from the bank: connect, renew or disconnect a bank in Settings, then Import → Fetch from the bank opens an import per account; the overview warns before a connection runs out",
+    "Account pages: details, owner, bank connection, fetch one account now, and weekly or monthly automatic fetches (saved by themselves only when every row sorts itself; otherwise the import waits, shown on the overview, and later fetches add to it). A transaction fetched or imported again keeps its saved client, category and description",
+    "Users and roles: admins add users by their Tailscale login in Settings → Users; a user sees only the accounts they own (queries, transactions, reports, imports, bank fetches) and can import into and categorize them, while renaming, merging, settings, bank connections and users stay with admins",
+    "Editing on the home network page from a PC: the LAN page is also served over HTTPS (port 8443), where Windows Hello unlocks editing for 12 hours; a key is set up with a code made in Settings over Tailscale",
+    "Users: every user can be given a name, the server's own admins too; the top bar shows it",
+    "Bank connections: one per bank login, so a second person's account at the same bank connects beside the first; an account stored as an IBAN matches the bank's number; a fetch that can't reach back to the last stored day fails instead of leaving a gap",
+    "A new Accounts tab: every account in a table (bank, owner, first and last entry, up to date or not, how it's fetched, entries and how many are categorized), with Import and Bank connections under it - the Import tab and Settings' account list are gone",
+    "Explore and Transactions are one page: the transaction filters can also group by category, client, type or account and over time, showing Explore's charts and tables above the list; favorites load and save there, and old Explore links still work",
+    "Transactions on a phone: the filters fold into one line saying what's set, and fold up by themselves after a search; Group by and Over time moved under \"Group, more filters\"",
+    "A bank account Persely doesn't have yet is fetched with as much history as the bank gives (up to 15 years, else 2, else 90 days)",
+    "A fetch you start tells the bank you're there, so the bank's limit of 4 background reads a day per account (\"Maximum daily access exceeded\") no longer stops it; scheduled fetches still count against it",
+    "Categorizing on a phone: one tap on a suggestion answers, \"Remember for next time\" (a keyword from the bank's text) is on by default, Undo after every answer, a search sheet for every category/client picker (also when editing a transaction), open rows grouped by bank text to answer a group at once, and a review list where you swipe right to accept a suggestion or hold to select several and set them together",
+    "Import: the Remember switch can be switched again (tapping it opened the keyword editor); \"Stop here\" is now \"Leave out this row and the rest\", says the left-out rows aren't saved, sits under a new \"Finish later\" (answers are saved as you go), and Save says how many are left out",
+    "Push notifications: turn them on per device in Settings → Notifications (on an iPhone, from the home-screen app) to hear when a scheduled bank fetch has transactions to sort, saved some by itself or failed, and when a bank connection runs out within a week; each kind can be switched off, with a test button and a list of your devices",
+    "The LAN certificate moved to the server's shared ~/.config/lan-tls (same authority, so the PC keeps trusting it); renewal swaps the pair atomically, only ca.crt/server.crt/server.key reach the container, and deploy/lan-tls-check.sh checks it",
+    "deploy/firewall.sh adds Persely's ufw rules (the LAN page from the home LAN, the tailnet page from the tailnet)",
+    "Year in review: the comparison with last year shows spent more and spent less side by side, so it lines up with the month chart",
+    "Overview: the import and bank-connection banners come before the search field, together under the Windows Hello bar",
+    "Android home-screen icon fills its shape (maskable icons) instead of sitting small on a white tile"
+  ],
+  "released": [
+    {
+      "version": "1.0.6",
+      "date": "2026-09-04",
+      "changes": [
+        "Show what changed after an update, and on demand via Help → What's New"
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-09-05",
+      "changes": [
+        "Fix What's New dialog: OK button clipped off-screen, and UTF-8 text (e.g. accented characters) rendered garbled",
+        "Add self-contained HTML reports (table + interactive charts) generated from favorite queries, via Reports → Favorite Reports",
+        "Fix charts: route each topic to income or expense by its net sum instead of showing it on both, and let a favorite report restrict which side(s) render via chart_sides",
+        "Fold long tails into an \"Others\" slice/series in report charts, and sort report tables/charts ascending by amount (Others always last)",
+        "Publish resources\\ files (e.g. the HTML reports' Chart.js) with releases and sync them onto already-installed clients during self-update"
+      ]
+    },
+    {
+      "version": "1.1.1",
+      "date": "2026-09-06",
+      "changes": [
+        "Render HTML report tables as interactive Grid.js grids (sortable, searchable, paginated) instead of plain tables, with tighter row spacing and fixes for a permanent stray scrollbar and mangled chart-title text"
+      ]
+    },
+    {
+      "version": "1.1.2",
+      "date": "2026-09-06",
+      "changes": [
+        "Add Database → Prune Last Transactions..., a manual repair tool to remove an account's last N transactions with a preview and confirmation, for when a bad import/edit leaves the tail out of date order and breaks import's insertion-point search"
+      ]
+    },
+    {
+      "version": "1.1.3",
+      "date": "2026-09-06",
+      "changes": [
+        "Add logging around import file-format detection and stored-data alignment (PrepareImport), so a failed/empty import is now traceable in the log instead of silent"
+      ]
+    },
+    {
+      "version": "1.1.4",
+      "date": "2026-09-06",
+      "changes": [
+        "Fix MBH Bank CSV import broken by a source-encoding bug (missing UTF-8 BOM corrupted the header-sentinel literal) and by an unstripped UTF-8 BOM on the bank's own export files; also handle multi-line quoted CSV fields and preserve genuinely-empty trailing fields when splitting semicolon-separated values"
+      ]
+    },
+    {
+      "version": "1.1.5",
+      "date": "2026-09-07",
+      "changes": [
+        "CSV parsing fixes"
+      ]
+    },
+    {
+      "version": "1.1.6",
+      "date": "2026-09-07",
+      "changes": [
+        "Add debug logging of each imported row's raw CSV/XML fields alongside its parsed date/type/amount/client/memo"
+      ]
+    },
+    {
+      "version": "1.1.7",
+      "date": "2026-09-08",
+      "changes": [
+        "Support MBH Bank's expanded CSV export column layout (7 additional columns before Kiegeszitoinformacio)",
+        "Manual category resolve now offers the client's own previously-used categories as selection choices, with the most-used one pre-selected"
+      ]
+    },
+    {
+      "version": "1.1.8",
+      "date": "2026-09-08",
+      "changes": [
+        "Add BankAccountCli, a headless console tool that generates favorite reports read-only for scheduled/automated use, now also built and published to the release folder by PackageRelease.ps1 (outside the client update manifest)",
+        "Auto-recall a transaction's prior categorization when re-import or manual pruning removes it and a later import brings back the same date/amount/client, instead of asking again; fix a crash in PrepareImport when re-importing pops an account's entire transaction history"
+      ]
+    },
+    {
+      "version": "1.1.9",
+      "date": "2026-09-08",
+      "changes": [
+        "Add Store Query.../Store Report... in-app editors to save the current filter or an existing favorite query as a favorite without hand-editing JSON",
+        "Add per-side relative dates (right-click a from/to calendar for \"Today\"/\"Start of This Month\"/etc.) and keep Periods-menu shortcuts self-updating in saved favorites instead of freezing today's range"
+      ]
+    },
+    {
+      "version": "1.1.10",
+      "date": "2026-09-10",
+      "changes": [
+        "Word-wrap long lines in the What's New dialog instead of requiring horizontal scrolling",
+        "Fix periodic charts: a period that bucked a topic's overall trend (e.g. a refund month in an otherwise expense-heavy category) was plotted as a positive magnitude on that topic's chart instead of offsetting the total"
+      ]
+    },
+    {
+      "version": "1.1.11",
+      "date": "2026-09-12",
+      "changes": [
+        "Add a top-level Makefile building a read-only BankAccountCore subset on Linux (g++/wxBase), the first story of the Linux query daemon",
+        "Add a Linux daemon HTTP server skeleton (cpp-httplib) with a hot-reloading read-only db snapshot and a /health route, the second story of the Linux query daemon; fix a cross-platform log-path bug and a stale-pointer bug in Currency's exchange-rate history found along the way",
+        "Add a POST /query ad-hoc query endpoint to the Linux daemon (JSON in, JSON tables/charts out), the third story of the Linux query daemon; fix a null-pointer crash on any relative-date query, caused by the daemon never calling SetRealToday() at startup",
+        "Add favorite query/report listing and run-by-name endpoints to the Linux daemon, the fourth story of the Linux query daemon; fix favorite_queries.json/favorite_reports.json never being found on Linux due to a hardcoded backslash path",
+        "Add an interactive query builder web page to the Linux daemon (form filters, favorite query/report picker, live Grid.js tables and Chart.js charts), the fifth story of the Linux query daemon; fix the same hardcoded-backslash bug for the vendored Chart.js/Grid.js resource paths",
+        "Require a shared --token on every route of the Linux daemon (header or query param, constant-time compared), the sixth story of the Linux query daemon",
+        "Add a systemd unit and deployment guide for the Linux daemon (env-file-based secrets, dedicated unprivileged user, sandboxing), the seventh story of the Linux query daemon",
+        "Add GoogleTest coverage for the Linux daemon's JSON query/favorites API, the eighth and final story of the Linux query daemon",
+        "Vendor a trimmed, portable ZipLib (Store+Deflate only) directly into the repo instead of a Windows-only sibling checkout, and let the Linux daemon open a compressed/password-protected BData.baf directly instead of requiring a plain-text export",
+        "Revise income/expense chart routing so account/type split their income and expense legs independently while category/client stay net-sign, and a plain currency-sum query renders as one unsided Summary chart; consolidate the Linux daemon's query builder to one chart per currency with a dataset dropdown (Income/Expense/Summary) alongside the chart-kind picker",
+        "Serve the Linux daemon's query builder CSS/JS from hot-reloadable daemon/static/ files instead of baking them into the page string, so a styling/behavior edit shows up on the next page load with no daemon rebuild/restart",
+        "Fix the Linux daemon's account filter matching nothing unless every account was selected (AccountManager never resolved accounts by name), and fix report/daemon charts sometimes folding a single real category into a pointless one-item \"Others\" slice or showing an empty \"Others\" for a category with no actual activity",
+        "Fix the Linux daemon's ad-hoc query JSON fields (client/category/type/account filters, favorite query definitions) being decoded via the locale-dependent narrow-string constructor instead of UTF-8, breaking any accented-character filter (e.g. searching \"Autó\" never matched \"Autófókusz\")",
+        "Show the running APP_VERSION next to the title on the Linux daemon's web query page",
+        "Fix the real cause of the Linux daemon's accented-character search bug still failing after the earlier UTF-8 JSON-decode fix: ManagerType's SearchIds/Create/Rename and AccountManager::RenameId checked for an empty name via strlen() on a wxString, forcing it through a locale-dependent narrow-char conversion that silently fails on non-ASCII text under the daemon's uninitialized \"C\" locale, so any client/category/type/account filter containing an accented character (not just a mismatched one) matched nothing; also stop QueryByName::AddName from forcing every filter name through that same lossy conversion by taking a String directly instead of a const char*"
+      ]
+    },
+    {
+      "version": "1.1.12",
+      "date": "2026-10-05",
+      "changes": [
+        "Fix the Linux daemon aborting while loading a BData.baf read over a real Samba/CIFS mount: the vendored ZipLib's sub_streambuf treated a short read (normal on CIFS) as EOF, truncating decompression mid-file; also document copying the daemon's static frontend assets into the systemd WorkingDirectory",
+        "Fix the Linux daemon's Type aggregation rendering blank topic labels (table rows and chart legends): TransactionType's constructor took a const char*, so every accented type name loaded from the db went through a locale-dependent narrow-char conversion and came out empty under the daemon's \"C\" locale",
+        "Charts never mix Income and Expense: every chart (desktop, HTML reports, Linux daemon) shows exactly one dataset - Net (new, default), Income or Expense - Net as bar/line only and drawn either side of a zero line; single-entry charts keep fixed colours (Income green, Expense red, Net purple), multi-topic charts are colourful, line charts shade only between the line and zero, and the daemon gains a Currency dropdown with 'Convert all to this currency'"
+      ]
+    },
+    {
+      "version": "1.1.13",
+      "date": "2026-10-06",
+      "changes": [
+        "Chart \"Convert all to this currency\" now converts each transaction at its own date's exchange rate, matching the table's exchanged total"
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "date": "2026-11-23",
+      "changes": [
+        "Persely becomes the only app: its own SQLite database on the server, editing and bank-file import in the browser (any device), daily snapshots; the Windows desktop app and CLI are retired",
+        "Fix crash when storing a favorite query/report with accented names (JSON now written/read as UTF-8; a failed save no longer empties the file)",
+        "HTML report files are now opened via a wide (Unicode) path and a failed write is reported instead of claiming success",
+        "Linux web service: new React web app (overview, query explorer, transactions, reports) with Tailscale-login and LAN-password sign-in, shipped as a Docker image",
+        "Linux web service: --hash-password hides the password and asks for it twice",
+        "Linux web service: deploy/set-secrets.sh writes the secrets file; the daemon refuses the template's placeholder values",
+        "Linux web service: the web app is now called Persely, at persely.tail61796b.ts.net",
+        "Persely: click any chart or table number for its transactions; transaction search; comparisons, category trends and a stale-data notice on the overview; client pages; year in review; save and delete favorites (the web app's own, kept on the server)",
+        "Persely: transaction lists fit a phone's width - long names end in an ellipsis, and the date moves under the name",
+        "Persely: 4-digit amounts are grouped too (3 380 Ft, not 3380 Ft)",
+        "Persely: clicking a category opens its own page - month-by-month and yearly charts, who was paid, latest transactions - over the clicked period",
+        "Persely: a Settings tab, shared by every device - categories left out of the totals, and categories whose money in isn't income (shown as small grey 'other money in'; net and savings rate follow); kept by id, so renaming a category doesn't break them",
+        "Persely: find a client or category by name and jump to its page; client and category pages break down by account (or name the only one) and list their 5 largest transactions; transaction lists drop columns every row agrees on and link every name - a client or category to its page, an account to its transactions",
+        "Persely: client and category charts switch between bars, lines and net, with an optional trend line and a one-line reading of it",
+        "Persely: client and category breakdowns show money out and money in apart (paid to / paid by, spent / received) when it went both ways",
+        "Persely: a client, category or account every listed transaction shares is named once above the list, as a link; a single transaction keeps all its columns",
+        "Linux daemon: a result in a single foreign currency also carries its HUF conversion, so Persely's totals no longer count euros as forints",
+        "Persely: runs from its own SQLite database on the server, converted from BData.baf and verified identical (bankaccount-migrate, refreshed with deploy/migrate-db.sh); the server build is optimized, so queries answer 4-8x faster",
+        "Persely: the server can now save changes straight into its database (one transaction per change, recorded with who made it, Tailscale sign-ins only) and keeps daily snapshots on the storage disk; nothing in the web app edits yet",
+        "Persely: editing - a transaction's category, client and note, keywords, renaming and merging clients/categories, categorizing by keywords, and MNB exchange rates downloaded on the server; switched off until the cutover (BANKACCOUNT_EDITS=on)",
+        "Exchange rates: a weekend or bank holiday is converted with the last rate published before it (Friday's for a Saturday) - only rates on transaction dates used to be kept, so such a day could get a rate up to 6 days old",
+        "Persely: import engine - a bank file becomes a step-by-step session (categorize one answer at a time, stop here, review, save), stored in the database and continued from any device; off until the cutover",
+        "Persely import: every row is tried with the keywords at once and only the ones that need an answer are asked; after any change (an answer, a keyword, a merge) the rest are worked out again, and nothing reaches the transactions before Save",
+        "Persely import screens: upload a bank file (see what's in it first), answer only the rows the keywords can't sort - on a phone, in any number of sittings - review and fix rows, then Save; open imports show on the Overview; off until the cutover",
+        "Cutover: Persely is now where bank files are imported and transactions edited; the desktop app's database is no longer read"
+      ]
+    }
+  ]
 }
